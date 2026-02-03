@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blasteroids</title>
+    <style>
+      :root {
+        --bg: #070a10;
+        --panel: rgba(10, 14, 22, 0.92);
+        --fg: #e7f0ff;
+        --muted: rgba(231, 240, 255, 0.72);
+        --accent: #56b7ff;
+        --danger: #ff5964;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        color: var(--fg);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+        overflow: hidden;
+      }
+      #wrap {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(1000px 800px at 50% 35%, rgba(86, 183, 255, 0.12), transparent 55%),
+          radial-gradient(900px 700px at 65% 70%, rgba(255, 89, 100, 0.06), transparent 60%),
+          linear-gradient(180deg, #01020a, #000);
+      }
+      #hud-score {
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        z-index: 2;
+        pointer-events: none;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        color: rgba(231, 240, 255, 0.92);
+        text-shadow:
+          0 2px 10px rgba(0, 0, 0, 0.65),
+          0 1px 0 rgba(0, 0, 0, 0.25);
+      }
+      canvas {
+        width: min(92vw, 980px);
+        height: min(86vh, 740px);
+        image-rendering: pixelated;
+        border-radius: 14px;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.55);
+        background: #000;
+      }
+      #menu {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+      }
+      #panel {
+        width: min(760px, 92vw);
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        padding: 22px 22px 18px;
+        pointer-events: auto;
+        backdrop-filter: blur(8px);
+        max-height: min(86vh, 740px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      h1 {
+        margin: 0 0 8px;
+        letter-spacing: 0.14em;
+        font-weight: 750;
+        font-size: 28px;
+        text-transform: uppercase;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px 14px;
+        margin: 14px 0 18px;
+      }
+      .card {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 12px 12px 10px;
+        background: rgba(0, 0, 0, 0.15);
+      }
+      .k {
+        font-weight: 650;
+        color: var(--fg);
+      }
+      .v {
+        color: var(--muted);
+        margin-top: 6px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      details.card summary {
+        cursor: pointer;
+        user-select: none;
+      }
+      details.card[open] summary {
+        margin-bottom: 6px;
+      }
+      .tune-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      .tune-row output {
+        color: var(--fg);
+        font-variant-numeric: tabular-nums;
+      }
+      input[type="range"] {
+        width: 100%;
+        margin-top: 6px;
+      }
+      #start-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: var(--panel);
+        padding: 12px 0;
+        margin: 0 0 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      button {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(86, 183, 255, 0.18);
+        color: var(--fg);
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgba(86, 183, 255, 0.24);
+      }
+      #hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #hint code {
+        color: var(--fg);
+      }
+      .btn-mini {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(86, 183, 255, 0.14);
+        color: var(--fg);
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-weight: 650;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn-mini:hover {
+        background: rgba(86, 183, 255, 0.22);
+      }
+      .tune-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .tune-note {
+        margin-top: 6px;
+        color: rgba(231, 240, 255, 0.66);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .tune-saved {
+        margin-top: 6px;
+        color: rgba(231, 240, 255, 0.78);
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <canvas id="game" width="960" height="720" aria-label="Game canvas"></canvas>
+      <div id="hud-score" aria-live="polite">Score: 0</div>
+      <div id="menu">
+        <div id="panel">
+          <h1>Blasteroids</h1>
+          <p>
+            You don’t shoot the little rocks — you <span style="color: var(--accent)">collect</span> them. Fly near
+            <b>small asteroids</b> to attract them into your magnet ring, then burst them outward to smash big ones.
+          </p>
+          <div class="grid">
+            <div class="card">
+              <div class="k">Fly</div>
+              <div class="v"><b>W / ↑</b> thrust • <b>A,D / ←,→</b> rotate • <b>S / ↓</b> brake</div>
+            </div>
+            <div class="card">
+              <div class="k">Magnet + Burst</div>
+              <div class="v"><b>Space</b> or <b>Left Click</b> to burst attached rocks outward</div>
+            </div>
+            <div class="card">
+              <div class="k">Rules</div>
+              <div class="v"><b>Fast Small→(Med/Large)</b> fractures it • otherwise everything bounces</div>
+            </div>
+            <div class="card">
+              <div class="k">Utility</div>
+              <div class="v"><b>F</b> fullscreen • <b>R</b> restart</div>
+            </div>
+          </div>
+          <div id="start-row">
+            <button id="start-btn" type="button">Start</button>
+            <div id="hint">Tip: keep your <code>forcefield ring</code> just grazing the small rocks.</div>
+          </div>
+          <div class="grid" style="margin-top: 0">
+            <label class="card" style="display: block; cursor: pointer">
+              <div class="k">Debug</div>
+              <div class="v">
+                <input id="dbg-attract" type="checkbox" checked />
+                <span>Show attraction radius</span>
+              </div>
+            </label>
+            <label class="card" style="display: block; cursor: pointer">
+              <div class="k">Ship Collisions</div>
+              <div class="v">
+                <input id="ship-explode" type="checkbox" />
+                <span>Explode on med/large impact</span>
+              </div>
+            </label>
+          </div>
+          <details class="card" id="tuning" style="margin: 12px 0 0">
+            <summary class="k">Tuning (debug)</summary>
+            <div class="v">
+              <div class="tune-row">
+                <span>Gravity radius</span>
+                <span class="tune-actions">
+                  <output id="tune-attract-out">—</output>
+                  <button id="tune-attract-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-attract" type="range" min="160" max="420" step="1" />
+              <div class="tune-note">
+                How far away the ship can “pull” small rocks (and gems) toward it.
+                <div class="tune-saved">Saved default: <span id="tune-attract-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Forcefield radius</span>
+                <span class="tune-actions">
+                  <output id="tune-field-out">—</output>
+                  <button id="tune-field-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-field" type="range" min="60" max="220" step="1" />
+              <div class="tune-note">
+                The size of the ring around the ship where small rocks tend to settle and orbit.
+                <div class="tune-saved">Saved default: <span id="tune-field-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Gravity strength</span>
+                <span class="tune-actions">
+                  <output id="tune-gravity-out">—</output>
+                  <button id="tune-gravity-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-gravity" type="range" min="100000" max="3000000" step="25000" />
+              <div class="tune-note">
+                How strong the pull is once something is inside the gravity radius.
+                <div class="tune-saved">Saved default: <span id="tune-gravity-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Capture speed</span>
+                <span class="tune-actions">
+                  <output id="tune-capture-out">—</output>
+                  <button id="tune-capture-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-capture" type="range" min="120" max="700" step="10" />
+              <div class="tune-note">
+                If a rock is moving faster than this, the ring “capture” effect weakens so bursts can fling rocks out.
+                <div class="tune-saved">Saved default: <span id="tune-capture-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Burst speed</span>
+                <span class="tune-actions">
+                  <output id="tune-burst-out">—</output>
+                  <button id="tune-burst-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-burst" type="range" min="260" max="900" step="5" />
+              <div class="tune-note">
+                How fast attached rocks are launched when you burst.
+                <div class="tune-saved">Saved default: <span id="tune-burst-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Damage speed (small)</span>
+                <span class="tune-actions">
+                  <output id="tune-dmg-out">—</output>
+                  <button id="tune-dmg-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-dmg" type="range" min="200" max="900" step="10" />
+              <div class="tune-note">
+                How fast a small rock must be moving to count as “damaging” (and break on impact).
+                <div class="tune-saved">Saved default: <span id="tune-dmg-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Fracture speed</span>
+                <span class="tune-actions">
+                  <output id="tune-fracture-out">—</output>
+                  <button id="tune-fracture-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-fracture" type="range" min="150" max="700" step="10" />
+              <div class="tune-note">
+                How much impact speed is needed for a damaging small rock to fracture a medium/large rock.
+                <div class="tune-saved">Saved default: <span id="tune-fracture-default">—</span></div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <script src="./src/main.js"></script>
+  </body>
+</html>
