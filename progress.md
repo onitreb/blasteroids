@@ -22,3 +22,4 @@ Updates
 - Added per-slider “Set default” persistence for tuning via localStorage and added plain-English descriptions under each tuning slider.
 - Tweaked gem sizes (green baseline; red ~15% larger; blue ~30% larger) and increased gravity inside the forcefield ring (50% stronger) with extra damping to reduce “slip by” captures.
 - Added a debug tuning slider for ship thrust.
+- Added a debug tuning slider for inner ring gravity multiplier (how much stronger gravity becomes once inside the forcefield ring).

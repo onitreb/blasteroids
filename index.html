@@ -287,6 +287,19 @@
               </div>
 
               <div class="tune-row">
+                <span>Inner ring gravity</span>
+                <span class="tune-actions">
+                  <output id="tune-inner-grav-out">—</output>
+                  <button id="tune-inner-grav-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-inner-grav" type="range" min="1" max="4" step="0.05" />
+              <div class="tune-note">
+                Gravity multiplier inside the yellow forcefield ring (helps “catch” rocks and gems instead of letting them slip by).
+                <div class="tune-saved">Saved default: <span id="tune-inner-grav-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
                 <span>Capture speed</span>
                 <span class="tune-actions">
                   <output id="tune-capture-out">—</output>

@@ -1030,6 +1030,10 @@
   const tuneGravityOut = document.getElementById("tune-gravity-out");
   const tuneGravitySave = document.getElementById("tune-gravity-save");
   const tuneGravityDefault = document.getElementById("tune-gravity-default");
+  const tuneInnerGrav = document.getElementById("tune-inner-grav");
+  const tuneInnerGravOut = document.getElementById("tune-inner-grav-out");
+  const tuneInnerGravSave = document.getElementById("tune-inner-grav-save");
+  const tuneInnerGravDefault = document.getElementById("tune-inner-grav-default");
   const tuneCapture = document.getElementById("tune-capture");
   const tuneCaptureOut = document.getElementById("tune-capture-out");
   const tuneCaptureSave = document.getElementById("tune-capture-save");
@@ -1086,6 +1090,14 @@
       saveBtn: tuneGravitySave,
       savedOut: tuneGravityDefault,
       suffix: "",
+    },
+    {
+      key: "innerGravityMult",
+      input: tuneInnerGrav,
+      saveBtn: tuneInnerGravSave,
+      savedOut: tuneInnerGravDefault,
+      suffix: "",
+      format: (v) => `x${Number(v).toFixed(2)}`,
     },
     {
       key: "captureSpeed",
@@ -1188,7 +1200,10 @@
     const defaults = readTuningDefaultsFromStorage() || {};
     for (const f of TUNING_FIELDS) {
       const v = defaults[f.key];
-      if (Number.isFinite(v)) setOut(f.savedOut, v, f.suffix);
+      if (Number.isFinite(v)) {
+        if (f.format && f.savedOut) f.savedOut.textContent = f.format(v);
+        else setOut(f.savedOut, v, f.suffix);
+      }
       else if (f.savedOut) f.savedOut.textContent = "—";
     }
   }
@@ -1198,6 +1213,7 @@
     if (tuneAttract) tuneAttract.value = String(Math.round(p.attractRadius));
     if (tuneField) tuneField.value = String(Math.round(p.forceFieldRadius));
     if (tuneGravity) tuneGravity.value = String(Math.round(p.gravityK));
+    if (tuneInnerGrav) tuneInnerGrav.value = String(p.innerGravityMult);
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
@@ -1211,6 +1227,7 @@
     setOut(tuneAttractOut, readNum(tuneAttract, p.attractRadius), " px");
     setOut(tuneFieldOut, readNum(tuneField, p.forceFieldRadius), " px");
     setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
+    if (tuneInnerGravOut) tuneInnerGravOut.textContent = `x${readNum(tuneInnerGrav, p.innerGravityMult).toFixed(2)}`;
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
@@ -1225,6 +1242,7 @@
   bindTuneInput(tuneAttract);
   bindTuneInput(tuneField);
   bindTuneInput(tuneGravity);
+  bindTuneInput(tuneInnerGrav);
   bindTuneInput(tuneCapture);
   bindTuneInput(tuneBurst);
   bindTuneInput(tuneThrust);
@@ -1238,6 +1256,7 @@
     // Ensure the inner forcefield ring stays inside the outer gravity radius.
     p.forceFieldRadius = clamp(p.forceFieldRadius, 40, Math.max(60, p.attractRadius - 40));
     p.gravityK = readNum(tuneGravity, p.gravityK);
+    p.innerGravityMult = clamp(readNum(tuneInnerGrav, p.innerGravityMult), 1, 8);
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
