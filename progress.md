@@ -26,3 +26,4 @@ Updates
 - Added gem expiration: gems now expire after a tunable lifetime (default 6s) and strobe faster and faster before disappearing (Gem lifetime slider).
 - Updated gem expiry visuals: gems now *blink* (no gradual fade) with faster strobing near expiry.
 - Tuned gem blinking: no blinking for first half of gem life, then a smooth ramp up to a tunable max blink rate (Gem blink max slider, default 5/s).
+- Refactored gem blinking (KISS): blinking now uses an accumulated phase updated in `updateGems` so frequency ramps feel steady (no irregular flicker from time-based modulo with changing frequency).

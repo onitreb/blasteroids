@@ -308,7 +308,8 @@
         spinVel: (rng() * 2 - 1) * 2.8,
         ageSec: 0,
         ttlSec: Math.max(0.1, state.params.gemTtlSec || 6),
-        strobePhase: rng() * 10,
+        blinkPhase: rng(), // [0,1)
+        blinkVisible: true,
       });
     }
 
@@ -562,6 +563,21 @@
         if (g.ageSec >= g.ttlSec) {
           state.gems.splice(i, 1);
           continue;
+        }
+
+        // KISS blinking: no blink for first half of life; then steadily ramp blink frequency to max.
+        // Use an accumulated phase so changing frequency doesn't create irregular flicker.
+        const ttl = Math.max(0.001, g.ttlSec || 6);
+        const lifeT = clamp(g.ageSec / ttl, 0, 1);
+        if (lifeT < 0.5) {
+          g.blinkVisible = true;
+        } else {
+          const t = (lifeT - 0.5) / 0.5; // 0..1 during the second half
+          const s = t * t * (3 - 2 * t); // smoothstep
+          const maxHz = clamp(state.params.gemBlinkMaxHz || 5, 0.25, 12);
+          const hz = lerp(1, maxHz, s);
+          g.blinkPhase = (g.blinkPhase + dt * hz) % 1;
+          g.blinkVisible = g.blinkPhase < 0.5;
         }
 
         const toShip = sub(ship.pos, g.pos);
@@ -850,21 +866,9 @@
 
       // Gems (dropped from broken small asteroids).
       for (const g of state.gems) {
+        if (!g.blinkVisible) continue;
         const [rr, gg, bb] = gemRgb(g.kind);
         const r = g.radius;
-        const ttl = Math.max(0.001, g.ttlSec || 6);
-        const lifeT = clamp(g.ageSec / ttl, 0, 1);
-
-        // Blink (no fade): no blinking for the first half, then gradually ramp blink frequency + reduce duty cycle.
-        const blinkStart = 0.5;
-        const rawT = clamp((lifeT - blinkStart) / Math.max(1e-6, 1 - blinkStart), 0, 1);
-        const blinkT = rawT * rawT * (3 - 2 * rawT); // smoothstep
-        const maxHz = clamp(state.params.gemBlinkMaxHz || 5, 0.25, 12);
-        const freq = lerp(0.6, maxHz, blinkT); // Hz
-        const duty = lerp(1.0, 0.35, blinkT); // fraction of time visible
-        const phase = ((state.time + g.strobePhase) * freq) % 1;
-        const visible = lifeT < blinkStart ? true : phase < duty;
-        if (!visible) continue;
         ctx.save();
         ctx.translate(g.pos.x, g.pos.y);
 
