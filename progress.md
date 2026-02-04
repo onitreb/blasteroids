@@ -24,3 +24,4 @@ Updates
 - Added a debug tuning slider for ship thrust.
 - Added a debug tuning slider for inner ring gravity multiplier (how much stronger gravity becomes once inside the forcefield ring).
 - Added gem expiration: gems now expire after a tunable lifetime (default 6s) and strobe faster and faster before disappearing (Gem lifetime slider).
+- Updated gem expiry visuals: gems now *blink* (no gradual fade) with faster strobing near expiry.

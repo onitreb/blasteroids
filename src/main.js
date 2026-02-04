@@ -853,27 +853,32 @@
         const r = g.radius;
         const ttl = Math.max(0.001, g.ttlSec || 6);
         const lifeT = clamp(g.ageSec / ttl, 0, 1);
-        // Strobe frequency increases as the gem nears expiry.
-        const freq = lerp(2, 28, lifeT);
-        const strobe = 0.5 + 0.5 * Math.sin((state.time + g.strobePhase) * freq * Math.PI * 2);
-        const intensity = lerp(0.92, 0.10, lifeT) * lerp(1, strobe, clamp((lifeT - 0.25) / 0.75, 0, 1));
+
+        // Blink (no fade): near expiry, strobe faster and faster until vanishing.
+        const blinkStart = 0.35;
+        const blinkT = clamp((lifeT - blinkStart) / Math.max(1e-6, 1 - blinkStart), 0, 1);
+        const freq = lerp(2, 26, blinkT); // Hz
+        const duty = lerp(0.70, 0.22, blinkT); // fraction of time visible
+        const phase = ((state.time + g.strobePhase) * freq) % 1;
+        const visible = lifeT < blinkStart ? true : phase < duty;
+        if (!visible) continue;
         ctx.save();
         ctx.translate(g.pos.x, g.pos.y);
 
         // Glow
         ctx.globalCompositeOperation = "lighter";
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.20 * intensity).toFixed(3)})`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.20)`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 2.8, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.14 * intensity).toFixed(3)})`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.14)`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 4.2, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
 
         // Core
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.95 * intensity).toFixed(3)})`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.95)`;
         if (g.kind === "diamond") {
           ctx.rotate(g.spin);
           ctx.beginPath();
