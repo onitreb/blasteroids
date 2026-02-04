@@ -18,3 +18,7 @@ Updates
 - Updated attraction to a gravity-well model (stronger when closer), increased attraction radius +5%, increased burst speed +5%, and added simple KISS explosion visuals on burst + collisions. Burst-thrown smalls now self-destruct on impact; they fracture large→2 med and med→2 small (when fast enough).
 - Removed the “time window” for fast small impacts: whether a small self-destructs / fractures now depends on current impact speed (velocity-based), and smalls attach to the inner forcefield ring (not the outer attraction radius).
 - Clarified visuals + tuning: outer dashed blue ring = gravity radius (debug), inner yellow ring = forcefield surface that smalls stick to; added menu sliders (gravity/burst/capture/damage/fracture) and made ring “capture” forces fade out for high-speed smalls so bursts actually fling outward.
+- Added gem drops + scoring: every broken small asteroid spawns a gem (emerald/ruby/diamond at 50%/40%/10%), gems glow and get pulled in/absorbed by the ship for points; score also shown in an HTML HUD overlay.
+- Added per-slider “Set default” persistence for tuning via localStorage and added plain-English descriptions under each tuning slider.
+- Tweaked gem sizes (green baseline; red ~15% larger; blue ~30% larger) and increased gravity inside the forcefield ring (50% stronger) with extra damping to reduce “slip by” captures.
+- Added a debug tuning slider for ship thrust.

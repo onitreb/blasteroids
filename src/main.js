@@ -195,6 +195,8 @@
         forceFieldRadius: 75,
         gravityK: 1200000, // gravity-well strength (tuned)
         gravitySoftening: 70,
+        innerGravityMult: 1.5, // extra gravity inside the forcefield ring
+        innerDrag: 4.0, // damp velocity inside ring to reduce "slingshot" escapes
         ringK: 6.5, // pulls smalls toward the ring surface
         ringRadialDamp: 6.5,
         captureSpeed: 360, // ring forces fade out by this speed
@@ -282,9 +284,16 @@
       return 10;
     }
 
+    function gemRadius(kind) {
+      // Baseline size is emerald. Ruby is ~15% larger; diamond is ~30% larger.
+      if (kind === "emerald") return 7;
+      if (kind === "ruby") return 8;
+      return 9; // diamond
+    }
+
     function spawnGem(pos, velHint = vec(0, 0)) {
       const kind = rollGemKind();
-      const radius = kind === "diamond" ? 8 : 7;
+      const radius = gemRadius(kind);
       const jitter = vec((rng() * 2 - 1) * 50, (rng() * 2 - 1) * 50);
       state.gems.push({
         id: `gem-${Math.floor(rng() * 1e9)}`,
@@ -499,7 +508,15 @@
             // Gravity well: stronger as you get closer (1 / (d^2 + soft^2)).
             const soft = state.params.gravitySoftening;
             const grav = state.params.gravityK / (d2 + soft * soft);
-            a.vel = add(a.vel, mul(dirIn, grav * dt));
+            const insideRing = d < state.params.forceFieldRadius;
+            const innerMult = insideRing ? state.params.innerGravityMult : 1;
+            const innerT = insideRing ? clamp(1 - d / Math.max(1, state.params.forceFieldRadius), 0, 1) : 0;
+            a.vel = add(a.vel, mul(dirIn, grav * innerMult * dt));
+
+            // Extra damping inside the ring to help captures settle and reduce slingshot escapes.
+            if (innerT > 0) {
+              a.vel = mul(a.vel, Math.max(0, 1 - state.params.innerDrag * innerT * dt));
+            }
 
             // Forcefield surface: pull toward r = forceFieldRadius and repel inside it.
             const err = d - state.params.forceFieldRadius; // + outside, - inside
@@ -541,12 +558,14 @@
           const dirIn = mul(toShip, 1 / d);
           const soft = state.params.gravitySoftening;
           const grav = state.params.gravityK / (d2 + soft * soft);
-          g.vel = add(g.vel, mul(dirIn, grav * dt));
+          const insideRing = d2 < fieldR2;
+          const innerMult = insideRing ? state.params.innerGravityMult : 1;
+          const innerT = insideRing ? clamp(1 - d / Math.max(1, fieldR), 0, 1) : 0;
+          g.vel = add(g.vel, mul(dirIn, grav * innerMult * dt));
 
-          if (d2 < fieldR2) {
-            // Extra "suck" and damping inside the forcefield ring so gems reliably get absorbed.
-            g.vel = add(g.vel, mul(dirIn, grav * dt * 0.85));
-            g.vel = mul(g.vel, Math.max(0, 1 - 3.2 * dt));
+          // Inside the ring, damp so gems "stick" and get absorbed instead of slingshotting out.
+          if (innerT > 0) {
+            g.vel = mul(g.vel, Math.max(0, 1 - state.params.innerDrag * 1.25 * innerT * dt));
           }
         }
 
@@ -1019,6 +1038,10 @@
   const tuneBurstOut = document.getElementById("tune-burst-out");
   const tuneBurstSave = document.getElementById("tune-burst-save");
   const tuneBurstDefault = document.getElementById("tune-burst-default");
+  const tuneThrust = document.getElementById("tune-thrust");
+  const tuneThrustOut = document.getElementById("tune-thrust-out");
+  const tuneThrustSave = document.getElementById("tune-thrust-save");
+  const tuneThrustDefault = document.getElementById("tune-thrust-default");
   const tuneDmg = document.getElementById("tune-dmg");
   const tuneDmgOut = document.getElementById("tune-dmg-out");
   const tuneDmgSave = document.getElementById("tune-dmg-save");
@@ -1077,6 +1100,13 @@
       saveBtn: tuneBurstSave,
       savedOut: tuneBurstDefault,
       suffix: " px/s",
+    },
+    {
+      key: "shipThrust",
+      input: tuneThrust,
+      saveBtn: tuneThrustSave,
+      savedOut: tuneThrustDefault,
+      suffix: " px/s^2",
     },
     {
       key: "smallDamageSpeedMin",
@@ -1170,6 +1200,7 @@
     if (tuneGravity) tuneGravity.value = String(Math.round(p.gravityK));
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
+    if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
     if (tuneDmg) tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
     if (tuneFracture) tuneFracture.value = String(Math.round(p.fractureImpactSpeed));
     syncTuningUiLabels();
@@ -1182,6 +1213,7 @@
     setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
+    setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
     setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
     setOut(tuneFractureOut, readNum(tuneFracture, p.fractureImpactSpeed), " px/s");
   }
@@ -1195,6 +1227,7 @@
   bindTuneInput(tuneGravity);
   bindTuneInput(tuneCapture);
   bindTuneInput(tuneBurst);
+  bindTuneInput(tuneThrust);
   bindTuneInput(tuneDmg);
   bindTuneInput(tuneFracture);
 
@@ -1207,6 +1240,7 @@
     p.gravityK = readNum(tuneGravity, p.gravityK);
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
+    p.shipThrust = readNum(tuneThrust, p.shipThrust);
     p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
     p.fractureImpactSpeed = readNum(tuneFracture, p.fractureImpactSpeed);
     syncTuningUiFromParams();

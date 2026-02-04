@@ -313,6 +313,19 @@
               </div>
 
               <div class="tune-row">
+                <span>Thrust</span>
+                <span class="tune-actions">
+                  <output id="tune-thrust-out">—</output>
+                  <button id="tune-thrust-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-thrust" type="range" min="120" max="520" step="5" />
+              <div class="tune-note">
+                How quickly the ship accelerates while holding thrust.
+                <div class="tune-saved">Saved default: <span id="tune-thrust-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
                 <span>Damage speed (small)</span>
                 <span class="tune-actions">
                   <output id="tune-dmg-out">—</output>
