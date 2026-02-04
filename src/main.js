@@ -222,6 +222,7 @@
         smallDamageSpeedMin: 420,
 
         gemTtlSec: 6,
+        gemBlinkMaxHz: 5,
       },
     };
 
@@ -854,11 +855,13 @@
         const ttl = Math.max(0.001, g.ttlSec || 6);
         const lifeT = clamp(g.ageSec / ttl, 0, 1);
 
-        // Blink (no fade): near expiry, strobe faster and faster until vanishing.
-        const blinkStart = 0.35;
-        const blinkT = clamp((lifeT - blinkStart) / Math.max(1e-6, 1 - blinkStart), 0, 1);
-        const freq = lerp(2, 26, blinkT); // Hz
-        const duty = lerp(0.70, 0.22, blinkT); // fraction of time visible
+        // Blink (no fade): no blinking for the first half, then gradually ramp blink frequency + reduce duty cycle.
+        const blinkStart = 0.5;
+        const rawT = clamp((lifeT - blinkStart) / Math.max(1e-6, 1 - blinkStart), 0, 1);
+        const blinkT = rawT * rawT * (3 - 2 * rawT); // smoothstep
+        const maxHz = clamp(state.params.gemBlinkMaxHz || 5, 0.25, 12);
+        const freq = lerp(0.6, maxHz, blinkT); // Hz
+        const duty = lerp(1.0, 0.35, blinkT); // fraction of time visible
         const phase = ((state.time + g.strobePhase) * freq) % 1;
         const visible = lifeT < blinkStart ? true : phase < duty;
         if (!visible) continue;
@@ -1061,6 +1064,10 @@
   const tuneGemTtlOut = document.getElementById("tune-gem-ttl-out");
   const tuneGemTtlSave = document.getElementById("tune-gem-ttl-save");
   const tuneGemTtlDefault = document.getElementById("tune-gem-ttl-default");
+  const tuneGemBlink = document.getElementById("tune-gem-blink");
+  const tuneGemBlinkOut = document.getElementById("tune-gem-blink-out");
+  const tuneGemBlinkSave = document.getElementById("tune-gem-blink-save");
+  const tuneGemBlinkDefault = document.getElementById("tune-gem-blink-default");
   const tuneCapture = document.getElementById("tune-capture");
   const tuneCaptureOut = document.getElementById("tune-capture-out");
   const tuneCaptureSave = document.getElementById("tune-capture-save");
@@ -1133,6 +1140,14 @@
       savedOut: tuneGemTtlDefault,
       suffix: "",
       format: (v) => `${Number(v).toFixed(1)} s`,
+    },
+    {
+      key: "gemBlinkMaxHz",
+      input: tuneGemBlink,
+      saveBtn: tuneGemBlinkSave,
+      savedOut: tuneGemBlinkDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(1)} /s`,
     },
     {
       key: "captureSpeed",
@@ -1250,6 +1265,7 @@
     if (tuneGravity) tuneGravity.value = String(Math.round(p.gravityK));
     if (tuneInnerGrav) tuneInnerGrav.value = String(p.innerGravityMult);
     if (tuneGemTtl) tuneGemTtl.value = String(p.gemTtlSec);
+    if (tuneGemBlink) tuneGemBlink.value = String(p.gemBlinkMaxHz);
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
@@ -1265,6 +1281,7 @@
     setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
     if (tuneInnerGravOut) tuneInnerGravOut.textContent = `x${readNum(tuneInnerGrav, p.innerGravityMult).toFixed(2)}`;
     if (tuneGemTtlOut) tuneGemTtlOut.textContent = `${readNum(tuneGemTtl, p.gemTtlSec).toFixed(1)} s`;
+    if (tuneGemBlinkOut) tuneGemBlinkOut.textContent = `${readNum(tuneGemBlink, p.gemBlinkMaxHz).toFixed(1)} /s`;
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
@@ -1281,6 +1298,7 @@
   bindTuneInput(tuneGravity);
   bindTuneInput(tuneInnerGrav);
   bindTuneInput(tuneGemTtl);
+  bindTuneInput(tuneGemBlink);
   bindTuneInput(tuneCapture);
   bindTuneInput(tuneBurst);
   bindTuneInput(tuneThrust);
@@ -1296,6 +1314,7 @@
     p.gravityK = readNum(tuneGravity, p.gravityK);
     p.innerGravityMult = clamp(readNum(tuneInnerGrav, p.innerGravityMult), 1, 8);
     p.gemTtlSec = clamp(readNum(tuneGemTtl, p.gemTtlSec), 0.5, 60);
+    p.gemBlinkMaxHz = clamp(readNum(tuneGemBlink, p.gemBlinkMaxHz), 0.25, 12);
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
