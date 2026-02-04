@@ -300,6 +300,19 @@
               </div>
 
               <div class="tune-row">
+                <span>Gem lifetime</span>
+                <span class="tune-actions">
+                  <output id="tune-gem-ttl-out">—</output>
+                  <button id="tune-gem-ttl-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-gem-ttl" type="range" min="1" max="20" step="0.5" />
+              <div class="tune-note">
+                How long gems stay on the field before expiring (they strobe faster and faster as they’re about to vanish).
+                <div class="tune-saved">Saved default: <span id="tune-gem-ttl-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
                 <span>Capture speed</span>
                 <span class="tune-actions">
                   <output id="tune-capture-out">—</output>

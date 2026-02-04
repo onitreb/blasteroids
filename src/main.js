@@ -220,6 +220,8 @@
 
         // Damage model for fast smalls (velocity-based; no time limit).
         smallDamageSpeedMin: 420,
+
+        gemTtlSec: 6,
       },
     };
 
@@ -303,6 +305,9 @@
         radius,
         spin: rng() * Math.PI * 2,
         spinVel: (rng() * 2 - 1) * 2.8,
+        ageSec: 0,
+        ttlSec: Math.max(0.1, state.params.gemTtlSec || 6),
+        strobePhase: rng() * 10,
       });
     }
 
@@ -550,7 +555,14 @@
       const fieldR = state.params.forceFieldRadius;
       const fieldR2 = fieldR * fieldR;
 
-      for (const g of state.gems) {
+      for (let i = state.gems.length - 1; i >= 0; i--) {
+        const g = state.gems[i];
+        g.ageSec += dt;
+        if (g.ageSec >= g.ttlSec) {
+          state.gems.splice(i, 1);
+          continue;
+        }
+
         const toShip = sub(ship.pos, g.pos);
         const d2 = len2(toShip);
         if (d2 < attractR2) {
@@ -839,23 +851,29 @@
       for (const g of state.gems) {
         const [rr, gg, bb] = gemRgb(g.kind);
         const r = g.radius;
+        const ttl = Math.max(0.001, g.ttlSec || 6);
+        const lifeT = clamp(g.ageSec / ttl, 0, 1);
+        // Strobe frequency increases as the gem nears expiry.
+        const freq = lerp(2, 28, lifeT);
+        const strobe = 0.5 + 0.5 * Math.sin((state.time + g.strobePhase) * freq * Math.PI * 2);
+        const intensity = lerp(0.92, 0.10, lifeT) * lerp(1, strobe, clamp((lifeT - 0.25) / 0.75, 0, 1));
         ctx.save();
         ctx.translate(g.pos.x, g.pos.y);
 
         // Glow
         ctx.globalCompositeOperation = "lighter";
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.20)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.20 * intensity).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 2.8, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.14)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.14 * intensity).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 4.2, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
 
         // Core
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.95)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.95 * intensity).toFixed(3)})`;
         if (g.kind === "diamond") {
           ctx.rotate(g.spin);
           ctx.beginPath();
@@ -1034,6 +1052,10 @@
   const tuneInnerGravOut = document.getElementById("tune-inner-grav-out");
   const tuneInnerGravSave = document.getElementById("tune-inner-grav-save");
   const tuneInnerGravDefault = document.getElementById("tune-inner-grav-default");
+  const tuneGemTtl = document.getElementById("tune-gem-ttl");
+  const tuneGemTtlOut = document.getElementById("tune-gem-ttl-out");
+  const tuneGemTtlSave = document.getElementById("tune-gem-ttl-save");
+  const tuneGemTtlDefault = document.getElementById("tune-gem-ttl-default");
   const tuneCapture = document.getElementById("tune-capture");
   const tuneCaptureOut = document.getElementById("tune-capture-out");
   const tuneCaptureSave = document.getElementById("tune-capture-save");
@@ -1098,6 +1120,14 @@
       savedOut: tuneInnerGravDefault,
       suffix: "",
       format: (v) => `x${Number(v).toFixed(2)}`,
+    },
+    {
+      key: "gemTtlSec",
+      input: tuneGemTtl,
+      saveBtn: tuneGemTtlSave,
+      savedOut: tuneGemTtlDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(1)} s`,
     },
     {
       key: "captureSpeed",
@@ -1214,6 +1244,7 @@
     if (tuneField) tuneField.value = String(Math.round(p.forceFieldRadius));
     if (tuneGravity) tuneGravity.value = String(Math.round(p.gravityK));
     if (tuneInnerGrav) tuneInnerGrav.value = String(p.innerGravityMult);
+    if (tuneGemTtl) tuneGemTtl.value = String(p.gemTtlSec);
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
@@ -1228,6 +1259,7 @@
     setOut(tuneFieldOut, readNum(tuneField, p.forceFieldRadius), " px");
     setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
     if (tuneInnerGravOut) tuneInnerGravOut.textContent = `x${readNum(tuneInnerGrav, p.innerGravityMult).toFixed(2)}`;
+    if (tuneGemTtlOut) tuneGemTtlOut.textContent = `${readNum(tuneGemTtl, p.gemTtlSec).toFixed(1)} s`;
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
@@ -1243,6 +1275,7 @@
   bindTuneInput(tuneField);
   bindTuneInput(tuneGravity);
   bindTuneInput(tuneInnerGrav);
+  bindTuneInput(tuneGemTtl);
   bindTuneInput(tuneCapture);
   bindTuneInput(tuneBurst);
   bindTuneInput(tuneThrust);
@@ -1257,6 +1290,7 @@
     p.forceFieldRadius = clamp(p.forceFieldRadius, 40, Math.max(60, p.attractRadius - 40));
     p.gravityK = readNum(tuneGravity, p.gravityK);
     p.innerGravityMult = clamp(readNum(tuneInnerGrav, p.innerGravityMult), 1, 8);
+    p.gemTtlSec = clamp(readNum(tuneGemTtl, p.gemTtlSec), 0.5, 60);
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
