@@ -184,6 +184,11 @@
         w: width,
         h: height,
       },
+      worldCells: {
+        sizePx: 320,
+        asteroidCounts: new Map(),
+        activeKeys: new Set(),
+      },
       // Camera scaffold (phase LA-01). Render transform changes come later.
       camera: {
         x: 0,
@@ -284,6 +289,41 @@
       return Math.max(1, state.params.largeCount + state.params.medCount + state.params.smallCount);
     }
 
+    function worldCellCoordsForPos(pos) {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const s = Math.max(64, state.worldCells.sizePx || 320);
+      const cx = Math.floor((pos.x + halfW) / s);
+      const cy = Math.floor((pos.y + halfH) / s);
+      return { cx, cy };
+    }
+
+    function worldCellKey(cx, cy) {
+      return `${cx},${cy}`;
+    }
+
+    function rebuildWorldCellIndex() {
+      const counts = state.worldCells.asteroidCounts;
+      counts.clear();
+      for (const a of state.asteroids) {
+        const { cx, cy } = worldCellCoordsForPos(a.pos);
+        const key = worldCellKey(cx, cy);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+
+      const s = Math.max(64, state.worldCells.sizePx || 320);
+      const radiusX = Math.ceil((state.view.w * 0.5) / s) + 1;
+      const radiusY = Math.ceil((state.view.h * 0.5) / s) + 1;
+      const center = worldCellCoordsForPos(vec(state.camera.x, state.camera.y));
+      const active = new Set();
+      for (let dy = -radiusY; dy <= radiusY; dy++) {
+        for (let dx = -radiusX; dx <= radiusX; dx++) {
+          active.add(worldCellKey(center.cx + dx, center.cy + dy));
+        }
+      }
+      state.worldCells.activeKeys = active;
+    }
+
     function asteroidPopulationBudget() {
       const seed = asteroidSeedCount();
       const viewArea = Math.max(1, state.view.w * state.view.h);
@@ -343,6 +383,12 @@
         p.x = clamp(p.x, -halfWorldW + radius, halfWorldW - radius);
         p.y = clamp(p.y, -halfWorldH + radius, halfWorldH - radius);
 
+        const cell = worldCellCoordsForPos(p);
+        const cellKey = worldCellKey(cell.cx, cell.cy);
+        if (!state.worldCells.activeKeys.has(cellKey)) continue;
+        const cellCount = state.worldCells.asteroidCounts.get(cellKey) || 0;
+        if (cellCount >= 10) continue;
+
         const shipClear = len2(sub(p, state.ship.pos)) > 260 * 260;
         if (!shipClear) continue;
 
@@ -364,6 +410,7 @@
         const speed = speedBase * (0.85 + rng() * 0.35);
         const v = mul(dir, speed);
         state.asteroids.push(makeAsteroid(size, vec(p.x, p.y), v));
+        state.worldCells.asteroidCounts.set(cellKey, cellCount + 1);
         return true;
       }
 
@@ -675,6 +722,7 @@
       spawn("large", state.params.largeCount);
       spawn("med", state.params.medCount);
       spawn("small", state.params.smallCount);
+      rebuildWorldCellIndex();
     }
 
     function startGame() {
@@ -1085,6 +1133,54 @@
       b.vel = add(b.vel, mul(impulse, invB));
     }
 
+    function forEachNearbyAsteroidPair(fn) {
+      const cellSize = 180;
+      const buckets = new Map();
+      const asteroids = state.asteroids;
+      for (let i = 0; i < asteroids.length; i++) {
+        const a = asteroids[i];
+        if (a.attached) continue;
+        const cx = Math.floor(a.pos.x / cellSize);
+        const cy = Math.floor(a.pos.y / cellSize);
+        const key = `${cx},${cy}`;
+        const list = buckets.get(key);
+        if (list) list.push(i);
+        else buckets.set(key, [i]);
+      }
+
+      const offsets = [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+        [1, -1],
+      ];
+
+      for (const [key, listA] of buckets) {
+        const parts = key.split(",");
+        const cx = Number(parts[0]);
+        const cy = Number(parts[1]);
+        for (const [dx, dy] of offsets) {
+          const nk = `${cx + dx},${cy + dy}`;
+          const listB = buckets.get(nk);
+          if (!listB) continue;
+          if (dx === 0 && dy === 0) {
+            for (let ia = 0; ia < listA.length; ia++) {
+              for (let ib = ia + 1; ib < listA.length; ib++) {
+                fn(listA[ia], listA[ib]);
+              }
+            }
+          } else {
+            for (let ia = 0; ia < listA.length; ia++) {
+              for (let ib = 0; ib < listB.length; ib++) {
+                fn(listA[ia], listB[ib]);
+              }
+            }
+          }
+        }
+      }
+    }
+
     function handleCollisions() {
       if (state.mode !== "playing") return;
 
@@ -1113,63 +1209,59 @@
       // Asteroid vs asteroid.
       const toRemove = new Set();
       const toAdd = [];
-      const count = state.asteroids.length;
-      for (let i = 0; i < count; i++) {
+      forEachNearbyAsteroidPair((i, j) => {
         const a = state.asteroids[i];
-        if (a.attached || toRemove.has(a.id)) continue;
-        for (let j = i + 1; j < count; j++) {
-          const b = state.asteroids[j];
-          if (b.attached || toRemove.has(b.id)) continue;
-          const hit = circleCollide(a, b);
-          if (!hit) continue;
+        const b = state.asteroids[j];
+        if (!a || !b) return;
+        if (a.attached || b.attached) return;
+        if (toRemove.has(a.id) || toRemove.has(b.id)) return;
 
-          const rv = sub(b.vel, a.vel);
-          const velAlongNormal = dot(rv, hit.n);
-          const impactSpeed = -velAlongNormal;
-          const relSpeed = len(rv);
+        const hit = circleCollide(a, b);
+        if (!hit) return;
 
-          const aDamaging = isDamagingSmall(a, relSpeed);
-          const bDamaging = isDamagingSmall(b, relSpeed);
-          if (aDamaging || bDamaging) {
-            const damagingSmall = aDamaging ? a : b;
-            const other = damagingSmall === a ? b : a;
+        const rv = sub(b.vel, a.vel);
+        const velAlongNormal = dot(rv, hit.n);
+        const impactSpeed = -velAlongNormal;
+        const relSpeed = len(rv);
 
-            // The fast small self-destructs on any impact.
-            breakSmallAsteroid(damagingSmall, { velHint: damagingSmall.vel, removeSet: toRemove });
+        const aDamaging = isDamagingSmall(a, relSpeed);
+        const bDamaging = isDamagingSmall(b, relSpeed);
+        if (aDamaging || bDamaging) {
+          const damagingSmall = aDamaging ? a : b;
+          const other = damagingSmall === a ? b : a;
 
-            if (other.size === "small") {
-              // At blast speeds: annihilate both smalls.
-              breakSmallAsteroid(other, { velHint: other.vel, removeSet: toRemove });
-              state.score += 1;
-            } else if (relSpeed >= state.params.fractureImpactSpeed) {
-              // Break med/large into two pieces (large->2 med, med->2 small).
-              const impactDir = damagingSmall === a ? hit.n : mul(hit.n, -1);
-              const frags = fractureAsteroid(other, impactDir, relSpeed);
-              if (frags) {
-                toRemove.add(other.id);
-                const room = Math.max(
-                  0,
-                  state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size),
-                );
-                toAdd.push(...frags.slice(0, room));
-              }
-            } else {
-              // Not enough energy to fracture: just a visible hit + shove.
-              spawnExplosion(other.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
-              other.vel = add(other.vel, mul(hit.n, Math.min(180, relSpeed * 0.5)));
+          // The fast small self-destructs on any impact.
+          breakSmallAsteroid(damagingSmall, { velHint: damagingSmall.vel, removeSet: toRemove });
+
+          if (other.size === "small") {
+            // At blast speeds: annihilate both smalls.
+            breakSmallAsteroid(other, { velHint: other.vel, removeSet: toRemove });
+            state.score += 1;
+          } else if (relSpeed >= state.params.fractureImpactSpeed) {
+            // Break med/large into two pieces (large->2 med, med->2 small).
+            const impactDir = damagingSmall === a ? hit.n : mul(hit.n, -1);
+            const frags = fractureAsteroid(other, impactDir, relSpeed);
+            if (frags) {
+              toRemove.add(other.id);
+              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
+              toAdd.push(...frags.slice(0, room));
             }
-            continue;
+          } else {
+            // Not enough energy to fracture: just a visible hit + shove.
+            spawnExplosion(other.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
+            other.vel = add(other.vel, mul(hit.n, Math.min(180, relSpeed * 0.5)));
           }
-
-          if (relSpeed > 190 && (a.hitFxT <= 0 || b.hitFxT <= 0)) {
-            const mid = mul(add(a.pos, b.pos), 0.5);
-            spawnExplosion(mid, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 16, ttl: 0.12 });
-            a.hitFxT = 0.08;
-            b.hitFxT = 0.08;
-          }
-          resolveElasticCollision(a, b, hit.n, hit.penetration);
+          return;
         }
-      }
+
+        if (relSpeed > 190 && (a.hitFxT <= 0 || b.hitFxT <= 0)) {
+          const mid = mul(add(a.pos, b.pos), 0.5);
+          spawnExplosion(mid, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 16, ttl: 0.12 });
+          a.hitFxT = 0.08;
+          b.hitFxT = 0.08;
+        }
+        resolveElasticCollision(a, b, hit.n, hit.penetration);
+      });
 
       if (toRemove.size) {
         state.asteroids = state.asteroids.filter((a) => !toRemove.has(a.id));
@@ -1201,6 +1293,7 @@
       handleGemShipCollisions();
       handleSaucerLaserShipCollisions();
       handleCollisions();
+      rebuildWorldCellIndex();
       maintainAsteroidPopulation(dt);
     }
 
@@ -1503,6 +1596,11 @@
         mode: state.mode,
         view: { w: state.view.w, h: state.view.h },
         world: { w: state.world.w, h: state.world.h },
+        world_cells: {
+          size_px: state.worldCells.sizePx,
+          active_count: state.worldCells.activeKeys.size,
+          indexed_asteroid_cells: state.worldCells.asteroidCounts.size,
+        },
         camera: {
           x: Math.round(state.camera.x),
           y: Math.round(state.camera.y),

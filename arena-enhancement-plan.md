@@ -35,8 +35,8 @@ Scope: Convert the current viewport-sized world into a larger arena with camera 
 | LA-07 | Refactor asteroid/gem/saucer spawn to world-aware utilities | DONE | Spawn/despawn bounds now rely on `state.world` and world-space camera context. |
 | LA-08 | Add off-screen spawning relative to camera/player region | DONE | Added ambient asteroid spawning from off-screen sides around camera. |
 | LA-09 | Replace fixed-count behavior with min/target/max density budget | DONE | Added dynamic asteroid population budget (`min/target/max`) with timed replenishment. |
-| LA-10 | Add world cell/chunk index for spawning and bookkeeping | NOT_STARTED | Foundation for multiplayer region ownership. |
-| LA-11 | Add broadphase collision partitioning (spatial hash/grid) | NOT_STARTED | Reduce collision checks from global all-pairs. |
+| LA-10 | Add world cell/chunk index for spawning and bookkeeping | DONE | Added per-cell asteroid index and active camera-neighborhood cells; spawn logic now skips overcrowded/inactive cells. |
+| LA-11 | Add broadphase collision partitioning (spatial hash/grid) | DONE | Replaced asteroid global pair scan with spatial-hash nearby-pair iteration (`forEachNearbyAsteroidPair`). |
 | LA-12 | Update debug export (`render_game_to_text`) for world/camera metadata | DONE | Added `world` and `camera` metadata and corrected coordinate system text. |
 | LA-13 | Playtest + tuning pass (camera feel, spawn rates, edge behavior) | IN_PROGRESS | Browser-validated camera mode toggle and world scale; further tuning still pending. |
 | LA-14 | Documentation update (`README.md`, controls/behavior notes) | NOT_STARTED | Explain new arena/camera behavior and settings. |
@@ -60,6 +60,9 @@ Scope: Convert the current viewport-sized world into a larger arena with camera 
 | 2026-02-06 | Adjusted arena behavior per design direction: removed asteroid/gem wall-bounce and switched to out-of-bounds despawn. Validation: `node --check src/main.js` passed. |
 | 2026-02-06 | Added menu controls for `centered` vs `deadzone` camera mode and world-size scaling (1x..4x), wired via new `setArenaConfig`/`applyWorldScale` path. Validation: `node --check src/main.js` passed. |
 | 2026-02-06 | Browser validation for new controls: setting `Dead-zone pan` + `2.00x` correctly produced `camera.mode=deadzone` and doubled world dims. Movement confirmed dead-zone lag then camera pan. Switching to `centered` mode made camera track ship center (subject to world clamp). No console errors. |
+| 2026-02-06 | Completed LA-10 small slice: added world cell index (`worldCells`) and active camera-neighborhood cell set; asteroid replenish now avoids inactive and already-dense cells. Validation: `node --check src/main.js` passed. |
+| 2026-02-06 | Completed LA-11 small slice: added spatial-hash broadphase for asteroid-vs-asteroid collision candidate pairs. Validation: `node --check src/main.js` passed. |
+| 2026-02-06 | Browser validation for LA-10/LA-11: dead-zone + 2x arena ran deterministic movement/simulation bursts without console errors. `world_cells` telemetry stayed populated/consistent, asteroid population remained stable under long simulation, and collision-heavy burst behavior remained functional (score/counts updated as expected). |
 
 ## Next Step
-- Start `LA-10` by introducing a world cell/chunk index for spawn bookkeeping and future multiplayer compatibility.
+- Continue LA-13 tuning pass (camera feel + spawn rates) and update README docs (LA-14) after next browser validation window.
