@@ -61,16 +61,6 @@
     return a;
   }
 
-  function wrapPos(p, halfW, halfH) {
-    let x = p.x;
-    let y = p.y;
-    if (x < -halfW) x += 2 * halfW;
-    if (x > halfW) x -= 2 * halfW;
-    if (y < -halfH) y += 2 * halfH;
-    if (y > halfH) y -= 2 * halfH;
-    return { x, y };
-  }
-
   function seededRng(seed = 0x12345678) {
     let s = seed >>> 0;
     return () => {
@@ -165,8 +155,12 @@
       asteroids: [],
       gems: [],
       effects: [],
+      saucer: null,
+      saucerLasers: [],
+      saucerSpawnT: 0,
+      asteroidSpawnT: 0,
       score: 0,
-      gemsCollected: { diamond: 0, ruby: 0, emerald: 0 },
+      gemsCollected: { diamond: 0, ruby: 0, emerald: 0, gold: 0 },
       burstCooldown: 0,
       blastPulseT: 0,
       settings: {
@@ -183,6 +177,20 @@
       view: {
         w: width,
         h: height,
+      },
+      // Large-arena scaffold (phase LA-01). Kept equal to view for now.
+      world: {
+        scale: 1,
+        w: width,
+        h: height,
+      },
+      // Camera scaffold (phase LA-01). Render transform changes come later.
+      camera: {
+        x: 0,
+        y: 0,
+        mode: "centered", // centered | deadzone
+        deadZoneFracX: 0.35,
+        deadZoneFracY: 0.3,
       },
       params: {
         shipTurnRate: 3.6, // rad/s
@@ -217,12 +225,32 @@
         restitution: 0.92,
         fractureImpactSpeed: 260,
         maxAsteroids: 120,
+        asteroidSpawnMinSec: 0.18,
+        asteroidSpawnMaxSec: 0.45,
+        asteroidSpawnUrgentMinSec: 0.05,
+        asteroidSpawnUrgentMaxSec: 0.12,
 
         // Damage model for fast smalls (velocity-based; no time limit).
         smallDamageSpeedMin: 420,
 
         gemTtlSec: 6,
         gemBlinkMaxHz: 5,
+
+        // Flying saucer (enemy) — occasional, non-wrapping pass across the playfield.
+        saucerSpawnMinSec: 14,
+        saucerSpawnMaxSec: 26,
+        saucerRadius: 36,
+        saucerSpeed: 145,
+        saucerFirstShotMinSec: 0.7,
+        saucerFirstShotMaxSec: 1.3,
+        saucerBurstShotMin: 1,
+        saucerBurstShotMax: 2,
+        saucerBurstGapMinSec: 0.12,
+        saucerBurstGapMaxSec: 0.28,
+        saucerBurstPauseMinSec: 1.0,
+        saucerBurstPauseMaxSec: 3.0,
+        saucerLaserSpeed: 520,
+        saucerLaserRadius: 4,
       },
     };
 
@@ -241,10 +269,269 @@
         rotVel: (rng() * 2 - 1) * rotVelMax,
         shape,
         attached: false,
+        shipLaunched: false,
         orbitA: 0, // ship-local angle (radians) when attached
         fractureCooldownT: 0,
         hitFxT: 0,
       };
+    }
+
+    function scheduleNextSaucerSpawn() {
+      state.saucerSpawnT = lerp(state.params.saucerSpawnMinSec, state.params.saucerSpawnMaxSec, rng());
+    }
+
+    function asteroidSeedCount() {
+      return Math.max(1, state.params.largeCount + state.params.medCount + state.params.smallCount);
+    }
+
+    function asteroidPopulationBudget() {
+      const seed = asteroidSeedCount();
+      const viewArea = Math.max(1, state.view.w * state.view.h);
+      const worldArea = Math.max(1, state.world.w * state.world.h);
+      const scaledTarget = Math.round(seed * (worldArea / viewArea));
+      const max = Math.max(1, Math.floor(state.params.maxAsteroids));
+      const target = clamp(scaledTarget, Math.min(seed, max), max);
+      const min = clamp(Math.floor(target * 0.8), 8, target);
+      return { min, target, max };
+    }
+
+    function scheduleNextAsteroidSpawn(urgent = false) {
+      const lo = urgent ? state.params.asteroidSpawnUrgentMinSec : state.params.asteroidSpawnMinSec;
+      const hi = urgent ? state.params.asteroidSpawnUrgentMaxSec : state.params.asteroidSpawnMaxSec;
+      state.asteroidSpawnT = lerp(lo, hi, rng());
+    }
+
+    function pickSpawnAsteroidSize() {
+      const wl = Math.max(1, state.params.largeCount);
+      const wm = Math.max(1, state.params.medCount);
+      const ws = Math.max(1, state.params.smallCount);
+      const sum = wl + wm + ws;
+      const r = rng() * sum;
+      if (r < wl) return "large";
+      if (r < wl + wm) return "med";
+      return "small";
+    }
+
+    function trySpawnAmbientAsteroid() {
+      const size = pickSpawnAsteroidSize();
+      const radius = asteroidRadiusForSize(state.params, size);
+      const halfViewW = state.view.w / 2;
+      const halfViewH = state.view.h / 2;
+      const spawnPad = radius + 44;
+      const p = vec(0, 0);
+      const cameraPos = vec(state.camera.x, state.camera.y);
+
+      for (let t = 0; t < 24; t++) {
+        const side = Math.floor(rng() * 4); // 0 left, 1 right, 2 top, 3 bottom
+        if (side === 0) {
+          p.x = state.camera.x - halfViewW - spawnPad;
+          p.y = state.camera.y + (rng() * 2 - 1) * halfViewH * 0.95;
+        } else if (side === 1) {
+          p.x = state.camera.x + halfViewW + spawnPad;
+          p.y = state.camera.y + (rng() * 2 - 1) * halfViewH * 0.95;
+        } else if (side === 2) {
+          p.x = state.camera.x + (rng() * 2 - 1) * halfViewW * 0.95;
+          p.y = state.camera.y - halfViewH - spawnPad;
+        } else {
+          p.x = state.camera.x + (rng() * 2 - 1) * halfViewW * 0.95;
+          p.y = state.camera.y + halfViewH + spawnPad;
+        }
+
+        // Keep spawns inside world bounds.
+        const halfWorldW = state.world.w / 2;
+        const halfWorldH = state.world.h / 2;
+        p.x = clamp(p.x, -halfWorldW + radius, halfWorldW - radius);
+        p.y = clamp(p.y, -halfWorldH + radius, halfWorldH - radius);
+
+        const shipClear = len2(sub(p, state.ship.pos)) > 260 * 260;
+        if (!shipClear) continue;
+
+        let overlap = false;
+        for (const other of state.asteroids) {
+          const min = radius + other.radius + 8;
+          if (len2(sub(p, other.pos)) < min * min) {
+            overlap = true;
+            break;
+          }
+        }
+        if (overlap) continue;
+
+        const toCam = norm(sub(cameraPos, p));
+        const drift = vec((rng() * 2 - 1) * 0.7, (rng() * 2 - 1) * 0.7);
+        const dirRaw = add(toCam, drift);
+        const dir = len2(dirRaw) <= 1e-9 ? angleToVec(rng() * Math.PI * 2) : norm(dirRaw);
+        const speedBase = size === "large" ? 36 : size === "med" ? 50 : 68;
+        const speed = speedBase * (0.85 + rng() * 0.35);
+        const v = mul(dir, speed);
+        state.asteroids.push(makeAsteroid(size, vec(p.x, p.y), v));
+        return true;
+      }
+
+      return false;
+    }
+
+    function maintainAsteroidPopulation(dt) {
+      const { min, target, max } = asteroidPopulationBudget();
+      const count = state.asteroids.length;
+      if (count >= target) return;
+      if (count >= max) return;
+
+      state.asteroidSpawnT -= dt;
+      if (state.asteroidSpawnT > 0) return;
+
+      const urgent = count < min;
+      const spawned = trySpawnAmbientAsteroid();
+      scheduleNextAsteroidSpawn(urgent);
+      if (!spawned && urgent) {
+        // Retry soon when urgent and blocked by local crowding.
+        state.asteroidSpawnT = Math.min(state.asteroidSpawnT, 0.04);
+      }
+    }
+
+    function randIntInclusive(min, max) {
+      const lo = Math.floor(Math.min(min, max));
+      const hi = Math.floor(Math.max(min, max));
+      return lo + Math.floor(rng() * (hi - lo + 1));
+    }
+
+    function spawnSaucer() {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const spawnPad = 56;
+
+      const side = Math.floor(rng() * 4); // 0 left, 1 right, 2 top, 3 bottom
+      const speed = state.params.saucerSpeed * (0.85 + rng() * 0.35);
+      const drift = (rng() * 2 - 1) * speed * 0.22;
+
+      let pos = vec(0, 0);
+      let vel = vec(0, 0);
+      if (side === 0) {
+        pos = vec(-halfW - spawnPad, (rng() * 2 - 1) * halfH * 0.85);
+        vel = vec(speed, drift);
+      } else if (side === 1) {
+        pos = vec(halfW + spawnPad, (rng() * 2 - 1) * halfH * 0.85);
+        vel = vec(-speed, drift);
+      } else if (side === 2) {
+        pos = vec((rng() * 2 - 1) * halfW * 0.85, -halfH - spawnPad);
+        vel = vec(drift, speed);
+      } else {
+        pos = vec((rng() * 2 - 1) * halfW * 0.85, halfH + spawnPad);
+        vel = vec(drift, -speed);
+      }
+
+      const baseVel = vec(vel.x, vel.y);
+      const forward = norm(baseVel);
+      const swayDir = len2(forward) <= 1e-9 ? vec(0, 1) : vec(-forward.y, forward.x);
+      const burstMin = Math.max(1, Math.floor(state.params.saucerBurstShotMin || 1));
+      const burstMax = Math.max(burstMin, Math.floor(state.params.saucerBurstShotMax || 2));
+
+      state.saucer = {
+        id: `saucer-${Math.floor(rng() * 1e9)}`,
+        pos,
+        vel,
+        radius: Math.max(10, state.params.saucerRadius || 18),
+        seenInside: false,
+        lifeSec: 0,
+        baseVel,
+        swayDir,
+        swayFreqHz: lerp(0.22, 0.46, rng()),
+        swaySpeed: speed * lerp(0.15, 0.32, rng()),
+        burstShotsRemaining: randIntInclusive(burstMin, burstMax),
+        shotCooldown: lerp(state.params.saucerFirstShotMinSec, state.params.saucerFirstShotMaxSec, rng()),
+      };
+    }
+
+    function fireSaucerLaser(saucer) {
+      if (!saucer) return;
+      const ship = state.ship;
+      const dir = norm(sub(ship.pos, saucer.pos));
+      const useDir = len2(dir) <= 1e-9 ? angleToVec(rng() * Math.PI * 2) : dir;
+      const r = Math.max(1, state.params.saucerLaserRadius || 4);
+      const muzzle = add(saucer.pos, mul(useDir, saucer.radius + r + 3));
+      state.saucerLasers.push({
+        id: `saucerLaser-${Math.floor(rng() * 1e9)}`,
+        pos: vec(muzzle.x, muzzle.y),
+        vel: mul(useDir, Math.max(50, state.params.saucerLaserSpeed || 520)),
+        radius: r,
+        ageSec: 0,
+        bornAtSec: state.time,
+      });
+      spawnExplosion(muzzle, { kind: "tiny", rgb: [255, 221, 88], r0: 3, r1: 14, ttl: 0.12 });
+    }
+
+    function updateSaucer(dt) {
+      if (!state.saucer) {
+        state.saucerSpawnT -= dt;
+        if (state.saucerSpawnT <= 0) spawnSaucer();
+        return;
+      }
+
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const s = state.saucer;
+      s.lifeSec += dt;
+      const swayPhase = s.lifeSec * Math.PI * 2 * s.swayFreqHz;
+      const swayVel = mul(s.swayDir, Math.sin(swayPhase) * s.swaySpeed);
+      s.vel = add(s.baseVel, swayVel);
+      s.pos = add(s.pos, mul(s.vel, dt));
+
+      const inside = Math.abs(s.pos.x) <= halfW && Math.abs(s.pos.y) <= halfH;
+      if (inside) s.seenInside = true;
+
+      if (s.seenInside) {
+        const burstMin = Math.max(1, Math.floor(state.params.saucerBurstShotMin || 1));
+        const burstMax = Math.max(burstMin, Math.floor(state.params.saucerBurstShotMax || 2));
+        s.shotCooldown = Math.max(0, s.shotCooldown - dt);
+        if (s.shotCooldown <= 0) {
+          fireSaucerLaser(s);
+          s.burstShotsRemaining = Math.max(0, s.burstShotsRemaining - 1);
+          if (s.burstShotsRemaining > 0) {
+            s.shotCooldown = lerp(state.params.saucerBurstGapMinSec, state.params.saucerBurstGapMaxSec, rng());
+          } else {
+            s.burstShotsRemaining = randIntInclusive(burstMin, burstMax);
+            s.shotCooldown = lerp(state.params.saucerBurstPauseMinSec, state.params.saucerBurstPauseMaxSec, rng());
+          }
+        }
+      }
+
+      const despawnPad = 120;
+      const outside =
+        s.pos.x < -halfW - despawnPad ||
+        s.pos.x > halfW + despawnPad ||
+        s.pos.y < -halfH - despawnPad ||
+        s.pos.y > halfH + despawnPad;
+      if ((s.seenInside && outside) || s.lifeSec > 30) {
+        state.saucer = null;
+        scheduleNextSaucerSpawn();
+      }
+    }
+
+    function updateSaucerLasers(dt) {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      for (let i = state.saucerLasers.length - 1; i >= 0; i--) {
+        const b = state.saucerLasers[i];
+        b.ageSec += dt;
+        b.pos = add(b.pos, mul(b.vel, dt));
+        const outside = b.pos.x <= -halfW || b.pos.x >= halfW || b.pos.y <= -halfH || b.pos.y >= halfH;
+        if (outside) state.saucerLasers.splice(i, 1);
+      }
+    }
+
+    function handleSaucerLaserShipCollisions() {
+      if (state.mode !== "playing") return;
+      for (let i = state.saucerLasers.length - 1; i >= 0; i--) {
+        const b = state.saucerLasers[i];
+        if (!circleHit(b, state.ship)) continue;
+        state.saucerLasers.splice(i, 1);
+        spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
+        if (state.settings.shipExplodesOnImpact) {
+          state.mode = "gameover";
+          return;
+        }
+        const pushDir = norm(b.vel);
+        state.ship.vel = add(state.ship.vel, mul(pushDir, 170));
+      }
     }
 
     function isDamagingSmall(a, impactSpeed) {
@@ -276,12 +563,14 @@
     }
 
     function gemRgb(kind) {
+      if (kind === "gold") return [255, 221, 88];
       if (kind === "diamond") return [86, 183, 255];
       if (kind === "ruby") return [255, 89, 100];
       return [84, 240, 165]; // emerald
     }
 
     function gemPoints(kind) {
+      if (kind === "gold") return 250;
       if (kind === "diamond") return 100;
       if (kind === "ruby") return 25;
       return 10;
@@ -289,15 +578,19 @@
 
     function gemRadius(kind) {
       // Baseline size is emerald. Ruby is ~15% larger; diamond is ~30% larger.
+      if (kind === "gold") return 10;
       if (kind === "emerald") return 7;
       if (kind === "ruby") return 8;
       return 9; // diamond
     }
 
-    function spawnGem(pos, velHint = vec(0, 0)) {
-      const kind = rollGemKind();
-      const radius = gemRadius(kind);
-      const jitter = vec((rng() * 2 - 1) * 50, (rng() * 2 - 1) * 50);
+    function spawnGem(pos, velHint = vec(0, 0), options = {}) {
+      const kind = options.kind || rollGemKind();
+      const radiusScale = Number.isFinite(options.radiusScale) ? options.radiusScale : 1;
+      const radius = gemRadius(kind) * radiusScale;
+      const jitterMag = Number.isFinite(options.jitterMag) ? options.jitterMag : 50;
+      const jitter = vec((rng() * 2 - 1) * jitterMag, (rng() * 2 - 1) * jitterMag);
+      const ttlSec = Number.isFinite(options.ttlSec) ? options.ttlSec : Math.max(0.1, state.params.gemTtlSec || 6);
       state.gems.push({
         id: `gem-${Math.floor(rng() * 1e9)}`,
         kind,
@@ -307,9 +600,9 @@
         spin: rng() * Math.PI * 2,
         spinVel: (rng() * 2 - 1) * 2.8,
         ageSec: 0,
-        ttlSec: Math.max(0.1, state.params.gemTtlSec || 6),
-        blinkPhase: rng(), // [0,1)
-        blinkVisible: true,
+        ttlSec,
+        pulsePhase: rng(), // [0,1)
+        pulseAlpha: 1,
       });
     }
 
@@ -330,16 +623,21 @@
       state.blastPulseT = 0;
       state.effects = [];
       state.gems = [];
-      state.gemsCollected = { diamond: 0, ruby: 0, emerald: 0 };
+      state.saucer = null;
+      state.saucerLasers = [];
+      scheduleNextSaucerSpawn();
+      scheduleNextAsteroidSpawn(false);
+      state.gemsCollected = { diamond: 0, ruby: 0, emerald: 0, gold: 0 };
       state.input.left = false;
       state.input.right = false;
       state.input.up = false;
       state.input.down = false;
       state.input.burst = false;
       state.ship = makeShip();
+      syncCameraToShip();
       state.asteroids = [];
-      const halfW = state.view.w / 2;
-      const halfH = state.view.h / 2;
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
 
       const spawn = (size, count) => {
         for (let i = 0; i < count; i++) {
@@ -399,6 +697,7 @@
       const spd = len(a.vel);
       if (err <= state.params.attachBand && spd <= state.params.attachSpeedMax) {
         a.attached = true;
+        a.shipLaunched = false;
         a.vel = vec(0, 0);
         a.orbitA = wrapAngle(angleOf(toShip) - state.ship.angle);
         a.pos = orbitPosFor(a);
@@ -424,6 +723,7 @@
       for (const a of state.asteroids) {
         if (!a.attached) continue;
         a.attached = false;
+        a.shipLaunched = true;
         a.pos = orbitPosFor(a);
         const dir = norm(sub(a.pos, state.ship.pos));
         const base = mul(dir, state.params.burstSpeed);
@@ -432,9 +732,107 @@
       }
     }
 
+    function clampCameraToWorld() {
+      const halfWorldW = state.world.w / 2;
+      const halfWorldH = state.world.h / 2;
+      const halfViewW = state.view.w / 2;
+      const halfViewH = state.view.h / 2;
+
+      const minCamX = halfViewW - halfWorldW;
+      const maxCamX = halfWorldW - halfViewW;
+      const minCamY = halfViewH - halfWorldH;
+      const maxCamY = halfWorldH - halfViewH;
+
+      if (minCamX <= maxCamX) state.camera.x = clamp(state.camera.x, minCamX, maxCamX);
+      else state.camera.x = 0;
+      if (minCamY <= maxCamY) state.camera.y = clamp(state.camera.y, minCamY, maxCamY);
+      else state.camera.y = 0;
+    }
+
+    function syncCameraToShip() {
+      if (state.camera.mode === "deadzone") {
+        const ship = state.ship;
+        const dzHalfW = Math.max(0, (state.view.w * state.camera.deadZoneFracX) / 2);
+        const dzHalfH = Math.max(0, (state.view.h * state.camera.deadZoneFracY) / 2);
+        const dx = ship.pos.x - state.camera.x;
+        const dy = ship.pos.y - state.camera.y;
+
+        if (dx > dzHalfW) state.camera.x = ship.pos.x - dzHalfW;
+        else if (dx < -dzHalfW) state.camera.x = ship.pos.x + dzHalfW;
+
+        if (dy > dzHalfH) state.camera.y = ship.pos.y - dzHalfH;
+        else if (dy < -dzHalfH) state.camera.y = ship.pos.y + dzHalfH;
+      } else {
+        // Baseline camera behavior.
+        state.camera.x = state.ship.pos.x;
+        state.camera.y = state.ship.pos.y;
+      }
+
+      clampCameraToWorld();
+    }
+
+    function confineShipToWorld() {
+      const ship = state.ship;
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const minX = -halfW + ship.radius;
+      const maxX = halfW - ship.radius;
+      const minY = -halfH + ship.radius;
+      const maxY = halfH - ship.radius;
+
+      if (ship.pos.x < minX) {
+        ship.pos.x = minX;
+        if (ship.vel.x < 0) ship.vel.x = 0;
+      } else if (ship.pos.x > maxX) {
+        ship.pos.x = maxX;
+        if (ship.vel.x > 0) ship.vel.x = 0;
+      }
+
+      if (ship.pos.y < minY) {
+        ship.pos.y = minY;
+        if (ship.vel.y < 0) ship.vel.y = 0;
+      } else if (ship.pos.y > maxY) {
+        ship.pos.y = maxY;
+        if (ship.vel.y > 0) ship.vel.y = 0;
+      }
+    }
+
+    function isOutsideWorld(body, pad = 0) {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const r = Math.max(0, body.radius || 0);
+      return (
+        body.pos.x < -halfW - r - pad ||
+        body.pos.x > halfW + r + pad ||
+        body.pos.y < -halfH - r - pad ||
+        body.pos.y > halfH + r + pad
+      );
+    }
+
+    function applyWorldScale(scale) {
+      const s = clamp(Number(scale) || 1, 1, 4);
+      state.world.scale = s;
+      state.world.w = state.view.w * s;
+      state.world.h = state.view.h * s;
+      confineShipToWorld();
+      clampCameraToWorld();
+    }
+
+    function setArenaConfig({ cameraMode, worldScale } = {}) {
+      if (cameraMode === "centered" || cameraMode === "deadzone") {
+        state.camera.mode = cameraMode;
+      }
+      if (Number.isFinite(Number(worldScale))) {
+        applyWorldScale(Number(worldScale));
+      } else {
+        clampCameraToWorld();
+      }
+    }
+
     function resize(w, h) {
       state.view.w = w;
       state.view.h = h;
+      applyWorldScale(state.world.scale);
     }
 
     function updateShip(dt) {
@@ -464,12 +862,10 @@
       }
 
       ship.pos = add(ship.pos, mul(ship.vel, dt));
-      ship.pos = wrapPos(ship.pos, state.view.w / 2, state.view.h / 2);
+      confineShipToWorld();
     }
 
     function updateAsteroids(dt) {
-      const halfW = state.view.w / 2;
-      const halfH = state.view.h / 2;
       const ship = state.ship;
 
       // Keep attached small asteroids distributed around the ring.
@@ -495,7 +891,8 @@
         }
       }
 
-      for (const a of state.asteroids) {
+      for (let i = state.asteroids.length - 1; i >= 0; i--) {
+        const a = state.asteroids[i];
         if (a.attached) {
           a.pos = orbitPosFor(a);
           a.rot += a.rotVel * dt;
@@ -544,18 +941,16 @@
         }
 
         a.pos = add(a.pos, mul(a.vel, dt));
-        a.pos = wrapPos(a.pos, halfW, halfH);
+        if (isOutsideWorld(a, 8)) {
+          state.asteroids.splice(i, 1);
+          continue;
+        }
         a.rot += a.rotVel * dt;
       }
     }
 
     function updateGems(dt) {
-      const halfW = state.view.w / 2;
-      const halfH = state.view.h / 2;
       const ship = state.ship;
-      const attractR2 = state.params.attractRadius * state.params.attractRadius;
-      const fieldR = state.params.forceFieldRadius;
-      const fieldR2 = fieldR * fieldR;
 
       for (let i = state.gems.length - 1; i >= 0; i--) {
         const g = state.gems[i];
@@ -565,44 +960,35 @@
           continue;
         }
 
-        // KISS blinking: no blink for first half of life; then steadily ramp blink frequency to max.
-        // Use an accumulated phase so changing frequency doesn't create irregular flicker.
+        // Throb instead of blink: gems fade bright<->dim and never fully disappear.
         const ttl = Math.max(0.001, g.ttlSec || 6);
         const lifeT = clamp(g.ageSec / ttl, 0, 1);
-        if (lifeT < 0.5) {
-          g.blinkVisible = true;
-        } else {
-          const t = (lifeT - 0.5) / 0.5; // 0..1 during the second half
-          const s = t * t * (3 - 2 * t); // smoothstep
-          const maxHz = clamp(state.params.gemBlinkMaxHz || 5, 0.25, 12);
-          const hz = lerp(1, maxHz, s);
-          g.blinkPhase = (g.blinkPhase + dt * hz) % 1;
-          g.blinkVisible = g.blinkPhase < 0.5;
-        }
+        const maxHz = clamp(state.params.gemBlinkMaxHz || 5, 0.25, 12);
+        const throbHz = lerp(0.75, maxHz, lifeT * lifeT);
+        g.pulsePhase = (g.pulsePhase + dt * throbHz) % 1;
+        const wave = 0.5 + 0.5 * Math.sin(g.pulsePhase * Math.PI * 2);
+        const minAlpha = lerp(0.6, 0.3, lifeT);
+        g.pulseAlpha = lerp(minAlpha, 1, wave);
 
         const toShip = sub(ship.pos, g.pos);
         const d2 = len2(toShip);
-        if (d2 < attractR2) {
-          const d = Math.max(8, Math.sqrt(d2));
-          const dirIn = mul(toShip, 1 / d);
-          const soft = state.params.gravitySoftening;
-          const grav = state.params.gravityK / (d2 + soft * soft);
-          const insideRing = d2 < fieldR2;
-          const innerMult = insideRing ? state.params.innerGravityMult : 1;
-          const innerT = insideRing ? clamp(1 - d / Math.max(1, fieldR), 0, 1) : 0;
-          g.vel = add(g.vel, mul(dirIn, grav * innerMult * dt));
-
-          // Inside the ring, damp so gems "stick" and get absorbed instead of slingshotting out.
-          if (innerT > 0) {
-            g.vel = mul(g.vel, Math.max(0, 1 - state.params.innerDrag * 1.25 * innerT * dt));
-          }
-        }
+        const d = Math.max(8, Math.sqrt(d2));
+        const dirIn = mul(toShip, 1 / d);
+        const soft = Math.max(16, state.params.gravitySoftening * 0.55);
+        const core = Math.max(1, state.ship.radius + g.radius + 30);
+        const coreBoost = 1 + (core * core) / (d2 + core * core);
+        const grav = (state.params.gravityK * coreBoost) / (d2 + soft * soft);
+        g.vel = add(g.vel, mul(dirIn, grav * dt));
+        g.vel = mul(g.vel, Math.max(0, 1 - 0.08 * dt));
 
         const spd = len(g.vel);
         if (spd > 900) g.vel = mul(g.vel, 900 / spd);
 
         g.pos = add(g.pos, mul(g.vel, dt));
-        g.pos = wrapPos(g.pos, halfW, halfH);
+        if (isOutsideWorld(g, 18)) {
+          state.gems.splice(i, 1);
+          continue;
+        }
         g.spin += g.spinVel * dt;
       }
     }
@@ -611,11 +997,30 @@
       if (state.mode !== "playing") return;
       for (let i = state.gems.length - 1; i >= 0; i--) {
         const g = state.gems[i];
-        if (!circleHit(g, state.ship)) continue;
+        const pickR = state.ship.radius + g.radius + 20;
+        if (len2(sub(g.pos, state.ship.pos)) > pickR * pickR) continue;
         state.gems.splice(i, 1);
         state.gemsCollected[g.kind] = (state.gemsCollected[g.kind] || 0) + 1;
         state.score += gemPoints(g.kind);
         spawnExplosion(state.ship.pos, { kind: "tiny", rgb: gemRgb(g.kind), r0: 4, r1: 16, ttl: 0.14 });
+      }
+    }
+
+    function handleSaucerAsteroidCollisions() {
+      if (state.mode !== "playing" || !state.saucer) return;
+      const saucer = state.saucer;
+      for (const a of state.asteroids) {
+        if (a.attached) continue;
+        if (!a.shipLaunched) continue;
+        if (!circleHit(saucer, a)) continue;
+        const dropVel = add(mul(a.vel, 0.7), mul(saucer.vel, 0.3));
+        spawnExplosion(saucer.pos, { kind: "pop", rgb: [255, 221, 88], r0: 14, r1: 56, ttl: 0.24 });
+        spawnExplosion(saucer.pos, { kind: "ring", rgb: [255, 221, 88], r0: 20, r1: 88, ttl: 0.2 });
+        spawnGem(saucer.pos, dropVel, { kind: "gold", radiusScale: 1.0, jitterMag: 20, ttlSec: 18 });
+        state.score += 125;
+        state.saucer = null;
+        scheduleNextSaucerSpawn();
+        return;
       }
     }
 
@@ -787,10 +1192,16 @@
         burstAttached();
       }
       updateShip(dt);
+      syncCameraToShip();
       updateAsteroids(dt);
       updateGems(dt);
+      updateSaucer(dt);
+      updateSaucerLasers(dt);
+      handleSaucerAsteroidCollisions();
       handleGemShipCollisions();
+      handleSaucerLaserShipCollisions();
       handleCollisions();
+      maintainAsteroidPopulation(dt);
     }
 
     function render(ctx) {
@@ -811,7 +1222,15 @@
       ctx.restore();
 
       ctx.save();
-      ctx.translate(w / 2, h / 2);
+      // World-space rendering: camera position maps to screen center.
+      ctx.translate(w / 2 - state.camera.x, h / 2 - state.camera.y);
+
+      // Arena edge (phase LA-06 first pass): simple boundary line.
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.26)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-state.world.w / 2, -state.world.h / 2, state.world.w, state.world.h);
+      ctx.restore();
 
       if (state.mode === "playing") {
         // Force field ring (where collected small asteroids stick).
@@ -866,26 +1285,26 @@
 
       // Gems (dropped from broken small asteroids).
       for (const g of state.gems) {
-        if (!g.blinkVisible) continue;
         const [rr, gg, bb] = gemRgb(g.kind);
         const r = g.radius;
+        const pulseA = clamp(g.pulseAlpha ?? 1, 0.25, 1);
         ctx.save();
         ctx.translate(g.pos.x, g.pos.y);
 
         // Glow
         ctx.globalCompositeOperation = "lighter";
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.20)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.14 + pulseA * 0.18).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 2.8, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.14)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.1 + pulseA * 0.11).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(0, 0, r * 4.2, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
 
         // Core
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},0.95)`;
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${(0.4 + pulseA * 0.58).toFixed(3)})`;
         if (g.kind === "diamond") {
           ctx.rotate(g.spin);
           ctx.beginPath();
@@ -902,10 +1321,78 @@
           ctx.beginPath();
           ctx.arc(0, 0, r, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.22)";
+          ctx.strokeStyle = `rgba(255,255,255,${(0.16 + pulseA * 0.2).toFixed(3)})`;
           ctx.lineWidth = 1;
           ctx.stroke();
         }
+        ctx.restore();
+      }
+
+      // Flying saucer + lasers (no wrap).
+      if (state.saucer) {
+        const s = state.saucer;
+        ctx.save();
+        ctx.translate(s.pos.x, s.pos.y);
+
+        // Glow
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = "rgba(86,183,255,0.14)";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s.radius * 1.6, s.radius * 0.85, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = "source-over";
+
+        // Body
+        ctx.strokeStyle = "rgba(86,183,255,0.92)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 3, s.radius * 1.25, s.radius * 0.45, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(0, -3, s.radius * 0.55, s.radius * 0.42, 0, Math.PI, 0);
+        ctx.stroke();
+
+        // Windows
+        ctx.fillStyle = "rgba(231,240,255,0.78)";
+        const winY = 2;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.arc(i * (s.radius * 0.42), winY, 2.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      for (const b of state.saucerLasers) {
+        const lifeT = clamp(b.ageSec / 1.2, 0, 1);
+        const alpha = lerp(0.95, 0.72, lifeT);
+        const ang = angleOf(b.vel);
+        const lenPx = 24;
+        ctx.save();
+        ctx.translate(b.pos.x, b.pos.y);
+        ctx.rotate(ang);
+        ctx.lineCap = "round";
+
+        // Outer soft glow.
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = `rgba(255,221,88,${(alpha * 0.6).toFixed(3)})`;
+        ctx.lineWidth = 9;
+        ctx.shadowColor = "rgba(255,221,88,0.95)";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(-lenPx * 0.5, 0);
+        ctx.lineTo(lenPx * 0.5, 0);
+        ctx.stroke();
+
+        // Bright core beam.
+        ctx.globalCompositeOperation = "source-over";
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(255,250,190,${alpha.toFixed(3)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-lenPx * 0.5, 0);
+        ctx.lineTo(lenPx * 0.5, 0);
+        ctx.stroke();
         ctx.restore();
       }
 
@@ -1001,7 +1488,7 @@
           acc[g.kind] = (acc[g.kind] || 0) + 1;
           return acc;
         },
-        { diamond: 0, ruby: 0, emerald: 0 },
+        { diamond: 0, ruby: 0, emerald: 0, gold: 0 },
       );
       const sample = state.asteroids.slice(0, 10).map((a) => ({
         size: a.size,
@@ -1011,9 +1498,16 @@
         r: Math.round(a.radius),
       }));
       return JSON.stringify({
-        coordinate_system: "World coords are pixels with origin at canvas center. +x right, +y down.",
+        coordinate_system:
+          "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
         mode: state.mode,
         view: { w: state.view.w, h: state.view.h },
+        world: { w: state.world.w, h: state.world.h },
+        camera: {
+          x: Math.round(state.camera.x),
+          y: Math.round(state.camera.y),
+          mode: state.camera.mode,
+        },
         ship: {
           x: Math.round(ship.pos.x),
           y: Math.round(ship.pos.y),
@@ -1021,6 +1515,14 @@
           vy: Math.round(ship.vel.y),
           angle: +ship.angle.toFixed(3),
         },
+        saucer: state.saucer
+          ? {
+              x: Math.round(state.saucer.pos.x),
+              y: Math.round(state.saucer.pos.y),
+              shots_remaining: state.saucer.burstShotsRemaining,
+              lasers: state.saucerLasers.length,
+            }
+          : null,
         field: { radius: state.params.forceFieldRadius },
         attract: { radius: state.params.attractRadius, debug: state.settings.showAttractRadius },
         counts: { ...counts, attached, score: state.score },
@@ -1035,6 +1537,7 @@
       startGame,
       resetWorld,
       resize,
+      setArenaConfig,
       update,
       render,
       renderGameToText,
@@ -1048,6 +1551,9 @@
   const startBtn = document.getElementById("start-btn");
   const dbgAttract = document.getElementById("dbg-attract");
   const shipExplode = document.getElementById("ship-explode");
+  const dbgCameraMode = document.getElementById("dbg-camera-mode");
+  const dbgWorldScale = document.getElementById("dbg-world-scale");
+  const dbgWorldScaleOut = document.getElementById("dbg-world-scale-out");
   const tuneAttract = document.getElementById("tune-attract");
   const tuneAttractOut = document.getElementById("tune-attract-out");
   const tuneAttractSave = document.getElementById("tune-attract-save");
@@ -1327,12 +1833,27 @@
     syncTuningUiFromParams();
   }
 
+  function syncArenaUi() {
+    if (dbgCameraMode) dbgCameraMode.value = game.state.camera.mode || "centered";
+    if (dbgWorldScale) dbgWorldScale.value = String(game.state.world.scale || 1);
+    if (dbgWorldScaleOut) dbgWorldScaleOut.textContent = `${Number(game.state.world.scale || 1).toFixed(2)}x`;
+  }
+
+  function applyArenaFromMenu() {
+    const mode = dbgCameraMode?.value === "deadzone" ? "deadzone" : "centered";
+    const scale = clamp(readNum(dbgWorldScale, game.state.world.scale || 1), 1, 4);
+    game.setArenaConfig({ cameraMode: mode, worldScale: scale });
+    if (dbgWorldScale) dbgWorldScale.value = String(scale);
+    if (dbgWorldScaleOut) dbgWorldScaleOut.textContent = `${scale.toFixed(2)}x`;
+  }
+
   function setMenuVisible(visible) {
     menu.style.display = visible ? "grid" : "none";
   }
 
   function start() {
     applyTuningFromMenu();
+    applyArenaFromMenu();
     setMenuVisible(false);
     game.state.settings.showAttractRadius = !!dbgAttract?.checked;
     game.state.settings.shipExplodesOnImpact = !!shipExplode?.checked;
@@ -1343,7 +1864,12 @@
   applyTuningDefaultsToParams();
   syncTuningUiFromParams();
   applyTuningFromMenu();
+  syncArenaUi();
+  applyArenaFromMenu();
   syncTuningDefaultLabels();
+
+  if (dbgCameraMode) dbgCameraMode.addEventListener("change", () => applyArenaFromMenu());
+  if (dbgWorldScale) dbgWorldScale.addEventListener("input", () => applyArenaFromMenu());
 
   for (const f of TUNING_FIELDS) {
     if (!f.saveBtn || !f.input) continue;
@@ -1404,6 +1930,7 @@
         break;
       case "KeyR":
         if (isDown) {
+          applyArenaFromMenu();
           game.resetWorld();
           game.state.mode = "playing";
           setMenuVisible(false);
