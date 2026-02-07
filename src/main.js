@@ -61,6 +61,11 @@
     return a;
   }
 
+  function posMod(v, m) {
+    const r = v % m;
+    return r < 0 ? r + m : r;
+  }
+
   function seededRng(seed = 0x12345678) {
     let s = seed >>> 0;
     return () => {
@@ -86,12 +91,10 @@
     return pts;
   }
 
-  function drawPolyline(ctx, pts, x, y, angle, color, lineWidth = 2) {
+  function drawPolyline(ctx, pts, x, y, angle, color, lineWidth = 2, fillColor = null) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
     ctx.beginPath();
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
@@ -101,6 +104,12 @@
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
+    if (fillColor) {
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
     ctx.stroke();
     ctx.restore();
   }
@@ -148,6 +157,7 @@
 
   function createGame({ width, height }) {
     const rng = seededRng(0xdecafbad);
+    const starRng = seededRng(0x51a7f00d);
     const state = {
       mode: "menu", // menu | playing | gameover
       time: 0,
@@ -180,7 +190,7 @@
       },
       // Large-arena scaffold (phase LA-01). Kept equal to view for now.
       world: {
-        scale: 1,
+        scale: 3,
         w: width,
         h: height,
       },
@@ -189,11 +199,15 @@
         asteroidCounts: new Map(),
         activeKeys: new Set(),
       },
+      background: {
+        tilePx: 1024,
+        layers: [],
+      },
       // Camera scaffold (phase LA-01). Render transform changes come later.
       camera: {
         x: 0,
         y: 0,
-        mode: "centered", // centered | deadzone
+        mode: "deadzone", // centered | deadzone
         deadZoneFracX: 0.35,
         deadZoneFracY: 0.3,
       },
@@ -240,6 +254,12 @@
 
         gemTtlSec: 6,
         gemBlinkMaxHz: 5,
+        starDensityScale: 1,
+        starParallaxStrength: 1,
+        starAccentChance: 0.06,
+        starTwinkleChance: 0.18,
+        starTwinkleStrength: 0.45,
+        starTwinkleSpeed: 1.2,
 
         // Flying saucer (enemy) — occasional, non-wrapping pass across the playfield.
         saucerSpawnMinSec: 14,
@@ -287,6 +307,50 @@
 
     function asteroidSeedCount() {
       return Math.max(1, state.params.largeCount + state.params.medCount + state.params.smallCount);
+    }
+
+    function rebuildStarfield() {
+      const density = clamp(state.params.starDensityScale || 1, 0.4, 2.2);
+      const accentChance = clamp(state.params.starAccentChance || 0, 0, 0.35);
+      const twinkleChance = clamp(state.params.starTwinkleChance || 0, 0, 1);
+      const tile = state.background.tilePx;
+      const accentPalette = [
+        [255, 226, 150], // gold
+        [255, 176, 185], // red accent
+        [142, 198, 255], // blue accent
+      ];
+      const layerSpecs = [
+        { baseCount: 95, parallax: 0.14, radius: 0.9, alpha: 0.42 },
+        { baseCount: 70, parallax: 0.36, radius: 1.25, alpha: 0.56 },
+        { baseCount: 48, parallax: 0.68, radius: 1.8, alpha: 0.78 },
+      ];
+      state.background.layers = layerSpecs.map((spec, li) => {
+        const count = Math.max(24, Math.round(spec.baseCount * density));
+        const stars = [];
+        for (let i = 0; i < count; i++) {
+          const isAccent = starRng() < accentChance;
+          let color;
+          if (isAccent) {
+            const pick = accentPalette[Math.floor(starRng() * accentPalette.length)];
+            color = { r: pick[0], g: pick[1], b: pick[2] };
+          } else {
+            const tintJitter = li === 0 ? starRng() * 18 : starRng() * 12;
+            color = { r: 231 + Math.round(tintJitter), g: 240, b: 255 };
+          }
+          const twinkles = starRng() < twinkleChance;
+          stars.push({
+            x: starRng() * tile,
+            y: starRng() * tile,
+            r: spec.radius * (0.8 + starRng() * 0.6),
+            a: spec.alpha * (0.82 + starRng() * 0.36),
+            color,
+            twinklePhase: starRng() * Math.PI * 2,
+            twinkleFreqHz: lerp(0.45, 1.35, starRng()),
+            twinkleAmp: twinkles ? 0.55 + starRng() * 0.45 : 0,
+          });
+        }
+        return { ...spec, stars };
+      });
     }
 
     function worldCellCoordsForPos(pos) {
@@ -877,6 +941,10 @@
       }
     }
 
+    function refreshBackground() {
+      rebuildStarfield();
+    }
+
     function resize(w, h) {
       state.view.w = w;
       state.view.h = h;
@@ -1305,12 +1373,39 @@
       ctx.save();
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, w, h);
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = "rgba(231,240,255,0.55)";
-      for (let i = 0; i < 70; i++) {
-        const x = ((i * 97) % 997) / 997;
-        const y = ((i * 241) % 863) / 863;
-        ctx.fillRect(x * w, y * h, 1, 1);
+      const strength = clamp(state.params.starParallaxStrength || 1, 0, 1.8);
+      const twinkleStrength = clamp(state.params.starTwinkleStrength || 0, 0, 0.8);
+      const twinkleSpeed = clamp(state.params.starTwinkleSpeed || 1, 0.2, 3);
+      const twinkleTime = state.mode === "playing" ? state.time : performance.now() / 1000;
+      const tile = state.background.tilePx;
+      for (const layer of state.background.layers) {
+        const p = layer.parallax * strength;
+        const ox = posMod(-state.camera.x * p, tile);
+        const oy = posMod(-state.camera.y * p, tile);
+        for (let by = oy - tile; by < h + tile; by += tile) {
+          for (let bx = ox - tile; bx < w + tile; bx += tile) {
+            for (const s of layer.stars) {
+              const px = bx + s.x;
+              const py = by + s.y;
+              if (px < -6 || px > w + 6 || py < -6 || py > h + 6) continue;
+              let starAlpha = s.a;
+              let starRadius = s.r;
+              if (s.twinkleAmp > 0 && twinkleStrength > 0) {
+                const phase = twinkleTime * Math.PI * 2 * s.twinkleFreqHz * twinkleSpeed + s.twinklePhase;
+                const wave = 0.5 + 0.5 * Math.sin(phase);
+                const amp = clamp(s.twinkleAmp * twinkleStrength, 0, 0.8);
+                const alphaScale = 1 - amp * 0.7 + wave * amp * 1.4;
+                const radiusScale = 1 + (wave - 0.5) * amp * 0.52;
+                starAlpha = clamp(starAlpha * alphaScale, 0.04, 1);
+                starRadius = clamp(starRadius * radiusScale, 0.45, 3.2);
+              }
+              ctx.fillStyle = `rgba(${s.color.r},${s.color.g},${s.color.b},${starAlpha.toFixed(3)})`;
+              ctx.beginPath();
+              ctx.arc(px, py, starRadius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
       }
       ctx.restore();
 
@@ -1373,7 +1468,7 @@
               ? "rgba(231,240,255,0.80)"
               : "rgba(231,240,255,0.88)";
         const color = a.attached ? "rgba(255,221,88,0.95)" : base;
-        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2);
+        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
       }
 
       // Gems (dropped from broken small asteroids).
@@ -1601,6 +1696,15 @@
           active_count: state.worldCells.activeKeys.size,
           indexed_asteroid_cells: state.worldCells.asteroidCounts.size,
         },
+        background: {
+          star_density: +state.params.starDensityScale.toFixed(2),
+          parallax_strength: +state.params.starParallaxStrength.toFixed(2),
+          accent_star_chance: +state.params.starAccentChance.toFixed(2),
+          twinkle_star_chance: +state.params.starTwinkleChance.toFixed(2),
+          twinkle_strength: +state.params.starTwinkleStrength.toFixed(2),
+          twinkle_speed: +state.params.starTwinkleSpeed.toFixed(2),
+          layers: state.background.layers.length,
+        },
         camera: {
           x: Math.round(state.camera.x),
           y: Math.round(state.camera.y),
@@ -1630,12 +1734,15 @@
       });
     }
 
+    rebuildStarfield();
+
     return {
       state,
       startGame,
       resetWorld,
       resize,
       setArenaConfig,
+      refreshBackground,
       update,
       render,
       renderGameToText,
@@ -1696,6 +1803,30 @@
   const tuneFractureOut = document.getElementById("tune-fracture-out");
   const tuneFractureSave = document.getElementById("tune-fracture-save");
   const tuneFractureDefault = document.getElementById("tune-fracture-default");
+  const tuneStarDensity = document.getElementById("tune-star-density");
+  const tuneStarDensityOut = document.getElementById("tune-star-density-out");
+  const tuneStarDensitySave = document.getElementById("tune-star-density-save");
+  const tuneStarDensityDefault = document.getElementById("tune-star-density-default");
+  const tuneParallax = document.getElementById("tune-parallax");
+  const tuneParallaxOut = document.getElementById("tune-parallax-out");
+  const tuneParallaxSave = document.getElementById("tune-parallax-save");
+  const tuneParallaxDefault = document.getElementById("tune-parallax-default");
+  const tuneStarAccentChance = document.getElementById("tune-star-accent-chance");
+  const tuneStarAccentChanceOut = document.getElementById("tune-star-accent-chance-out");
+  const tuneStarAccentChanceSave = document.getElementById("tune-star-accent-chance-save");
+  const tuneStarAccentChanceDefault = document.getElementById("tune-star-accent-chance-default");
+  const tuneTwinkleChance = document.getElementById("tune-twinkle-chance");
+  const tuneTwinkleChanceOut = document.getElementById("tune-twinkle-chance-out");
+  const tuneTwinkleChanceSave = document.getElementById("tune-twinkle-chance-save");
+  const tuneTwinkleChanceDefault = document.getElementById("tune-twinkle-chance-default");
+  const tuneTwinkleStrength = document.getElementById("tune-twinkle-strength");
+  const tuneTwinkleStrengthOut = document.getElementById("tune-twinkle-strength-out");
+  const tuneTwinkleStrengthSave = document.getElementById("tune-twinkle-strength-save");
+  const tuneTwinkleStrengthDefault = document.getElementById("tune-twinkle-strength-default");
+  const tuneTwinkleSpeed = document.getElementById("tune-twinkle-speed");
+  const tuneTwinkleSpeedOut = document.getElementById("tune-twinkle-speed-out");
+  const tuneTwinkleSpeedSave = document.getElementById("tune-twinkle-speed-save");
+  const tuneTwinkleSpeedDefault = document.getElementById("tune-twinkle-speed-default");
 
   const game = createGame({ width: canvas.width, height: canvas.height });
 
@@ -1792,6 +1923,54 @@
       savedOut: tuneFractureDefault,
       suffix: " px/s",
     },
+    {
+      key: "starDensityScale",
+      input: tuneStarDensity,
+      saveBtn: tuneStarDensitySave,
+      savedOut: tuneStarDensityDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "starParallaxStrength",
+      input: tuneParallax,
+      saveBtn: tuneParallaxSave,
+      savedOut: tuneParallaxDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "starAccentChance",
+      input: tuneStarAccentChance,
+      saveBtn: tuneStarAccentChanceSave,
+      savedOut: tuneStarAccentChanceDefault,
+      suffix: "",
+      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
+    },
+    {
+      key: "starTwinkleChance",
+      input: tuneTwinkleChance,
+      saveBtn: tuneTwinkleChanceSave,
+      savedOut: tuneTwinkleChanceDefault,
+      suffix: "",
+      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
+    },
+    {
+      key: "starTwinkleStrength",
+      input: tuneTwinkleStrength,
+      saveBtn: tuneTwinkleStrengthSave,
+      savedOut: tuneTwinkleStrengthDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "starTwinkleSpeed",
+      input: tuneTwinkleSpeed,
+      saveBtn: tuneTwinkleSpeedSave,
+      savedOut: tuneTwinkleSpeedDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
   ];
 
   function readTuningDefaultsFromStorage() {
@@ -1879,6 +2058,12 @@
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
     if (tuneDmg) tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
     if (tuneFracture) tuneFracture.value = String(Math.round(p.fractureImpactSpeed));
+    if (tuneStarDensity) tuneStarDensity.value = String(p.starDensityScale);
+    if (tuneParallax) tuneParallax.value = String(p.starParallaxStrength);
+    if (tuneStarAccentChance) tuneStarAccentChance.value = String(p.starAccentChance);
+    if (tuneTwinkleChance) tuneTwinkleChance.value = String(p.starTwinkleChance);
+    if (tuneTwinkleStrength) tuneTwinkleStrength.value = String(p.starTwinkleStrength);
+    if (tuneTwinkleSpeed) tuneTwinkleSpeed.value = String(p.starTwinkleSpeed);
     syncTuningUiLabels();
   }
 
@@ -1895,6 +2080,20 @@
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
     setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
     setOut(tuneFractureOut, readNum(tuneFracture, p.fractureImpactSpeed), " px/s");
+    if (tuneStarDensityOut) tuneStarDensityOut.textContent = `${readNum(tuneStarDensity, p.starDensityScale).toFixed(2)}x`;
+    if (tuneParallaxOut) tuneParallaxOut.textContent = `${readNum(tuneParallax, p.starParallaxStrength).toFixed(2)}x`;
+    if (tuneStarAccentChanceOut) {
+      tuneStarAccentChanceOut.textContent = `${(readNum(tuneStarAccentChance, p.starAccentChance) * 100).toFixed(0)}%`;
+    }
+    if (tuneTwinkleChanceOut) {
+      tuneTwinkleChanceOut.textContent = `${(readNum(tuneTwinkleChance, p.starTwinkleChance) * 100).toFixed(0)}%`;
+    }
+    if (tuneTwinkleStrengthOut) {
+      tuneTwinkleStrengthOut.textContent = `${readNum(tuneTwinkleStrength, p.starTwinkleStrength).toFixed(2)}x`;
+    }
+    if (tuneTwinkleSpeedOut) {
+      tuneTwinkleSpeedOut.textContent = `${readNum(tuneTwinkleSpeed, p.starTwinkleSpeed).toFixed(2)}x`;
+    }
   }
 
   function bindTuneInput(el) {
@@ -1912,6 +2111,12 @@
   bindTuneInput(tuneThrust);
   bindTuneInput(tuneDmg);
   bindTuneInput(tuneFracture);
+  bindTuneInput(tuneStarDensity);
+  bindTuneInput(tuneParallax);
+  bindTuneInput(tuneStarAccentChance);
+  bindTuneInput(tuneTwinkleChance);
+  bindTuneInput(tuneTwinkleStrength);
+  bindTuneInput(tuneTwinkleSpeed);
 
   function applyTuningFromMenu() {
     const p = game.state.params;
@@ -1928,6 +2133,13 @@
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
     p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
     p.fractureImpactSpeed = readNum(tuneFracture, p.fractureImpactSpeed);
+    p.starDensityScale = clamp(readNum(tuneStarDensity, p.starDensityScale), 0.4, 2.2);
+    p.starParallaxStrength = clamp(readNum(tuneParallax, p.starParallaxStrength), 0, 1.8);
+    p.starAccentChance = clamp(readNum(tuneStarAccentChance, p.starAccentChance), 0, 0.35);
+    p.starTwinkleChance = clamp(readNum(tuneTwinkleChance, p.starTwinkleChance), 0, 1);
+    p.starTwinkleStrength = clamp(readNum(tuneTwinkleStrength, p.starTwinkleStrength), 0, 0.8);
+    p.starTwinkleSpeed = clamp(readNum(tuneTwinkleSpeed, p.starTwinkleSpeed), 0.2, 3);
+    game.refreshBackground();
     syncTuningUiFromParams();
   }
 

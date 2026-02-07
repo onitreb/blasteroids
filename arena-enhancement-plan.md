@@ -63,6 +63,8 @@ Scope: Convert the current viewport-sized world into a larger arena with camera 
 | 2026-02-06 | Completed LA-10 small slice: added world cell index (`worldCells`) and active camera-neighborhood cell set; asteroid replenish now avoids inactive and already-dense cells. Validation: `node --check src/main.js` passed. |
 | 2026-02-06 | Completed LA-11 small slice: added spatial-hash broadphase for asteroid-vs-asteroid collision candidate pairs. Validation: `node --check src/main.js` passed. |
 | 2026-02-06 | Browser validation for LA-10/LA-11: dead-zone + 2x arena ran deterministic movement/simulation bursts without console errors. `world_cells` telemetry stayed populated/consistent, asteroid population remained stable under long simulation, and collision-heavy burst behavior remained functional (score/counts updated as expected). |
+| 2026-02-06 | Added 3-layer parallax starfield with tuning controls (`Star density`, `Parallax strength`) and persisted defaults. Browser validation confirmed visible motion cue and clean console. |
+| 2026-02-07 | LA-13 tuning slice: added subtle star accent colors + twinkle behavior and new debug tuning controls (`Accent star chance`, `Twinkle star chance`, `Twinkle strength`, `Twinkle speed`) with saved defaults + `render_game_to_text` background telemetry fields. Validation: `node --check src/main.js` passed. |
 
 ## Next Step
 - Continue LA-13 tuning pass (camera feel + spawn rates) and update README docs (LA-14) after next browser validation window.

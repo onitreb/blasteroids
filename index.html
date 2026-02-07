@@ -248,7 +248,7 @@
               <div class="v">
                 <select id="dbg-camera-mode" style="margin-top: 6px; width: 100%">
                   <option value="centered">Centered</option>
-                  <option value="deadzone">Dead-zone pan</option>
+                  <option value="deadzone" selected>Dead-zone pan</option>
                 </select>
               </div>
             </label>
@@ -257,9 +257,9 @@
               <div class="v">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
                   <span>World scale</span>
-                  <output id="dbg-world-scale-out">1.00x</output>
+                  <output id="dbg-world-scale-out">3.00x</output>
                 </div>
-                <input id="dbg-world-scale" type="range" min="1" max="4" step="0.25" value="1" />
+                <input id="dbg-world-scale" type="range" min="1" max="4" step="0.25" value="3" />
               </div>
             </label>
           </div>
@@ -407,6 +407,84 @@
               <div class="tune-note">
                 How much impact speed is needed for a damaging small rock to fracture a medium/large rock.
                 <div class="tune-saved">Saved default: <span id="tune-fracture-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Star density</span>
+                <span class="tune-actions">
+                  <output id="tune-star-density-out">—</output>
+                  <button id="tune-star-density-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-star-density" type="range" min="0.4" max="2.2" step="0.05" />
+              <div class="tune-note">
+                How many background stars are generated across all parallax layers.
+                <div class="tune-saved">Saved default: <span id="tune-star-density-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Parallax strength</span>
+                <span class="tune-actions">
+                  <output id="tune-parallax-out">—</output>
+                  <button id="tune-parallax-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-parallax" type="range" min="0" max="1.8" step="0.05" />
+              <div class="tune-note">
+                How strongly star layers shift against camera movement (higher = stronger motion cue).
+                <div class="tune-saved">Saved default: <span id="tune-parallax-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Accent star chance</span>
+                <span class="tune-actions">
+                  <output id="tune-star-accent-chance-out">—</output>
+                  <button id="tune-star-accent-chance-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-star-accent-chance" type="range" min="0" max="0.35" step="0.01" />
+              <div class="tune-note">
+                Chance that a star gets a subtle gold/red/blue accent (most stars remain white).
+                <div class="tune-saved">Saved default: <span id="tune-star-accent-chance-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Twinkle star chance</span>
+                <span class="tune-actions">
+                  <output id="tune-twinkle-chance-out">—</output>
+                  <button id="tune-twinkle-chance-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-twinkle-chance" type="range" min="0" max="1" step="0.02" />
+              <div class="tune-note">
+                Fraction of stars that gently twinkle over time.
+                <div class="tune-saved">Saved default: <span id="tune-twinkle-chance-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Twinkle strength</span>
+                <span class="tune-actions">
+                  <output id="tune-twinkle-strength-out">—</output>
+                  <button id="tune-twinkle-strength-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-twinkle-strength" type="range" min="0" max="0.8" step="0.02" />
+              <div class="tune-note">
+                How much twinkling stars modulate alpha/size (kept subtle by default).
+                <div class="tune-saved">Saved default: <span id="tune-twinkle-strength-default">—</span></div>
+              </div>
+
+              <div class="tune-row">
+                <span>Twinkle speed</span>
+                <span class="tune-actions">
+                  <output id="tune-twinkle-speed-out">—</output>
+                  <button id="tune-twinkle-speed-save" class="btn-mini" type="button">Set default</button>
+                </span>
+              </div>
+              <input id="tune-twinkle-speed" type="range" min="0.2" max="3" step="0.05" />
+              <div class="tune-note">
+                Multiplier for twinkle animation speed across twinkling stars.
+                <div class="tune-saved">Saved default: <span id="tune-twinkle-speed-default">—</span></div>
               </div>
             </div>
           </details>
