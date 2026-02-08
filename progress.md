@@ -52,3 +52,25 @@ Updates
 - Added subtle star accents + twinkle pass: stars now support rare accent colors (gold/red/blue), optional per-star twinkle modulation (alpha + slight radius), and new tuning sliders/default persistence for `Accent star chance`, `Twinkle star chance`, `Twinkle strength`, and `Twinkle speed`. Extended `render_game_to_text.background` telemetry with these values. Validation: `node --check src/main.js` passed. Browser smoke intentionally not run in this step.
 - Visual readability follow-up: asteroids are now filled black (opaque interior) so background stars no longer show through rock silhouettes. Twinkle visibility adjusted upward (higher default twinkle chance/strength/speed and stronger modulation range), and twinkle now animates in the menu too (was previously tied to gameplay time only). Validation: `node --check src/main.js` + browser smoke pass (menu + gameplay) with no game-console errors.
 - Default tuning/menu tweak: reduced `Twinkle star chance` by 50% (0.36 → 0.18), set default camera mode to `deadzone`, and set default world scale to `3.00x` (menu + runtime defaults aligned). Validation: `node --check src/main.js` + browser reload check of menu values and `render_game_to_text`.
+- Arena scale range update: world scale slider now supports up to `10.00x` (was `4.00x`), and arena scale clamping was expanded to `1..10` in runtime config. Validation: `node --check src/main.js` + browser check at `10x` in menu and gameplay (`world` telemetry reached 19600x13050 with no console errors).
+- Global spawn authority pass (design-oriented): asteroid replenishment now spawns globally across arena cells (no camera-side spawn bias), startup now bulk-fills toward world-scale target density, and game start guarantees local on-screen asteroid presence (`counts.asteroids_on_screen` telemetry added). Validation at `10x`: immediate gameplay had ~1094 asteroids total, `asteroids_on_screen=13`, and ~915 indexed asteroid cells with no console errors.
+- Added debug slider for global spawn density (`Global asteroid density`) wired to `asteroidWorldDensityScale` with live output + Set default persistence. Validation: `node --check src/main.js` plus browser sanity check confirmed min/max/step (`0.08..1.5`, `0.02`) and runtime effect after start.
+- Density + spawn-visibility follow-up: increased high-end arena capacity (`maxAsteroids=4000`) and expanded global density slider range to `0.08..2.5`. Runtime replenishment now excludes active camera view when spawning so asteroids do not pop into visible space. Validation at `10x`, density `2.5`: startup had ~2400 asteroids with ~27 on-screen; after simulation total continued climbing (>3000) while on-screen count changed gradually (no pop-in jumps) and console stayed clean.
+- Added a new resumable implementation tracker for ship progression and size scaling: `ship-growth-progression-plan.md` (ship tiers at 500/1000 gem points, expanded asteroid sizes, tiered forcefields, in-game debug menu toggle/reorg, and growth-triggered camera zoom plan). This was a planning-only step; no gameplay code changed yet.
+- Implemented the ship-growth feature slice in `src/main.js` + `index.html`:
+  - Added data-driven ship tiers (`small`, `medium`, `large`) with distinct shapes/engine layouts and size scaling (`1x`, `2x`, `4x`).
+  - Added asteroid sizes `xlarge` + `xxlarge`, generalized size fracture graph (`size -> next smaller`), and XL/XXL spawn/radius tuning controls.
+  - Added progression unlocks by gem score (`500` / `1000` defaults), tier override controls, and a live gem-score debug slider.
+  - Generalized forcefield/attraction to tier rules (small-only, small+med, small+med+large) and tier-scaled radii/colors.
+  - Added growth-driven camera zoom state with tweened transitions and debug controls for per-tier zoom targets + duration.
+  - Added in-game debug menu open/close while playing (`M` / backquote / top-right button), pause-on-open behavior, apply+resume flow, and grouped 2-column debug/tuning layout.
+  - Added runtime ship renderer swap API for future SVG assets: `window.set_ship_svg_renderer(tierKey, svgPathData, scale)`.
+- Telemetry updates:
+  - `render_game_to_text` now includes progression/tier/zoom metadata and expanded asteroid size counts.
+- Validation:
+  - `node --check src/main.js` passes.
+  - Playwright client remains unavailable in this environment (`ERR_MODULE_NOT_FOUND: playwright`), so browser validation was done via DevTools:
+    - Verified debug menu opens/closes in active gameplay via button and `KeyM`.
+    - Verified pause-on-open toggle (`pausedDelta=0`, `unpausedDelta>0`).
+    - Verified tier transitions + zoom tween using gem-score debug slider (`small 1.00 -> medium 0.78 -> large 0.58`).
+    - Verified XL/XXL asteroids present in runtime state and no console errors.

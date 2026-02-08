@@ -114,13 +114,164 @@
     ctx.restore();
   }
 
-  function makeShip() {
+  const ASTEROID_SIZE_ORDER = ["small", "med", "large", "xlarge", "xxlarge"];
+  const ASTEROID_SPLIT_NEXT = {
+    small: null,
+    med: "small",
+    large: "med",
+    xlarge: "large",
+    xxlarge: "xlarge",
+  };
+  const ASTEROID_BASE_SPEED = {
+    small: 68,
+    med: 50,
+    large: 36,
+    xlarge: 30,
+    xxlarge: 24,
+  };
+  const ASTEROID_VERTS = {
+    small: 9,
+    med: 11,
+    large: 12,
+    xlarge: 13,
+    xxlarge: 14,
+  };
+  const ASTEROID_ROT_VEL_MAX = {
+    small: 1.2,
+    med: 0.9,
+    large: 0.55,
+    xlarge: 0.38,
+    xxlarge: 0.25,
+  };
+  const ASTEROID_SIZE_INDEX = ASTEROID_SIZE_ORDER.reduce((acc, key, idx) => {
+    acc[key] = idx;
+    return acc;
+  }, {});
+
+  const DEFAULT_SHIP_RENDERERS = {
+    small: {
+      type: "polygon",
+      points: [
+        { x: 16, y: 0 },
+        { x: -12, y: -10 },
+        { x: -7, y: 0 },
+        { x: -12, y: 10 },
+      ],
+      engines: [{ x: -12, y: 0, len: 11 }],
+    },
+    medium: {
+      type: "polygon",
+      points: [
+        { x: 22, y: -14 },
+        { x: 26, y: -6 },
+        { x: 26, y: 6 },
+        { x: 22, y: 14 },
+        { x: -18, y: 14 },
+        { x: -24, y: 8 },
+        { x: -24, y: -8 },
+        { x: -18, y: -14 },
+      ],
+      engines: [
+        { x: -24, y: -7, len: 12 },
+        { x: -24, y: 7, len: 12 },
+      ],
+    },
+    large: {
+      type: "polygon",
+      points: [
+        { x: 34, y: 0 },
+        { x: 12, y: -24 },
+        { x: -16, y: -18 },
+        { x: -32, y: -8 },
+        { x: -36, y: 0 },
+        { x: -32, y: 8 },
+        { x: -16, y: 18 },
+        { x: 12, y: 24 },
+      ],
+      engines: [
+        { x: -34, y: -12, len: 14 },
+        { x: -36, y: 0, len: 16 },
+        { x: -34, y: 12, len: 14 },
+      ],
+    },
+  };
+
+  function cloneRenderer(renderer) {
+    return {
+      type: renderer.type,
+      points: Array.isArray(renderer.points) ? renderer.points.map((p) => ({ x: p.x, y: p.y })) : undefined,
+      engines: Array.isArray(renderer.engines)
+        ? renderer.engines.map((e) => ({ x: e.x, y: e.y, len: e.len }))
+        : undefined,
+    };
+  }
+
+  const SHIP_TIERS = {
+    small: {
+      key: "small",
+      label: "Small",
+      scale: 1,
+      radius: 14,
+      mass: 260,
+      forcefieldScale: 1,
+      attractScale: 1,
+      ringColor: "rgba(255,221,88,0.40)",
+      attractSizes: ["small"],
+      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.small),
+    },
+    medium: {
+      key: "medium",
+      label: "Medium",
+      scale: 2,
+      radius: 28,
+      mass: 1040,
+      forcefieldScale: 1.28,
+      attractScale: 1.2,
+      ringColor: "rgba(92,235,255,0.42)",
+      attractSizes: ["small", "med"],
+      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.medium),
+    },
+    large: {
+      key: "large",
+      label: "Large",
+      scale: 4,
+      radius: 56,
+      mass: 4160,
+      forcefieldScale: 1.62,
+      attractScale: 1.42,
+      ringColor: "rgba(255,112,127,0.42)",
+      attractSizes: ["small", "med", "large"],
+      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.large),
+    },
+  };
+  const SHIP_TIER_ORDER = ["small", "medium", "large"];
+  const SHIP_BASE_BY_TIER_INDEX = ["small", "medium", "large"];
+
+  function shipTierByKey(key) {
+    return SHIP_TIERS[key] || SHIP_TIERS.small;
+  }
+
+  function asteroidSizeRank(size) {
+    return ASTEROID_SIZE_INDEX[size] ?? 0;
+  }
+
+  function asteroidNextSize(size) {
+    return ASTEROID_SPLIT_NEXT[size] || null;
+  }
+
+  function sizeSetHas(sizeSet, size) {
+    return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
+  }
+
+  function makeShip(tierKey = "small") {
+    const tier = shipTierByKey(tierKey);
     return {
       pos: vec(0, 0),
       vel: vec(0, 0),
       angle: -Math.PI / 2,
-      radius: 14,
-      mass: 260,
+      radius: tier.radius,
+      mass: tier.mass,
+      tier: tier.key,
     };
   }
 
@@ -145,6 +296,8 @@
   }
 
   function asteroidRadiusForSize(params, size) {
+    if (size === "xxlarge") return params.xxlargeRadius;
+    if (size === "xlarge") return params.xlargeRadius;
     if (size === "large") return params.largeRadius;
     if (size === "med") return params.medRadius;
     return params.smallRadius;
@@ -161,7 +314,7 @@
     const state = {
       mode: "menu", // menu | playing | gameover
       time: 0,
-      ship: makeShip(),
+      ship: makeShip("small"),
       asteroids: [],
       gems: [],
       effects: [],
@@ -176,6 +329,14 @@
       settings: {
         showAttractRadius: true,
         shipExplodesOnImpact: false,
+        pauseOnMenuOpen: true,
+        tierOverrideEnabled: false,
+        tierOverrideIndex: 1,
+      },
+      progression: {
+        gemScore: 0,
+        currentTier: "small",
+        tierShiftT: 0,
       },
       input: {
         left: false,
@@ -210,6 +371,11 @@
         mode: "deadzone", // centered | deadzone
         deadZoneFracX: 0.35,
         deadZoneFracY: 0.3,
+        zoom: 1,
+        zoomFrom: 1,
+        zoomTo: 1,
+        zoomAnimElapsed: 0,
+        zoomAnimDur: 0,
       },
       params: {
         shipTurnRate: 3.6, // rad/s
@@ -234,16 +400,21 @@
         burstSpeed: 546, // +5%
         burstCooldownSec: 0.35,
 
+        xxlargeRadius: 150,
+        xlargeRadius: 90,
         largeRadius: 54,
         medRadius: 30,
         smallRadius: 12,
+        xxlargeCount: 1,
+        xlargeCount: 3,
         largeCount: 6,
         medCount: 10,
         smallCount: 22,
 
         restitution: 0.92,
         fractureImpactSpeed: 260,
-        maxAsteroids: 120,
+        maxAsteroids: 4000,
+        asteroidWorldDensityScale: 0.32,
         asteroidSpawnMinSec: 0.18,
         asteroidSpawnMaxSec: 0.45,
         asteroidSpawnUrgentMinSec: 0.05,
@@ -251,6 +422,17 @@
 
         // Damage model for fast smalls (velocity-based; no time limit).
         smallDamageSpeedMin: 420,
+        medDamageSpeedMin: 360,
+        largeDamageSpeedMin: 310,
+        xlargeDamageSpeedMin: 280,
+        xxlargeDamageSpeedMin: 250,
+
+        tier2UnlockGemScore: 500,
+        tier3UnlockGemScore: 1000,
+        tier1Zoom: 1,
+        tier2Zoom: 0.78,
+        tier3Zoom: 0.58,
+        tierZoomTweenSec: 0.45,
 
         gemTtlSec: 6,
         gemBlinkMaxHz: 5,
@@ -279,10 +461,118 @@
       },
     };
 
+    function shipTierForProgression() {
+      if (state.settings.tierOverrideEnabled) {
+        const idx = clamp(Math.round(state.settings.tierOverrideIndex || 1), 1, SHIP_BASE_BY_TIER_INDEX.length);
+        return SHIP_BASE_BY_TIER_INDEX[idx - 1];
+      }
+      if (state.progression.gemScore >= state.params.tier3UnlockGemScore) return "large";
+      if (state.progression.gemScore >= state.params.tier2UnlockGemScore) return "medium";
+      return "small";
+    }
+
+    function currentShipTier() {
+      return shipTierByKey(state.ship.tier);
+    }
+
+    function currentForceFieldRadius() {
+      const tier = currentShipTier();
+      return state.params.forceFieldRadius * tier.forcefieldScale;
+    }
+
+    function currentAttractRadius() {
+      const tier = currentShipTier();
+      return state.params.attractRadius * tier.attractScale;
+    }
+
+    function currentShipAttractSizes() {
+      return currentShipTier().attractSizes;
+    }
+
+    function shipCanAttractSize(size) {
+      return sizeSetHas(currentShipAttractSizes(), size);
+    }
+
+    function asteroidSpawnWeightForSize(size) {
+      if (size === "xxlarge") return Math.max(0, state.params.xxlargeCount);
+      if (size === "xlarge") return Math.max(0, state.params.xlargeCount);
+      if (size === "large") return Math.max(0, state.params.largeCount);
+      if (size === "med") return Math.max(0, state.params.medCount);
+      return Math.max(0, state.params.smallCount);
+    }
+
+    function asteroidDamageSpeedForSize(size) {
+      if (size === "xxlarge") return state.params.xxlargeDamageSpeedMin;
+      if (size === "xlarge") return state.params.xlargeDamageSpeedMin;
+      if (size === "large") return state.params.largeDamageSpeedMin;
+      if (size === "med") return state.params.medDamageSpeedMin;
+      return state.params.smallDamageSpeedMin;
+    }
+
+    function cameraZoomForTier(tierKey) {
+      if (tierKey === "large") return clamp(state.params.tier3Zoom, 0.35, 1.2);
+      if (tierKey === "medium") return clamp(state.params.tier2Zoom, 0.35, 1.2);
+      return clamp(state.params.tier1Zoom, 0.35, 1.2);
+    }
+
+    function beginCameraZoomTo(targetZoom, animate = true) {
+      const z = clamp(targetZoom, 0.35, 1.25);
+      if (!animate) {
+        state.camera.zoom = z;
+        state.camera.zoomFrom = z;
+        state.camera.zoomTo = z;
+        state.camera.zoomAnimElapsed = 0;
+        state.camera.zoomAnimDur = 0;
+        return;
+      }
+      state.camera.zoomFrom = state.camera.zoom;
+      state.camera.zoomTo = z;
+      state.camera.zoomAnimElapsed = 0;
+      state.camera.zoomAnimDur = Math.max(0.05, state.params.tierZoomTweenSec || 0.45);
+    }
+
+    function updateCameraZoom(dt) {
+      if (state.camera.zoomAnimDur <= 0) return;
+      state.camera.zoomAnimElapsed += dt;
+      const t = clamp(state.camera.zoomAnimElapsed / state.camera.zoomAnimDur, 0, 1);
+      const easeOut = 1 - (1 - t) * (1 - t);
+      state.camera.zoom = lerp(state.camera.zoomFrom, state.camera.zoomTo, easeOut);
+      if (t >= 1) {
+        state.camera.zoom = state.camera.zoomTo;
+        state.camera.zoomAnimDur = 0;
+      }
+    }
+
+    function applyShipTier(nextTierKey, { animateZoom = true } = {}) {
+      const next = shipTierByKey(nextTierKey);
+      if (state.ship.tier === next.key && state.progression.currentTier === next.key) return false;
+      state.ship.tier = next.key;
+      state.progression.currentTier = next.key;
+      state.ship.radius = next.radius;
+      state.ship.mass = next.mass;
+      state.progression.tierShiftT = 0.7;
+      beginCameraZoomTo(cameraZoomForTier(next.key), animateZoom);
+      return true;
+    }
+
+    function refreshShipTierProgression(options = {}) {
+      const desired = shipTierForProgression();
+      const changed = applyShipTier(desired, options);
+      // Detach out-of-tier asteroids if tier was reduced by override toggles.
+      for (const a of state.asteroids) {
+        if (!a.attached) continue;
+        if (shipCanAttractSize(a.size)) continue;
+        a.attached = false;
+        a.shipLaunched = false;
+      }
+      return changed;
+    }
+
     function makeAsteroid(size, pos, vel) {
       const radius = asteroidRadiusForSize(state.params, size);
-      const shape = makeAsteroidShape(rng, radius, size === "large" ? 12 : size === "med" ? 11 : 9);
-      const rotVelMax = size === "large" ? 0.55 : size === "med" ? 0.9 : 1.2;
+      const verts = ASTEROID_VERTS[size] || ASTEROID_VERTS.small;
+      const rotVelMax = ASTEROID_ROT_VEL_MAX[size] || ASTEROID_ROT_VEL_MAX.small;
+      const shape = makeAsteroidShape(rng, radius, verts);
       return {
         id: `${size}-${Math.floor(rng() * 1e9)}`,
         size,
@@ -306,7 +596,8 @@
     }
 
     function asteroidSeedCount() {
-      return Math.max(1, state.params.largeCount + state.params.medCount + state.params.smallCount);
+      const total = ASTEROID_SIZE_ORDER.reduce((n, size) => n + asteroidSpawnWeightForSize(size), 0);
+      return Math.max(1, Math.round(total));
     }
 
     function rebuildStarfield() {
@@ -376,8 +667,9 @@
       }
 
       const s = Math.max(64, state.worldCells.sizePx || 320);
-      const radiusX = Math.ceil((state.view.w * 0.5) / s) + 1;
-      const radiusY = Math.ceil((state.view.h * 0.5) / s) + 1;
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
+      const radiusX = Math.ceil((state.view.w * 0.5) / (s * zoom)) + 1;
+      const radiusY = Math.ceil((state.view.h * 0.5) / (s * zoom)) + 1;
       const center = worldCellCoordsForPos(vec(state.camera.x, state.camera.y));
       const active = new Set();
       for (let dy = -radiusY; dy <= radiusY; dy++) {
@@ -392,7 +684,8 @@
       const seed = asteroidSeedCount();
       const viewArea = Math.max(1, state.view.w * state.view.h);
       const worldArea = Math.max(1, state.world.w * state.world.h);
-      const scaledTarget = Math.round(seed * (worldArea / viewArea));
+      const densityScale = clamp(state.params.asteroidWorldDensityScale || 0.32, 0.08, 2.5);
+      const scaledTarget = Math.round(seed * (worldArea / viewArea) * densityScale);
       const max = Math.max(1, Math.floor(state.params.maxAsteroids));
       const target = clamp(scaledTarget, Math.min(seed, max), max);
       const min = clamp(Math.floor(target * 0.8), 8, target);
@@ -405,72 +698,111 @@
       state.asteroidSpawnT = lerp(lo, hi, rng());
     }
 
-    function pickSpawnAsteroidSize() {
-      const wl = Math.max(1, state.params.largeCount);
-      const wm = Math.max(1, state.params.medCount);
-      const ws = Math.max(1, state.params.smallCount);
-      const sum = wl + wm + ws;
-      const r = rng() * sum;
-      if (r < wl) return "large";
-      if (r < wl + wm) return "med";
-      return "small";
+    function isInsideViewRect(pos, radius, view, margin = 0) {
+      const halfW = view.halfW + radius + margin;
+      const halfH = view.halfH + radius + margin;
+      return Math.abs(pos.x - view.x) <= halfW && Math.abs(pos.y - view.y) <= halfH;
     }
 
-    function trySpawnAmbientAsteroid() {
+    function currentSpawnExclusionViews() {
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
+      return [
+        {
+          x: state.camera.x,
+          y: state.camera.y,
+          halfW: state.view.w * 0.5 / zoom,
+          halfH: state.view.h * 0.5 / zoom,
+        },
+      ];
+    }
+
+    function pickSpawnAsteroidSize() {
+      const weights = ASTEROID_SIZE_ORDER.map((size) => ({
+        size,
+        w: Math.max(0, asteroidSpawnWeightForSize(size)),
+      }));
+      const sum = weights.reduce((acc, it) => acc + it.w, 0);
+      if (sum <= 0) return "small";
+      const r = rng() * sum;
+      let accum = 0;
+      for (const it of weights) {
+        accum += it.w;
+        if (r <= accum) return it.size;
+      }
+      return weights[weights.length - 1].size;
+    }
+
+    function trySpawnAmbientAsteroid({
+      nearPos = null,
+      nearRadius = null,
+      minDistFromShip = 260,
+      maxCellCount = 10,
+      excludeViews = [],
+    } = {}) {
       const size = pickSpawnAsteroidSize();
       const radius = asteroidRadiusForSize(state.params, size);
-      const halfViewW = state.view.w / 2;
-      const halfViewH = state.view.h / 2;
-      const spawnPad = radius + 44;
       const p = vec(0, 0);
-      const cameraPos = vec(state.camera.x, state.camera.y);
+      const halfWorldW = state.world.w / 2;
+      const halfWorldH = state.world.h / 2;
+      const cellSize = Math.max(64, state.worldCells.sizePx || 320);
+      const cols = Math.max(1, Math.ceil(state.world.w / cellSize));
+      const rows = Math.max(1, Math.ceil(state.world.h / cellSize));
 
       for (let t = 0; t < 24; t++) {
-        const side = Math.floor(rng() * 4); // 0 left, 1 right, 2 top, 3 bottom
-        if (side === 0) {
-          p.x = state.camera.x - halfViewW - spawnPad;
-          p.y = state.camera.y + (rng() * 2 - 1) * halfViewH * 0.95;
-        } else if (side === 1) {
-          p.x = state.camera.x + halfViewW + spawnPad;
-          p.y = state.camera.y + (rng() * 2 - 1) * halfViewH * 0.95;
-        } else if (side === 2) {
-          p.x = state.camera.x + (rng() * 2 - 1) * halfViewW * 0.95;
-          p.y = state.camera.y - halfViewH - spawnPad;
+        if (nearPos && Number.isFinite(nearRadius) && nearRadius > radius + 60) {
+          const angle = rng() * Math.PI * 2;
+          const minR = Math.max(radius + 70, minDistFromShip);
+          const maxR = Math.max(minR + 8, nearRadius - radius);
+          const dist = lerp(minR, maxR, rng());
+          p.x = nearPos.x + Math.cos(angle) * dist;
+          p.y = nearPos.y + Math.sin(angle) * dist;
         } else {
-          p.x = state.camera.x + (rng() * 2 - 1) * halfViewW * 0.95;
-          p.y = state.camera.y + halfViewH + spawnPad;
+          const cx = Math.floor(rng() * cols);
+          const cy = Math.floor(rng() * rows);
+          const minX = -halfWorldW + cx * cellSize + radius;
+          const maxX = Math.min(-halfWorldW + (cx + 1) * cellSize - radius, halfWorldW - radius);
+          const minY = -halfWorldH + cy * cellSize + radius;
+          const maxY = Math.min(-halfWorldH + (cy + 1) * cellSize - radius, halfWorldH - radius);
+          if (minX > maxX || minY > maxY) continue;
+          p.x = lerp(minX, maxX, rng());
+          p.y = lerp(minY, maxY, rng());
         }
 
-        // Keep spawns inside world bounds.
-        const halfWorldW = state.world.w / 2;
-        const halfWorldH = state.world.h / 2;
         p.x = clamp(p.x, -halfWorldW + radius, halfWorldW - radius);
         p.y = clamp(p.y, -halfWorldH + radius, halfWorldH - radius);
 
+        let blockedByView = false;
+        for (const view of excludeViews) {
+          if (isInsideViewRect(p, radius, view, 80)) {
+            blockedByView = true;
+            break;
+          }
+        }
+        if (blockedByView) continue;
+
         const cell = worldCellCoordsForPos(p);
         const cellKey = worldCellKey(cell.cx, cell.cy);
-        if (!state.worldCells.activeKeys.has(cellKey)) continue;
         const cellCount = state.worldCells.asteroidCounts.get(cellKey) || 0;
-        if (cellCount >= 10) continue;
+        if (cellCount >= maxCellCount) continue;
 
-        const shipClear = len2(sub(p, state.ship.pos)) > 260 * 260;
+        const shipClear = len2(sub(p, state.ship.pos)) > minDistFromShip * minDistFromShip;
         if (!shipClear) continue;
 
         let overlap = false;
         for (const other of state.asteroids) {
+          const dx = Math.abs(other.pos.x - p.x);
+          const dy = Math.abs(other.pos.y - p.y);
           const min = radius + other.radius + 8;
-          if (len2(sub(p, other.pos)) < min * min) {
+          if (dx > min || dy > min) continue;
+          if (dx * dx + dy * dy < min * min) {
             overlap = true;
             break;
           }
         }
         if (overlap) continue;
 
-        const toCam = norm(sub(cameraPos, p));
-        const drift = vec((rng() * 2 - 1) * 0.7, (rng() * 2 - 1) * 0.7);
-        const dirRaw = add(toCam, drift);
-        const dir = len2(dirRaw) <= 1e-9 ? angleToVec(rng() * Math.PI * 2) : norm(dirRaw);
-        const speedBase = size === "large" ? 36 : size === "med" ? 50 : 68;
+        const dir = angleToVec(rng() * Math.PI * 2);
+        const speedBase = ASTEROID_BASE_SPEED[size] || ASTEROID_BASE_SPEED.small;
         const speed = speedBase * (0.85 + rng() * 0.35);
         const v = mul(dir, speed);
         state.asteroids.push(makeAsteroid(size, vec(p.x, p.y), v));
@@ -491,7 +823,14 @@
       if (state.asteroidSpawnT > 0) return;
 
       const urgent = count < min;
-      const spawned = trySpawnAmbientAsteroid();
+      const deficit = Math.max(1, target - count);
+      const burst = clamp(Math.ceil(deficit / 120), 1, urgent ? 56 : 20);
+      const excludeViews = currentSpawnExclusionViews();
+      let spawned = false;
+      for (let i = 0; i < burst && state.asteroids.length < max; i++) {
+        if (!trySpawnAmbientAsteroid({ excludeViews })) break;
+        spawned = true;
+      }
       scheduleNextAsteroidSpawn(urgent);
       if (!spawned && urgent) {
         // Retry soon when urgent and blocked by local crowding.
@@ -645,11 +984,11 @@
       }
     }
 
-    function isDamagingSmall(a, impactSpeed) {
-      if (a.size !== "small") return false;
+    function isDamagingProjectile(a, impactSpeed) {
+      if (!a?.shipLaunched) return false;
       const spd = len(a.vel);
       const v = Math.max(spd, impactSpeed);
-      return v >= state.params.smallDamageSpeedMin;
+      return v >= asteroidDamageSpeedForSize(a.size);
     }
 
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
@@ -730,6 +1069,9 @@
     function resetWorld() {
       state.time = 0;
       state.score = 0;
+      state.progression.gemScore = 0;
+      state.progression.currentTier = "small";
+      state.progression.tierShiftT = 0;
       state.burstCooldown = 0;
       state.blastPulseT = 0;
       state.effects = [];
@@ -744,48 +1086,48 @@
       state.input.up = false;
       state.input.down = false;
       state.input.burst = false;
-      state.ship = makeShip();
+      state.ship = makeShip("small");
+      state.camera.zoom = cameraZoomForTier("small");
+      state.camera.zoomFrom = state.camera.zoom;
+      state.camera.zoomTo = state.camera.zoom;
+      state.camera.zoomAnimDur = 0;
+      state.camera.zoomAnimElapsed = 0;
+      refreshShipTierProgression({ animateZoom: false });
       syncCameraToShip();
       state.asteroids = [];
-      const halfW = state.world.w / 2;
-      const halfH = state.world.h / 2;
+      state.worldCells.asteroidCounts.clear();
 
-      const spawn = (size, count) => {
-        for (let i = 0; i < count; i++) {
-          const radius = asteroidRadiusForSize(state.params, size);
-          const p = vec(0, 0);
-          let placed = false;
-          const tries = 80;
-          for (let t = 0; t < tries && !placed; t++) {
-            p.x = (rng() * 2 - 1) * halfW * 0.9;
-            p.y = (rng() * 2 - 1) * halfH * 0.9;
-            const shipClear = len2(sub(p, state.ship.pos)) > 240 * 240;
-            if (!shipClear) continue;
+      const budget = asteroidPopulationBudget();
+      const initialTarget = clamp(Math.round(budget.target * 0.7), asteroidSeedCount(), Math.min(budget.max, 2400));
+      let attempts = 0;
+      const maxAttempts = Math.max(120, initialTarget * 20);
+      while (state.asteroids.length < initialTarget && attempts < maxAttempts) {
+        trySpawnAmbientAsteroid();
+        attempts++;
+      }
 
-            placed = true;
-            for (const other of state.asteroids) {
-              const min = radius + other.radius + 12;
-              if (len2(sub(p, other.pos)) < min * min) {
-                placed = false;
-                break;
-              }
-            }
-          }
-          if (!placed) {
-            // Fallback: shove outward to reduce immediate overlaps.
-            const dir = norm(p.x || p.y ? p : vec(1, 0));
-            p.x = dir.x * halfW * 0.75;
-            p.y = dir.y * halfH * 0.75;
-          }
-          const maxV = size === "large" ? 38 : size === "med" ? 52 : 70;
-          const v = vec((rng() * 2 - 1) * maxV, (rng() * 2 - 1) * maxV);
-          state.asteroids.push(makeAsteroid(size, vec(p.x, p.y), v));
-        }
-      };
+      // Ensure game start never feels empty around the player/camera.
+      const nearRadius = Math.min(state.view.w, state.view.h) * 0.5 / Math.max(0.1, state.camera.zoom || 1);
+      const minOnscreenAtStart = 12;
+      let localAttempts = 0;
+      while (localAttempts < 160) {
+        const halfW = state.view.w * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+        const halfH = state.view.h * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+        const onScreenNow = state.asteroids.reduce((n, a) => {
+          const inX = Math.abs(a.pos.x - state.ship.pos.x) <= halfW + a.radius;
+          const inY = Math.abs(a.pos.y - state.ship.pos.y) <= halfH + a.radius;
+          return n + (inX && inY ? 1 : 0);
+        }, 0);
+        if (onScreenNow >= minOnscreenAtStart) break;
+        trySpawnAmbientAsteroid({
+          nearPos: state.ship.pos,
+          nearRadius,
+          minDistFromShip: 210,
+          maxCellCount: 12,
+        });
+        localAttempts++;
+      }
 
-      spawn("large", state.params.largeCount);
-      spawn("med", state.params.medCount);
-      spawn("small", state.params.smallCount);
       rebuildWorldCellIndex();
     }
 
@@ -794,17 +1136,22 @@
       state.mode = "playing";
     }
 
+    function orbitRadiusForAsteroid(a) {
+      const base = currentForceFieldRadius();
+      return base + Math.max(0, a.radius - state.params.smallRadius * 0.7) + state.params.attachPadding;
+    }
+
     function orbitPosFor(a) {
-      const r = state.params.forceFieldRadius;
+      const r = orbitRadiusForAsteroid(a);
       const wAngle = state.ship.angle + a.orbitA;
       return add(state.ship.pos, mul(angleToVec(wAngle), r));
     }
 
-    function tryAttachSmall(a) {
-      if (a.size !== "small" || a.attached) return false;
+    function tryAttachAsteroid(a) {
+      if (!shipCanAttractSize(a.size) || a.attached) return false;
       const toShip = sub(a.pos, state.ship.pos);
       const d = len(toShip);
-      const targetR = state.params.forceFieldRadius;
+      const targetR = orbitRadiusForAsteroid(a);
       const err = Math.abs(d - targetR);
       const spd = len(a.vel);
       if (err <= state.params.attachBand && spd <= state.params.attachSpeedMax) {
@@ -823,11 +1170,12 @@
       if (state.burstCooldown > 0) return;
       state.burstCooldown = state.params.burstCooldownSec;
       state.blastPulseT = 0.22;
+      const fieldR = currentForceFieldRadius();
       spawnExplosion(state.ship.pos, {
         kind: "ring",
         rgb: [255, 255, 255],
-        r0: state.params.forceFieldRadius - 2,
-        r1: state.params.forceFieldRadius + 26,
+        r0: fieldR - 2,
+        r1: fieldR + 26,
         ttl: 0.18,
       });
 
@@ -847,8 +1195,9 @@
     function clampCameraToWorld() {
       const halfWorldW = state.world.w / 2;
       const halfWorldH = state.world.h / 2;
-      const halfViewW = state.view.w / 2;
-      const halfViewH = state.view.h / 2;
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
+      const halfViewW = state.view.w / (2 * zoom);
+      const halfViewH = state.view.h / (2 * zoom);
 
       const minCamX = halfViewW - halfWorldW;
       const maxCamX = halfWorldW - halfViewW;
@@ -862,10 +1211,11 @@
     }
 
     function syncCameraToShip() {
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
       if (state.camera.mode === "deadzone") {
         const ship = state.ship;
-        const dzHalfW = Math.max(0, (state.view.w * state.camera.deadZoneFracX) / 2);
-        const dzHalfH = Math.max(0, (state.view.h * state.camera.deadZoneFracY) / 2);
+        const dzHalfW = Math.max(0, (state.view.w * state.camera.deadZoneFracX) / (2 * zoom));
+        const dzHalfH = Math.max(0, (state.view.h * state.camera.deadZoneFracY) / (2 * zoom));
         const dx = ship.pos.x - state.camera.x;
         const dy = ship.pos.y - state.camera.y;
 
@@ -922,7 +1272,7 @@
     }
 
     function applyWorldScale(scale) {
-      const s = clamp(Number(scale) || 1, 1, 4);
+      const s = clamp(Number(scale) || 1, 1, 10);
       state.world.scale = s;
       state.world.w = state.view.w * s;
       state.world.h = state.view.h * s;
@@ -983,18 +1333,21 @@
 
     function updateAsteroids(dt) {
       const ship = state.ship;
+      const attractRadius = currentAttractRadius();
+      const forceFieldRadius = currentForceFieldRadius();
+      const attractRadius2 = attractRadius * attractRadius;
 
-      // Keep attached small asteroids distributed around the ring.
+      // Keep attached asteroids distributed around the ring.
       // Simple angular repulsion so they don't overlap.
       const attached = state.asteroids.filter((a) => a.attached);
       if (attached.length >= 2) {
-        const r = Math.max(20, state.params.forceFieldRadius);
         const iters = 3;
         for (let it = 0; it < iters; it++) {
           for (let i = 0; i < attached.length; i++) {
             for (let j = i + 1; j < attached.length; j++) {
               const a = attached[i];
               const b = attached[j];
+              const r = Math.max(20, Math.min(orbitRadiusForAsteroid(a), orbitRadiusForAsteroid(b)));
               const delta = wrapAngle(a.orbitA - b.orbitA);
               const minSep = (a.radius + b.radius + 6) / r;
               if (Math.abs(delta) >= minSep) continue;
@@ -1017,20 +1370,19 @@
         a.fractureCooldownT = Math.max(0, a.fractureCooldownT - dt);
         a.hitFxT = Math.max(0, a.hitFxT - dt);
 
-        if (a.size === "small") {
+        if (shipCanAttractSize(a.size)) {
           const toShip = sub(ship.pos, a.pos);
           const d2 = len2(toShip);
-          const attractR2 = state.params.attractRadius * state.params.attractRadius;
-          if (d2 < attractR2) {
+          if (d2 < attractRadius2) {
             const d = Math.max(10, Math.sqrt(d2));
             const dirIn = mul(toShip, 1 / d); // toward ship
 
             // Gravity well: stronger as you get closer (1 / (d^2 + soft^2)).
             const soft = state.params.gravitySoftening;
             const grav = state.params.gravityK / (d2 + soft * soft);
-            const insideRing = d < state.params.forceFieldRadius;
+            const insideRing = d < forceFieldRadius;
             const innerMult = insideRing ? state.params.innerGravityMult : 1;
-            const innerT = insideRing ? clamp(1 - d / Math.max(1, state.params.forceFieldRadius), 0, 1) : 0;
+            const innerT = insideRing ? clamp(1 - d / Math.max(1, forceFieldRadius), 0, 1) : 0;
             a.vel = add(a.vel, mul(dirIn, grav * innerMult * dt));
 
             // Extra damping inside the ring to help captures settle and reduce slingshot escapes.
@@ -1039,7 +1391,8 @@
             }
 
             // Forcefield surface: pull toward r = forceFieldRadius and repel inside it.
-            const err = d - state.params.forceFieldRadius; // + outside, - inside
+            const targetRingRadius = orbitRadiusForAsteroid(a);
+            const err = d - targetRingRadius; // + outside, - inside
             const spd = len(a.vel);
             const capV = Math.max(1, state.params.captureSpeed);
             const captureFactor = clamp(1 - spd / capV, 0, 1);
@@ -1053,7 +1406,7 @@
             }
           }
 
-          tryAttachSmall(a);
+          tryAttachAsteroid(a);
         }
 
         a.pos = add(a.pos, mul(a.vel, dt));
@@ -1117,7 +1470,10 @@
         if (len2(sub(g.pos, state.ship.pos)) > pickR * pickR) continue;
         state.gems.splice(i, 1);
         state.gemsCollected[g.kind] = (state.gemsCollected[g.kind] || 0) + 1;
-        state.score += gemPoints(g.kind);
+        const pts = gemPoints(g.kind);
+        state.score += pts;
+        state.progression.gemScore += pts;
+        refreshShipTierProgression({ animateZoom: true });
         spawnExplosion(state.ship.pos, { kind: "tiny", rgb: gemRgb(g.kind), r0: 4, r1: 16, ttl: 0.14 });
       }
     }
@@ -1142,10 +1498,10 @@
 
     function fractureAsteroid(target, impactDir, impactSpeed) {
       if (target.fractureCooldownT > 0) return null;
-      const next = target.size === "large" ? "med" : target.size === "med" ? "small" : null;
+      const next = asteroidNextSize(target.size);
       if (!next) return null;
 
-      // KISS fracture: large -> 2 med, med -> 2 small.
+      // KISS fracture: size -> 2 next smaller.
       const pieces = [];
       const count = 2;
       const baseR = asteroidRadiusForSize(state.params, next);
@@ -1166,11 +1522,12 @@
         kind: "pop",
         rgb: [255, 255, 255],
         r0: 10,
-        r1: next === "med" ? 42 : 34,
+        r1: Math.max(26, baseR * 1.45),
         ttl: 0.22,
       });
 
-      state.score += next === "med" ? 10 : 6;
+      const rankGain = Math.max(1, asteroidSizeRank(target.size));
+      state.score += 4 + rankGain * 3;
       return pieces;
     }
 
@@ -1202,7 +1559,7 @@
     }
 
     function forEachNearbyAsteroidPair(fn) {
-      const cellSize = 180;
+      const cellSize = Math.max(180, Math.round((state.params.xxlargeRadius || 150) * 2.2));
       const buckets = new Map();
       const asteroids = state.asteroids;
       for (let i = 0; i < asteroids.length; i++) {
@@ -1252,16 +1609,28 @@
     function handleCollisions() {
       if (state.mode !== "playing") return;
 
-      // Ship vs med/large.
+      // Ship vs asteroids.
       const shipRemovals = new Set();
+      const shipAdds = [];
       for (const a of state.asteroids) {
         if (a.attached) continue;
-        if (a.size === "small") {
-          if (isDamagingSmall(a, len(a.vel)) && circleHit(state.ship, a)) {
+        if (isDamagingProjectile(a, len(a.vel)) && circleHit(state.ship, a)) {
+          if (a.size === "small") {
             breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+          } else if (len(a.vel) >= state.params.fractureImpactSpeed) {
+            const frags = fractureAsteroid(a, norm(a.vel), len(a.vel));
+            if (frags) {
+              shipRemovals.add(a.id);
+              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
+              shipAdds.push(...frags.slice(0, room));
+            }
+          } else {
+            shipRemovals.add(a.id);
+            spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
           }
           continue;
         }
+        if (a.size === "small") continue;
         const hit = circleCollide(state.ship, a);
         if (!hit) continue;
         if (state.settings.shipExplodesOnImpact) {
@@ -1273,6 +1642,7 @@
       if (shipRemovals.size) {
         state.asteroids = state.asteroids.filter((a) => !shipRemovals.has(a.id));
       }
+      if (shipAdds.length) state.asteroids.push(...shipAdds);
 
       // Asteroid vs asteroid.
       const toRemove = new Set();
@@ -1292,32 +1662,45 @@
         const impactSpeed = -velAlongNormal;
         const relSpeed = len(rv);
 
-        const aDamaging = isDamagingSmall(a, relSpeed);
-        const bDamaging = isDamagingSmall(b, relSpeed);
+        const aDamaging = isDamagingProjectile(a, relSpeed);
+        const bDamaging = isDamagingProjectile(b, relSpeed);
         if (aDamaging || bDamaging) {
-          const damagingSmall = aDamaging ? a : b;
-          const other = damagingSmall === a ? b : a;
+          const interactions = [];
+          if (aDamaging) interactions.push({ projectile: a, target: b, impactDir: hit.n });
+          if (bDamaging) interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1) });
 
-          // The fast small self-destructs on any impact.
-          breakSmallAsteroid(damagingSmall, { velHint: damagingSmall.vel, removeSet: toRemove });
+          for (const it of interactions) {
+            const projectile = it.projectile;
+            const target = it.target;
+            if (!projectile || !target) continue;
+            if (toRemove.has(projectile.id) || toRemove.has(target.id)) continue;
 
-          if (other.size === "small") {
-            // At blast speeds: annihilate both smalls.
-            breakSmallAsteroid(other, { velHint: other.vel, removeSet: toRemove });
-            state.score += 1;
-          } else if (relSpeed >= state.params.fractureImpactSpeed) {
-            // Break med/large into two pieces (large->2 med, med->2 small).
-            const impactDir = damagingSmall === a ? hit.n : mul(hit.n, -1);
-            const frags = fractureAsteroid(other, impactDir, relSpeed);
-            if (frags) {
-              toRemove.add(other.id);
-              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
-              toAdd.push(...frags.slice(0, room));
+            if (projectile.size === "small") {
+              // Fast smalls still self-destruct on impact.
+              breakSmallAsteroid(projectile, { velHint: projectile.vel, removeSet: toRemove });
+            } else {
+              projectile.shipLaunched = false;
+              projectile.hitFxT = 0.18;
             }
-          } else {
-            // Not enough energy to fracture: just a visible hit + shove.
-            spawnExplosion(other.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
-            other.vel = add(other.vel, mul(hit.n, Math.min(180, relSpeed * 0.5)));
+
+            if (target.size === "small") {
+              breakSmallAsteroid(target, { velHint: target.vel, removeSet: toRemove });
+              state.score += 1;
+              continue;
+            }
+
+            if (relSpeed >= state.params.fractureImpactSpeed) {
+              const frags = fractureAsteroid(target, it.impactDir, relSpeed);
+              if (frags) {
+                toRemove.add(target.id);
+                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
+                toAdd.push(...frags.slice(0, room));
+                continue;
+              }
+            }
+
+            spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
+            target.vel = add(target.vel, mul(it.impactDir, Math.min(180, relSpeed * 0.5)));
           }
           return;
         }
@@ -1342,6 +1725,9 @@
       state.time += dt;
       state.burstCooldown = Math.max(0, state.burstCooldown - dt);
       state.blastPulseT = Math.max(0, state.blastPulseT - dt);
+      state.progression.tierShiftT = Math.max(0, state.progression.tierShiftT - dt);
+      refreshShipTierProgression({ animateZoom: true });
+      updateCameraZoom(dt);
       for (let i = state.effects.length - 1; i >= 0; i--) {
         const e = state.effects[i];
         e.t += dt;
@@ -1363,6 +1749,50 @@
       handleCollisions();
       rebuildWorldCellIndex();
       maintainAsteroidPopulation(dt);
+    }
+
+    function drawShipModel(ctx, ship, thrusting) {
+      const tier = currentShipTier();
+      const renderer = tier.renderer || {};
+      ctx.save();
+      ctx.translate(ship.pos.x, ship.pos.y);
+      ctx.rotate(ship.angle);
+      ctx.strokeStyle = "rgba(231,240,255,0.95)";
+      ctx.lineWidth = 2;
+
+      if (renderer.type === "svg" && renderer.path) {
+        // SVG path support for easy future ship replacement.
+        const path = renderer._path2d || new Path2D(renderer.path);
+        renderer._path2d = path;
+        const scale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.stroke(path);
+        ctx.restore();
+      } else {
+        const points = Array.isArray(renderer.points) ? renderer.points : SHIP_TIERS.small.renderer.points;
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      if (thrusting) {
+        const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
+        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
+        for (const e of engines) {
+          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
+          ctx.beginPath();
+          ctx.moveTo(e.x, e.y);
+          ctx.lineTo(e.x - flameLen, e.y);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     function render(ctx) {
@@ -1410,8 +1840,11 @@
       ctx.restore();
 
       ctx.save();
-      // World-space rendering: camera position maps to screen center.
-      ctx.translate(w / 2 - state.camera.x, h / 2 - state.camera.y);
+      // World-space rendering: camera position maps to screen center with zoom.
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
+      ctx.translate(w * 0.5, h * 0.5);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-state.camera.x, -state.camera.y);
 
       // Arena edge (phase LA-06 first pass): simple boundary line.
       ctx.save();
@@ -1421,13 +1854,17 @@
       ctx.restore();
 
       if (state.mode === "playing") {
-        // Force field ring (where collected small asteroids stick).
+        // Force field ring (where collected asteroids stick).
+        const tier = currentShipTier();
+        const fieldR = currentForceFieldRadius();
+        const attractR = currentAttractRadius();
         const pulse = clamp(state.blastPulseT / 0.22, 0, 1);
+        const tierShift = clamp(state.progression.tierShiftT / 0.7, 0, 1);
         ctx.save();
-        ctx.strokeStyle = "rgba(255,221,88,0.40)";
+        ctx.strokeStyle = tier.ringColor;
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(state.ship.pos.x, state.ship.pos.y, state.params.forceFieldRadius, 0, Math.PI * 2);
+        ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
         ctx.stroke();
 
         if (pulse > 0) {
@@ -1435,13 +1872,21 @@
           ctx.strokeStyle = `rgba(255,255,255,${lerp(0.0, 0.85, pulse).toFixed(3)})`;
           ctx.lineWidth = lerp(2, 6, pulse);
           ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, state.params.forceFieldRadius, 0, Math.PI * 2);
+          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
           ctx.stroke();
 
           ctx.strokeStyle = `rgba(255,89,100,${lerp(0.0, 0.55, pulse).toFixed(3)})`;
           ctx.lineWidth = lerp(1, 4, pulse);
           ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, state.params.forceFieldRadius + lerp(0, 10, pulse), 0, Math.PI * 2);
+          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 10, pulse), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        if (tierShift > 0) {
+          ctx.strokeStyle = `rgba(255,255,255,${(tierShift * 0.9).toFixed(3)})`;
+          ctx.lineWidth = lerp(2, 8, tierShift);
+          ctx.beginPath();
+          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 34, 1 - tierShift), 0, Math.PI * 2);
           ctx.stroke();
         }
         ctx.restore();
@@ -1454,7 +1899,7 @@
           ctx.setLineDash([10, 10]);
           ctx.lineDashOffset = 0;
           ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, state.params.attractRadius, 0, Math.PI * 2);
+          ctx.arc(state.ship.pos.x, state.ship.pos.y, attractR, 0, Math.PI * 2);
           ctx.stroke();
           ctx.restore();
         }
@@ -1462,11 +1907,15 @@
 
       for (const a of state.asteroids) {
         const base =
-          a.size === "large"
-            ? "rgba(231,240,255,0.72)"
-            : a.size === "med"
-              ? "rgba(231,240,255,0.80)"
-              : "rgba(231,240,255,0.88)";
+          a.size === "xxlarge"
+            ? "rgba(231,240,255,0.62)"
+            : a.size === "xlarge"
+              ? "rgba(231,240,255,0.68)"
+              : a.size === "large"
+                ? "rgba(231,240,255,0.74)"
+                : a.size === "med"
+                  ? "rgba(231,240,255,0.80)"
+                  : "rgba(231,240,255,0.88)";
         const color = a.attached ? "rgba(255,221,88,0.95)" : base;
         drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
       }
@@ -1615,28 +2064,7 @@
         ctx.restore();
       }
 
-      const ship = state.ship;
-      ctx.save();
-      ctx.translate(ship.pos.x, ship.pos.y);
-      ctx.rotate(ship.angle);
-      ctx.strokeStyle = "rgba(231,240,255,0.95)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(16, 0);
-      ctx.lineTo(-12, -10);
-      ctx.lineTo(-7, 0);
-      ctx.lineTo(-12, 10);
-      ctx.closePath();
-      ctx.stroke();
-
-      if (state.mode === "playing" && state.input.up) {
-        ctx.strokeStyle = "rgba(255, 89, 100, 0.9)";
-        ctx.beginPath();
-        ctx.moveTo(-10, 0);
-        ctx.lineTo(-20 - (Math.sin(state.time * 30) * 3 + 2), 0);
-        ctx.stroke();
-      }
-      ctx.restore();
+      drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
 
       ctx.restore();
 
@@ -1644,19 +2072,21 @@
       ctx.fillStyle = "rgba(231,240,255,0.85)";
       ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
       const attached = state.asteroids.filter((a) => a.attached).length;
+      const xxlarge = state.asteroids.filter((a) => a.size === "xxlarge").length;
+      const xlarge = state.asteroids.filter((a) => a.size === "xlarge").length;
       const large = state.asteroids.filter((a) => a.size === "large").length;
       const med = state.asteroids.filter((a) => a.size === "med").length;
       const small = state.asteroids.filter((a) => a.size === "small").length;
       if (state.mode === "playing") {
         ctx.fillText(
-          `Attached: ${attached}   Small: ${small}   Med: ${med}   Large: ${large}   Score: ${state.score}`,
+          `Tier: ${currentShipTier().label}   Attached: ${attached}   S:${small} M:${med} L:${large} XL:${xlarge} XXL:${xxlarge}   Gems: ${state.progression.gemScore}   Score: ${state.score}`,
           14,
           18,
         );
       } else if (state.mode === "gameover") {
         ctx.fillStyle = "rgba(255,89,100,0.92)";
         ctx.font = "16px ui-sans-serif, system-ui";
-        ctx.fillText("Impact with a medium/large asteroid. Press R to restart.", 14, 28);
+        ctx.fillText("Impact with a heavy asteroid. Press R to restart.", 14, 28);
       }
       ctx.restore();
     }
@@ -1664,12 +2094,13 @@
     function renderGameToText() {
       const ship = state.ship;
       const attached = state.asteroids.filter((a) => a.attached).length;
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
       const counts = state.asteroids.reduce(
         (acc, a) => {
           acc[a.size] = (acc[a.size] || 0) + 1;
           return acc;
         },
-        { small: 0, med: 0, large: 0 },
+        { small: 0, med: 0, large: 0, xlarge: 0, xxlarge: 0 },
       );
       const gemsOnField = state.gems.reduce(
         (acc, g) => {
@@ -1685,6 +2116,11 @@
         y: Math.round(a.pos.y),
         r: Math.round(a.radius),
       }));
+      const asteroidsOnScreen = state.asteroids.reduce((n, a) => {
+        const inX = Math.abs(a.pos.x - state.camera.x) <= state.view.w * 0.5 / zoom + a.radius;
+        const inY = Math.abs(a.pos.y - state.camera.y) <= state.view.h * 0.5 / zoom + a.radius;
+        return n + (inX && inY ? 1 : 0);
+      }, 0);
       return JSON.stringify({
         coordinate_system:
           "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
@@ -1709,6 +2145,7 @@
           x: Math.round(state.camera.x),
           y: Math.round(state.camera.y),
           mode: state.camera.mode,
+          zoom: +zoom.toFixed(3),
         },
         ship: {
           x: Math.round(ship.pos.x),
@@ -1716,6 +2153,7 @@
           vx: Math.round(ship.vel.x),
           vy: Math.round(ship.vel.y),
           angle: +ship.angle.toFixed(3),
+          tier: ship.tier,
         },
         saucer: state.saucer
           ? {
@@ -1725,13 +2163,35 @@
               lasers: state.saucerLasers.length,
             }
           : null,
-        field: { radius: state.params.forceFieldRadius },
-        attract: { radius: state.params.attractRadius, debug: state.settings.showAttractRadius },
-        counts: { ...counts, attached, score: state.score },
+        field: { radius: +currentForceFieldRadius().toFixed(2) },
+        attract: { radius: +currentAttractRadius().toFixed(2), debug: state.settings.showAttractRadius },
+        progression: {
+          gem_score: state.progression.gemScore,
+          current_tier: state.progression.currentTier,
+          tier2_unlock: state.params.tier2UnlockGemScore,
+          tier3_unlock: state.params.tier3UnlockGemScore,
+          override: state.settings.tierOverrideEnabled ? clamp(Math.round(state.settings.tierOverrideIndex), 1, 3) : 0,
+        },
+        counts: { ...counts, attached, score: state.score, asteroids_on_screen: asteroidsOnScreen },
         gems_on_field: gemsOnField,
         gems_collected: { ...state.gemsCollected },
         sample_asteroids: sample,
       });
+    }
+
+    function setShipSvgRenderer(tierKey, pathData, svgScale = 1) {
+      const key = tierKey === "medium" || tierKey === "large" ? tierKey : "small";
+      const tier = shipTierByKey(key);
+      if (!pathData || typeof pathData !== "string") {
+        tier.renderer = cloneRenderer(DEFAULT_SHIP_RENDERERS[key]);
+        return false;
+      }
+      tier.renderer = {
+        type: "svg",
+        path: pathData,
+        svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1,
+      };
+      return true;
     }
 
     rebuildStarfield();
@@ -1743,6 +2203,8 @@
       resize,
       setArenaConfig,
       refreshBackground,
+      refreshProgression: (options = {}) => refreshShipTierProgression(options),
+      setShipSvgRenderer,
       update,
       render,
       renderGameToText,
@@ -1753,12 +2215,20 @@
   const ctx = canvas.getContext("2d", { alpha: false });
   const menu = document.getElementById("menu");
   const hudScore = document.getElementById("hud-score");
+  const debugToggleBtn = document.getElementById("debug-toggle");
   const startBtn = document.getElementById("start-btn");
   const dbgAttract = document.getElementById("dbg-attract");
   const shipExplode = document.getElementById("ship-explode");
   const dbgCameraMode = document.getElementById("dbg-camera-mode");
   const dbgWorldScale = document.getElementById("dbg-world-scale");
   const dbgWorldScaleOut = document.getElementById("dbg-world-scale-out");
+  const dbgPauseOnOpen = document.getElementById("dbg-pause-on-open");
+  const dbgTierOverride = document.getElementById("dbg-tier-override");
+  const dbgTierOverrideLevel = document.getElementById("dbg-tier-override-level");
+  const dbgTierOverrideOut = document.getElementById("dbg-tier-override-out");
+  const dbgGemScore = document.getElementById("dbg-gem-score");
+  const dbgGemScoreOut = document.getElementById("dbg-gem-score-out");
+  const dbgCurrentTierOut = document.getElementById("dbg-current-tier-out");
   const tuneAttract = document.getElementById("tune-attract");
   const tuneAttractOut = document.getElementById("tune-attract-out");
   const tuneAttractSave = document.getElementById("tune-attract-save");
@@ -1803,6 +2273,50 @@
   const tuneFractureOut = document.getElementById("tune-fracture-out");
   const tuneFractureSave = document.getElementById("tune-fracture-save");
   const tuneFractureDefault = document.getElementById("tune-fracture-default");
+  const tuneWorldDensity = document.getElementById("tune-world-density");
+  const tuneWorldDensityOut = document.getElementById("tune-world-density-out");
+  const tuneWorldDensitySave = document.getElementById("tune-world-density-save");
+  const tuneWorldDensityDefault = document.getElementById("tune-world-density-default");
+  const tuneXlRadius = document.getElementById("tune-xl-radius");
+  const tuneXlRadiusOut = document.getElementById("tune-xl-radius-out");
+  const tuneXlRadiusSave = document.getElementById("tune-xl-radius-save");
+  const tuneXlRadiusDefault = document.getElementById("tune-xl-radius-default");
+  const tuneXxlRadius = document.getElementById("tune-xxl-radius");
+  const tuneXxlRadiusOut = document.getElementById("tune-xxl-radius-out");
+  const tuneXxlRadiusSave = document.getElementById("tune-xxl-radius-save");
+  const tuneXxlRadiusDefault = document.getElementById("tune-xxl-radius-default");
+  const tuneXlCount = document.getElementById("tune-xl-count");
+  const tuneXlCountOut = document.getElementById("tune-xl-count-out");
+  const tuneXlCountSave = document.getElementById("tune-xl-count-save");
+  const tuneXlCountDefault = document.getElementById("tune-xl-count-default");
+  const tuneXxlCount = document.getElementById("tune-xxl-count");
+  const tuneXxlCountOut = document.getElementById("tune-xxl-count-out");
+  const tuneXxlCountSave = document.getElementById("tune-xxl-count-save");
+  const tuneXxlCountDefault = document.getElementById("tune-xxl-count-default");
+  const tuneTier2Unlock = document.getElementById("tune-tier2-unlock");
+  const tuneTier2UnlockOut = document.getElementById("tune-tier2-unlock-out");
+  const tuneTier2UnlockSave = document.getElementById("tune-tier2-unlock-save");
+  const tuneTier2UnlockDefault = document.getElementById("tune-tier2-unlock-default");
+  const tuneTier3Unlock = document.getElementById("tune-tier3-unlock");
+  const tuneTier3UnlockOut = document.getElementById("tune-tier3-unlock-out");
+  const tuneTier3UnlockSave = document.getElementById("tune-tier3-unlock-save");
+  const tuneTier3UnlockDefault = document.getElementById("tune-tier3-unlock-default");
+  const tuneTier1Zoom = document.getElementById("tune-tier1-zoom");
+  const tuneTier1ZoomOut = document.getElementById("tune-tier1-zoom-out");
+  const tuneTier1ZoomSave = document.getElementById("tune-tier1-zoom-save");
+  const tuneTier1ZoomDefault = document.getElementById("tune-tier1-zoom-default");
+  const tuneTier2Zoom = document.getElementById("tune-tier2-zoom");
+  const tuneTier2ZoomOut = document.getElementById("tune-tier2-zoom-out");
+  const tuneTier2ZoomSave = document.getElementById("tune-tier2-zoom-save");
+  const tuneTier2ZoomDefault = document.getElementById("tune-tier2-zoom-default");
+  const tuneTier3Zoom = document.getElementById("tune-tier3-zoom");
+  const tuneTier3ZoomOut = document.getElementById("tune-tier3-zoom-out");
+  const tuneTier3ZoomSave = document.getElementById("tune-tier3-zoom-save");
+  const tuneTier3ZoomDefault = document.getElementById("tune-tier3-zoom-default");
+  const tuneTierZoomSec = document.getElementById("tune-tier-zoom-sec");
+  const tuneTierZoomSecOut = document.getElementById("tune-tier-zoom-sec-out");
+  const tuneTierZoomSecSave = document.getElementById("tune-tier-zoom-sec-save");
+  const tuneTierZoomSecDefault = document.getElementById("tune-tier-zoom-sec-default");
   const tuneStarDensity = document.getElementById("tune-star-density");
   const tuneStarDensityOut = document.getElementById("tune-star-density-out");
   const tuneStarDensitySave = document.getElementById("tune-star-density-save");
@@ -1917,11 +2431,93 @@
       suffix: " px/s",
     },
     {
+      key: "xlargeRadius",
+      input: tuneXlRadius,
+      saveBtn: tuneXlRadiusSave,
+      savedOut: tuneXlRadiusDefault,
+      suffix: " px",
+    },
+    {
+      key: "xxlargeRadius",
+      input: tuneXxlRadius,
+      saveBtn: tuneXxlRadiusSave,
+      savedOut: tuneXxlRadiusDefault,
+      suffix: " px",
+    },
+    {
+      key: "xlargeCount",
+      input: tuneXlCount,
+      saveBtn: tuneXlCountSave,
+      savedOut: tuneXlCountDefault,
+      suffix: "",
+    },
+    {
+      key: "xxlargeCount",
+      input: tuneXxlCount,
+      saveBtn: tuneXxlCountSave,
+      savedOut: tuneXxlCountDefault,
+      suffix: "",
+    },
+    {
       key: "fractureImpactSpeed",
       input: tuneFracture,
       saveBtn: tuneFractureSave,
       savedOut: tuneFractureDefault,
       suffix: " px/s",
+    },
+    {
+      key: "tier2UnlockGemScore",
+      input: tuneTier2Unlock,
+      saveBtn: tuneTier2UnlockSave,
+      savedOut: tuneTier2UnlockDefault,
+      suffix: "",
+    },
+    {
+      key: "tier3UnlockGemScore",
+      input: tuneTier3Unlock,
+      saveBtn: tuneTier3UnlockSave,
+      savedOut: tuneTier3UnlockDefault,
+      suffix: "",
+    },
+    {
+      key: "tier1Zoom",
+      input: tuneTier1Zoom,
+      saveBtn: tuneTier1ZoomSave,
+      savedOut: tuneTier1ZoomDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "tier2Zoom",
+      input: tuneTier2Zoom,
+      saveBtn: tuneTier2ZoomSave,
+      savedOut: tuneTier2ZoomDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "tier3Zoom",
+      input: tuneTier3Zoom,
+      saveBtn: tuneTier3ZoomSave,
+      savedOut: tuneTier3ZoomDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "tierZoomTweenSec",
+      input: tuneTierZoomSec,
+      saveBtn: tuneTierZoomSecSave,
+      savedOut: tuneTierZoomSecDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)} s`,
+    },
+    {
+      key: "asteroidWorldDensityScale",
+      input: tuneWorldDensity,
+      saveBtn: tuneWorldDensitySave,
+      savedOut: tuneWorldDensityDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
     },
     {
       key: "starDensityScale",
@@ -2020,6 +2616,16 @@
       forceFieldRadius: p.forceFieldRadius,
     };
     p.forceFieldRadius = clamp(p.forceFieldRadius, 40, Math.max(60, p.attractRadius - 40));
+    p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
+    p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
+    p.xlargeCount = clamp(Math.round(p.xlargeCount), 0, 50);
+    p.xxlargeCount = clamp(Math.round(p.xxlargeCount), 0, 50);
+    p.tier2UnlockGemScore = clamp(Math.round(p.tier2UnlockGemScore), 1, 10000);
+    p.tier3UnlockGemScore = clamp(Math.round(p.tier3UnlockGemScore), p.tier2UnlockGemScore + 50, 10000);
+    p.tier1Zoom = clamp(p.tier1Zoom, 0.35, 1.2);
+    p.tier2Zoom = clamp(p.tier2Zoom, 0.35, 1.2);
+    p.tier3Zoom = clamp(p.tier3Zoom, 0.35, 1.2);
+    p.tierZoomTweenSec = clamp(p.tierZoomTweenSec, 0.05, 1.2);
     if (
       Object.prototype.hasOwnProperty.call(defaults, "forceFieldRadius") &&
       before.forceFieldRadius !== p.forceFieldRadius
@@ -2057,7 +2663,18 @@
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
     if (tuneDmg) tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
+    if (tuneXlRadius) tuneXlRadius.value = String(Math.round(p.xlargeRadius));
+    if (tuneXxlRadius) tuneXxlRadius.value = String(Math.round(p.xxlargeRadius));
+    if (tuneXlCount) tuneXlCount.value = String(Math.round(p.xlargeCount));
+    if (tuneXxlCount) tuneXxlCount.value = String(Math.round(p.xxlargeCount));
     if (tuneFracture) tuneFracture.value = String(Math.round(p.fractureImpactSpeed));
+    if (tuneTier2Unlock) tuneTier2Unlock.value = String(Math.round(p.tier2UnlockGemScore));
+    if (tuneTier3Unlock) tuneTier3Unlock.value = String(Math.round(p.tier3UnlockGemScore));
+    if (tuneTier1Zoom) tuneTier1Zoom.value = String(p.tier1Zoom);
+    if (tuneTier2Zoom) tuneTier2Zoom.value = String(p.tier2Zoom);
+    if (tuneTier3Zoom) tuneTier3Zoom.value = String(p.tier3Zoom);
+    if (tuneTierZoomSec) tuneTierZoomSec.value = String(p.tierZoomTweenSec);
+    if (tuneWorldDensity) tuneWorldDensity.value = String(p.asteroidWorldDensityScale);
     if (tuneStarDensity) tuneStarDensity.value = String(p.starDensityScale);
     if (tuneParallax) tuneParallax.value = String(p.starParallaxStrength);
     if (tuneStarAccentChance) tuneStarAccentChance.value = String(p.starAccentChance);
@@ -2079,7 +2696,20 @@
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
     setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
+    setOut(tuneXlRadiusOut, readNum(tuneXlRadius, p.xlargeRadius), " px");
+    setOut(tuneXxlRadiusOut, readNum(tuneXxlRadius, p.xxlargeRadius), " px");
+    setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
+    setOut(tuneXxlCountOut, readNum(tuneXxlCount, p.xxlargeCount));
     setOut(tuneFractureOut, readNum(tuneFracture, p.fractureImpactSpeed), " px/s");
+    setOut(tuneTier2UnlockOut, readNum(tuneTier2Unlock, p.tier2UnlockGemScore));
+    setOut(tuneTier3UnlockOut, readNum(tuneTier3Unlock, p.tier3UnlockGemScore));
+    if (tuneTier1ZoomOut) tuneTier1ZoomOut.textContent = `${readNum(tuneTier1Zoom, p.tier1Zoom).toFixed(2)}x`;
+    if (tuneTier2ZoomOut) tuneTier2ZoomOut.textContent = `${readNum(tuneTier2Zoom, p.tier2Zoom).toFixed(2)}x`;
+    if (tuneTier3ZoomOut) tuneTier3ZoomOut.textContent = `${readNum(tuneTier3Zoom, p.tier3Zoom).toFixed(2)}x`;
+    if (tuneTierZoomSecOut) tuneTierZoomSecOut.textContent = `${readNum(tuneTierZoomSec, p.tierZoomTweenSec).toFixed(2)} s`;
+    if (tuneWorldDensityOut) {
+      tuneWorldDensityOut.textContent = `${readNum(tuneWorldDensity, p.asteroidWorldDensityScale).toFixed(2)}x`;
+    }
     if (tuneStarDensityOut) tuneStarDensityOut.textContent = `${readNum(tuneStarDensity, p.starDensityScale).toFixed(2)}x`;
     if (tuneParallaxOut) tuneParallaxOut.textContent = `${readNum(tuneParallax, p.starParallaxStrength).toFixed(2)}x`;
     if (tuneStarAccentChanceOut) {
@@ -2098,7 +2728,10 @@
 
   function bindTuneInput(el) {
     if (!el) return;
-    el.addEventListener("input", () => syncTuningUiLabels());
+    el.addEventListener("input", () => {
+      syncTuningUiLabels();
+      applyTuningFromMenu();
+    });
   }
   bindTuneInput(tuneAttract);
   bindTuneInput(tuneField);
@@ -2110,7 +2743,18 @@
   bindTuneInput(tuneBurst);
   bindTuneInput(tuneThrust);
   bindTuneInput(tuneDmg);
+  bindTuneInput(tuneXlRadius);
+  bindTuneInput(tuneXxlRadius);
+  bindTuneInput(tuneXlCount);
+  bindTuneInput(tuneXxlCount);
   bindTuneInput(tuneFracture);
+  bindTuneInput(tuneTier2Unlock);
+  bindTuneInput(tuneTier3Unlock);
+  bindTuneInput(tuneTier1Zoom);
+  bindTuneInput(tuneTier2Zoom);
+  bindTuneInput(tuneTier3Zoom);
+  bindTuneInput(tuneTierZoomSec);
+  bindTuneInput(tuneWorldDensity);
   bindTuneInput(tuneStarDensity);
   bindTuneInput(tuneParallax);
   bindTuneInput(tuneStarAccentChance);
@@ -2132,14 +2776,30 @@
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
     p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
+    p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
+    p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
+    p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);
+    p.xxlargeCount = clamp(Math.round(readNum(tuneXxlCount, p.xxlargeCount)), 0, 50);
     p.fractureImpactSpeed = readNum(tuneFracture, p.fractureImpactSpeed);
+    p.tier2UnlockGemScore = clamp(Math.round(readNum(tuneTier2Unlock, p.tier2UnlockGemScore)), 1, 10000);
+    p.tier3UnlockGemScore = clamp(Math.round(readNum(tuneTier3Unlock, p.tier3UnlockGemScore)), 1, 10000);
+    if (p.tier3UnlockGemScore <= p.tier2UnlockGemScore) p.tier3UnlockGemScore = p.tier2UnlockGemScore + 50;
+    p.tier1Zoom = clamp(readNum(tuneTier1Zoom, p.tier1Zoom), 0.35, 1.2);
+    p.tier2Zoom = clamp(readNum(tuneTier2Zoom, p.tier2Zoom), 0.35, 1.2);
+    p.tier3Zoom = clamp(readNum(tuneTier3Zoom, p.tier3Zoom), 0.35, 1.2);
+    p.tierZoomTweenSec = clamp(readNum(tuneTierZoomSec, p.tierZoomTweenSec), 0.05, 1.2);
+    p.asteroidWorldDensityScale = clamp(readNum(tuneWorldDensity, p.asteroidWorldDensityScale), 0.08, 2.5);
     p.starDensityScale = clamp(readNum(tuneStarDensity, p.starDensityScale), 0.4, 2.2);
     p.starParallaxStrength = clamp(readNum(tuneParallax, p.starParallaxStrength), 0, 1.8);
     p.starAccentChance = clamp(readNum(tuneStarAccentChance, p.starAccentChance), 0, 0.35);
     p.starTwinkleChance = clamp(readNum(tuneTwinkleChance, p.starTwinkleChance), 0, 1);
     p.starTwinkleStrength = clamp(readNum(tuneTwinkleStrength, p.starTwinkleStrength), 0, 0.8);
     p.starTwinkleSpeed = clamp(readNum(tuneTwinkleSpeed, p.starTwinkleSpeed), 0.2, 3);
+    game.state.settings.tierOverrideEnabled = !!dbgTierOverride?.checked;
+    game.state.settings.tierOverrideIndex = clamp(Math.round(readNum(dbgTierOverrideLevel, 1)), 1, 3);
+    game.state.settings.pauseOnMenuOpen = !!dbgPauseOnOpen?.checked;
     game.refreshBackground();
+    game.refreshProgression({ animateZoom: false });
     syncTuningUiFromParams();
   }
 
@@ -2147,39 +2807,128 @@
     if (dbgCameraMode) dbgCameraMode.value = game.state.camera.mode || "centered";
     if (dbgWorldScale) dbgWorldScale.value = String(game.state.world.scale || 1);
     if (dbgWorldScaleOut) dbgWorldScaleOut.textContent = `${Number(game.state.world.scale || 1).toFixed(2)}x`;
+    if (dbgPauseOnOpen) dbgPauseOnOpen.checked = !!game.state.settings.pauseOnMenuOpen;
+    if (dbgTierOverride) dbgTierOverride.checked = !!game.state.settings.tierOverrideEnabled;
+    if (dbgTierOverrideLevel) dbgTierOverrideLevel.value = String(Math.round(game.state.settings.tierOverrideIndex || 1));
+    if (dbgTierOverrideOut) dbgTierOverrideOut.textContent = `${Math.round(game.state.settings.tierOverrideIndex || 1)}`;
   }
 
   function applyArenaFromMenu() {
     const mode = dbgCameraMode?.value === "deadzone" ? "deadzone" : "centered";
-    const scale = clamp(readNum(dbgWorldScale, game.state.world.scale || 1), 1, 4);
+    const scale = clamp(readNum(dbgWorldScale, game.state.world.scale || 1), 1, 10);
     game.setArenaConfig({ cameraMode: mode, worldScale: scale });
     if (dbgWorldScale) dbgWorldScale.value = String(scale);
     if (dbgWorldScaleOut) dbgWorldScaleOut.textContent = `${scale.toFixed(2)}x`;
+    game.state.settings.pauseOnMenuOpen = !!dbgPauseOnOpen?.checked;
+    game.state.settings.tierOverrideEnabled = !!dbgTierOverride?.checked;
+    game.state.settings.tierOverrideIndex = clamp(Math.round(readNum(dbgTierOverrideLevel, 1)), 1, 3);
+    if (dbgTierOverrideOut) dbgTierOverrideOut.textContent = `${Math.round(game.state.settings.tierOverrideIndex)}`;
+    game.refreshProgression({ animateZoom: false });
+  }
+
+  function applyDebugFlagsFromMenu() {
+    game.state.settings.showAttractRadius = !!dbgAttract?.checked;
+    game.state.settings.shipExplodesOnImpact = !!shipExplode?.checked;
+    game.state.settings.pauseOnMenuOpen = !!dbgPauseOnOpen?.checked;
+    game.state.settings.tierOverrideEnabled = !!dbgTierOverride?.checked;
+    game.state.settings.tierOverrideIndex = clamp(Math.round(readNum(dbgTierOverrideLevel, 1)), 1, 3);
+    if (dbgTierOverrideOut) dbgTierOverrideOut.textContent = `${Math.round(game.state.settings.tierOverrideIndex)}`;
+  }
+
+  function syncRuntimeDebugUi() {
+    if (dbgGemScoreOut) dbgGemScoreOut.textContent = `${Math.round(game.state.progression.gemScore)}`;
+    if (dbgCurrentTierOut) dbgCurrentTierOut.textContent = `${game.state.progression.currentTier}`;
+    if (dbgGemScore && document.activeElement !== dbgGemScore) {
+      dbgGemScore.value = String(clamp(Math.round(game.state.progression.gemScore), 0, 5000));
+    }
+  }
+
+  function isMenuVisible() {
+    return menu.style.display !== "none";
+  }
+
+  function clearHeldInput() {
+    const i = game.state.input;
+    i.left = false;
+    i.right = false;
+    i.up = false;
+    i.down = false;
+    i.burst = false;
+  }
+
+  function syncMenuButtons() {
+    const playing = game.state.mode === "playing";
+    if (startBtn) startBtn.textContent = playing ? "Apply + Resume" : "Start";
+    if (debugToggleBtn) {
+      const visible = isMenuVisible();
+      debugToggleBtn.textContent = visible ? "Close Debug (M)" : "Open Debug (M)";
+      debugToggleBtn.setAttribute("aria-expanded", visible ? "true" : "false");
+    }
   }
 
   function setMenuVisible(visible) {
     menu.style.display = visible ? "grid" : "none";
+    if (visible) clearHeldInput();
+    if (visible) syncRuntimeDebugUi();
+    syncMenuButtons();
   }
 
-  function start() {
+  function startOrResume() {
     applyTuningFromMenu();
+    applyDebugFlagsFromMenu();
     applyArenaFromMenu();
+    if (game.state.mode === "menu") {
+      game.startGame();
+    } else if (game.state.mode === "gameover") {
+      game.resetWorld();
+      game.state.mode = "playing";
+    }
     setMenuVisible(false);
-    game.state.settings.showAttractRadius = !!dbgAttract?.checked;
-    game.state.settings.shipExplodesOnImpact = !!shipExplode?.checked;
-    game.startGame();
   }
 
-  startBtn.addEventListener("click", () => start());
+  function toggleDebugMenu() {
+    if (isMenuVisible()) setMenuVisible(false);
+    else {
+      syncTuningUiFromParams();
+      syncArenaUi();
+      setMenuVisible(true);
+    }
+  }
+
+  startBtn.addEventListener("click", () => startOrResume());
+  if (debugToggleBtn) debugToggleBtn.addEventListener("click", () => toggleDebugMenu());
   applyTuningDefaultsToParams();
   syncTuningUiFromParams();
   applyTuningFromMenu();
   syncArenaUi();
   applyArenaFromMenu();
+  applyDebugFlagsFromMenu();
+  syncMenuButtons();
+  syncRuntimeDebugUi();
   syncTuningDefaultLabels();
 
   if (dbgCameraMode) dbgCameraMode.addEventListener("change", () => applyArenaFromMenu());
   if (dbgWorldScale) dbgWorldScale.addEventListener("input", () => applyArenaFromMenu());
+  if (dbgPauseOnOpen) dbgPauseOnOpen.addEventListener("change", () => applyDebugFlagsFromMenu());
+  if (dbgTierOverride) dbgTierOverride.addEventListener("change", () => {
+    applyDebugFlagsFromMenu();
+    game.refreshProgression({ animateZoom: false });
+  });
+  if (dbgTierOverrideLevel) {
+    dbgTierOverrideLevel.addEventListener("input", () => {
+      applyDebugFlagsFromMenu();
+      game.refreshProgression({ animateZoom: false });
+    });
+  }
+  if (dbgGemScore) {
+    dbgGemScore.addEventListener("input", () => {
+      game.state.progression.gemScore = clamp(Math.round(readNum(dbgGemScore, game.state.progression.gemScore)), 0, 5000);
+      game.refreshProgression({ animateZoom: true });
+      syncRuntimeDebugUi();
+    });
+  }
+  if (dbgAttract) dbgAttract.addEventListener("change", () => applyDebugFlagsFromMenu());
+  if (shipExplode) shipExplode.addEventListener("change", () => applyDebugFlagsFromMenu());
 
   for (const f of TUNING_FIELDS) {
     if (!f.saveBtn || !f.input) continue;
@@ -2213,33 +2962,36 @@
 
   const input = game.state.input;
   function setKey(e, isDown) {
+    const menuOpen = isMenuVisible();
     switch (e.code) {
       case "ArrowLeft":
       case "KeyA":
-        input.left = isDown;
+        if (!menuOpen) input.left = isDown;
         e.preventDefault();
         break;
       case "ArrowRight":
       case "KeyD":
-        input.right = isDown;
+        if (!menuOpen) input.right = isDown;
         e.preventDefault();
         break;
       case "ArrowUp":
       case "KeyW":
-        input.up = isDown;
+        if (!menuOpen) input.up = isDown;
         e.preventDefault();
         break;
       case "ArrowDown":
       case "KeyS":
-        input.down = isDown;
+        if (!menuOpen) input.down = isDown;
         e.preventDefault();
         break;
       case "Space":
-        if (isDown) input.burst = true;
+        if (isDown && !menuOpen) input.burst = true;
         e.preventDefault();
         break;
       case "KeyR":
         if (isDown) {
+          applyTuningFromMenu();
+          applyDebugFlagsFromMenu();
           applyArenaFromMenu();
           game.resetWorld();
           game.state.mode = "playing";
@@ -2248,6 +3000,19 @@
         break;
       case "KeyF":
         if (isDown) toggleFullscreen();
+        break;
+      case "KeyM":
+      case "Backquote":
+        if (isDown) {
+          if (game.state.mode === "playing" || game.state.mode === "gameover") toggleDebugMenu();
+        }
+        e.preventDefault();
+        break;
+      case "Escape":
+        if (isDown && isMenuVisible() && (game.state.mode === "playing" || game.state.mode === "gameover")) {
+          setMenuVisible(false);
+          e.preventDefault();
+        }
         break;
     }
   }
@@ -2280,31 +3045,42 @@
     last = ts;
     accumulator += dtMs / 1000;
 
+    const pausedByMenu =
+      isMenuVisible() &&
+      game.state.mode === "playing" &&
+      !!game.state.settings.pauseOnMenuOpen &&
+      !externalStepping;
+
     if (!externalStepping) {
-      while (accumulator >= fixedDt) {
+      while (!pausedByMenu && accumulator >= fixedDt) {
         game.update(fixedDt);
         accumulator -= fixedDt;
       }
+      if (pausedByMenu) accumulator = 0;
     } else {
       accumulator = 0;
     }
 
     game.render(ctx);
     if (hudScore) hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
+    syncRuntimeDebugUi();
     requestAnimationFrame(stepRealTime);
   }
   requestAnimationFrame(stepRealTime);
 
   window.render_game_to_text = () => game.renderGameToText();
+  window.set_ship_svg_renderer = (tierKey, svgPathData, svgScale = 1) =>
+    game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
   window.advanceTime = (ms) => {
     externalStepping = true;
     const steps = Math.max(1, Math.round(ms / (1000 / 60)));
     for (let i = 0; i < steps; i++) game.update(1 / 60);
     game.render(ctx);
     if (hudScore) hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
+    syncRuntimeDebugUi();
   };
 
   canvas.addEventListener("click", () => {
-    if (game.state.mode === "menu") start();
+    if (game.state.mode === "menu") startOrResume();
   });
 })();

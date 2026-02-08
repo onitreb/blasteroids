@@ -193,12 +193,45 @@
         color: rgba(231, 240, 255, 0.78);
         font-variant-numeric: tabular-nums;
       }
+      .debug-groups {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+      .debug-group {
+        margin-top: 10px;
+      }
+      .debug-group .k {
+        margin-bottom: 4px;
+      }
+      #debug-toggle {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 4;
+        padding: 8px 11px;
+        border-radius: 10px;
+        font-size: 12px;
+        background: rgba(12, 18, 26, 0.75);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+      #debug-toggle:hover {
+        background: rgba(26, 35, 50, 0.88);
+      }
+      @media (max-width: 980px) {
+        .debug-groups,
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
     <div id="wrap">
       <canvas id="game" width="960" height="720" aria-label="Game canvas"></canvas>
       <div id="hud-score" aria-live="polite">Score: 0</div>
+      <button id="debug-toggle" type="button">Open Debug (M)</button>
       <div id="menu">
         <div id="panel">
           <h1>Blasteroids</h1>
@@ -259,232 +292,433 @@
                   <span>World scale</span>
                   <output id="dbg-world-scale-out">3.00x</output>
                 </div>
-                <input id="dbg-world-scale" type="range" min="1" max="4" step="0.25" value="3" />
+                <input id="dbg-world-scale" type="range" min="1" max="10" step="0.25" value="3" />
               </div>
             </label>
+            <label class="card" style="display: block; cursor: pointer">
+              <div class="k">Menu Behavior</div>
+              <div class="v">
+                <input id="dbg-pause-on-open" type="checkbox" checked />
+                <span>Pause gameplay while debug menu is open</span>
+              </div>
+            </label>
+            <div class="card">
+              <div class="k">Tier Override</div>
+              <div class="v">
+                <label style="display: flex; align-items: center; gap: 8px">
+                  <input id="dbg-tier-override" type="checkbox" />
+                  <span>Override ship tier</span>
+                </label>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px">
+                  <span>Tier</span>
+                  <output id="dbg-tier-override-out">1</output>
+                </div>
+                <input id="dbg-tier-override-level" type="range" min="1" max="3" step="1" value="1" />
+              </div>
+            </div>
           </div>
           <details class="card" id="tuning" style="margin: 12px 0 0">
             <summary class="k">Tuning (debug)</summary>
-            <div class="v">
-              <div class="tune-row">
-                <span>Gravity radius</span>
-                <span class="tune-actions">
-                  <output id="tune-attract-out">—</output>
-                  <button id="tune-attract-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-attract" type="range" min="160" max="420" step="1" />
-              <div class="tune-note">
-                How far away the ship can “pull” small rocks (and gems) toward it.
-                <div class="tune-saved">Saved default: <span id="tune-attract-default">—</span></div>
+            <div class="debug-groups">
+              <div class="card debug-group">
+                <div class="k">Progression + Camera</div>
+                <div class="v">
+                  <div class="tune-row">
+                    <span>Current ship tier</span>
+                    <span class="tune-actions">
+                      <output id="dbg-current-tier-out">small</output>
+                    </span>
+                  </div>
+                  <div class="tune-row">
+                    <span>Gem score (progression)</span>
+                    <span class="tune-actions">
+                      <output id="dbg-gem-score-out">0</output>
+                    </span>
+                  </div>
+                  <input id="dbg-gem-score" type="range" min="0" max="5000" step="10" value="0" />
+                  <div class="tune-note">
+                    Live debug override for progression testing (does not change total score directly).
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Tier 2 unlock (gems)</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier2-unlock-out">—</output>
+                      <button id="tune-tier2-unlock-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier2-unlock" type="range" min="100" max="3000" step="25" />
+                  <div class="tune-note">
+                    Gem score needed to unlock the medium ship.
+                    <div class="tune-saved">Saved default: <span id="tune-tier2-unlock-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Tier 3 unlock (gems)</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier3-unlock-out">—</output>
+                      <button id="tune-tier3-unlock-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier3-unlock" type="range" min="200" max="5000" step="25" />
+                  <div class="tune-note">
+                    Gem score needed to unlock the large ship.
+                    <div class="tune-saved">Saved default: <span id="tune-tier3-unlock-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Zoom (Tier 1)</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier1-zoom-out">—</output>
+                      <button id="tune-tier1-zoom-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier1-zoom" type="range" min="0.35" max="1.2" step="0.01" />
+                  <div class="tune-note">
+                    Camera zoom for the small ship.
+                    <div class="tune-saved">Saved default: <span id="tune-tier1-zoom-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Zoom (Tier 2)</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier2-zoom-out">—</output>
+                      <button id="tune-tier2-zoom-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier2-zoom" type="range" min="0.35" max="1.2" step="0.01" />
+                  <div class="tune-note">
+                    Camera zoom for the medium ship.
+                    <div class="tune-saved">Saved default: <span id="tune-tier2-zoom-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Zoom (Tier 3)</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier3-zoom-out">—</output>
+                      <button id="tune-tier3-zoom-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier3-zoom" type="range" min="0.35" max="1.2" step="0.01" />
+                  <div class="tune-note">
+                    Camera zoom for the large ship.
+                    <div class="tune-saved">Saved default: <span id="tune-tier3-zoom-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Zoom transition</span>
+                    <span class="tune-actions">
+                      <output id="tune-tier-zoom-sec-out">—</output>
+                      <button id="tune-tier-zoom-sec-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-tier-zoom-sec" type="range" min="0.05" max="1.2" step="0.01" />
+                  <div class="tune-note">
+                    Duration of camera zoom tween when the ship tier changes.
+                    <div class="tune-saved">Saved default: <span id="tune-tier-zoom-sec-default">—</span></div>
+                  </div>
+                </div>
               </div>
 
-              <div class="tune-row">
-                <span>Forcefield radius</span>
-                <span class="tune-actions">
-                  <output id="tune-field-out">—</output>
-                  <button id="tune-field-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-field" type="range" min="60" max="220" step="1" />
-              <div class="tune-note">
-                The size of the ring around the ship where small rocks tend to settle and orbit.
-                <div class="tune-saved">Saved default: <span id="tune-field-default">—</span></div>
+              <div class="card debug-group">
+                <div class="k">Ship + Forcefield</div>
+                <div class="v">
+                  <div class="tune-row">
+                    <span>Gravity radius</span>
+                    <span class="tune-actions">
+                      <output id="tune-attract-out">—</output>
+                      <button id="tune-attract-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-attract" type="range" min="160" max="420" step="1" />
+                  <div class="tune-note">
+                    How far away the ship can pull asteroids and gems.
+                    <div class="tune-saved">Saved default: <span id="tune-attract-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Forcefield radius</span>
+                    <span class="tune-actions">
+                      <output id="tune-field-out">—</output>
+                      <button id="tune-field-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-field" type="range" min="60" max="220" step="1" />
+                  <div class="tune-note">
+                    Base ring size used by ship tiers.
+                    <div class="tune-saved">Saved default: <span id="tune-field-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Gravity strength</span>
+                    <span class="tune-actions">
+                      <output id="tune-gravity-out">—</output>
+                      <button id="tune-gravity-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-gravity" type="range" min="100000" max="3000000" step="25000" />
+                  <div class="tune-note">
+                    Pull strength once inside gravity radius.
+                    <div class="tune-saved">Saved default: <span id="tune-gravity-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Inner ring gravity</span>
+                    <span class="tune-actions">
+                      <output id="tune-inner-grav-out">—</output>
+                      <button id="tune-inner-grav-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-inner-grav" type="range" min="1" max="4" step="0.05" />
+                  <div class="tune-note">
+                    Extra gravity inside the forcefield ring.
+                    <div class="tune-saved">Saved default: <span id="tune-inner-grav-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Capture speed</span>
+                    <span class="tune-actions">
+                      <output id="tune-capture-out">—</output>
+                      <button id="tune-capture-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-capture" type="range" min="120" max="700" step="10" />
+                  <div class="tune-note">
+                    Above this speed, capture forces weaken.
+                    <div class="tune-saved">Saved default: <span id="tune-capture-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Burst speed</span>
+                    <span class="tune-actions">
+                      <output id="tune-burst-out">—</output>
+                      <button id="tune-burst-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-burst" type="range" min="260" max="900" step="5" />
+                  <div class="tune-note">
+                    Launch speed for attached asteroids.
+                    <div class="tune-saved">Saved default: <span id="tune-burst-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Thrust</span>
+                    <span class="tune-actions">
+                      <output id="tune-thrust-out">—</output>
+                      <button id="tune-thrust-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-thrust" type="range" min="120" max="520" step="5" />
+                  <div class="tune-note">
+                    Ship acceleration while thrusting.
+                    <div class="tune-saved">Saved default: <span id="tune-thrust-default">—</span></div>
+                  </div>
+                </div>
               </div>
 
-              <div class="tune-row">
-                <span>Gravity strength</span>
-                <span class="tune-actions">
-                  <output id="tune-gravity-out">—</output>
-                  <button id="tune-gravity-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-gravity" type="range" min="100000" max="3000000" step="25000" />
-              <div class="tune-note">
-                How strong the pull is once something is inside the gravity radius.
-                <div class="tune-saved">Saved default: <span id="tune-gravity-default">—</span></div>
+              <div class="card debug-group">
+                <div class="k">Asteroids</div>
+                <div class="v">
+                  <div class="tune-row">
+                    <span>Damage speed (small)</span>
+                    <span class="tune-actions">
+                      <output id="tune-dmg-out">—</output>
+                      <button id="tune-dmg-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-dmg" type="range" min="200" max="900" step="10" />
+                  <div class="tune-note">
+                    Speed where launched small asteroids become damaging.
+                    <div class="tune-saved">Saved default: <span id="tune-dmg-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Fracture speed</span>
+                    <span class="tune-actions">
+                      <output id="tune-fracture-out">—</output>
+                      <button id="tune-fracture-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-fracture" type="range" min="150" max="700" step="10" />
+                  <div class="tune-note">
+                    Impact speed needed to split to the next asteroid size.
+                    <div class="tune-saved">Saved default: <span id="tune-fracture-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Global asteroid density</span>
+                    <span class="tune-actions">
+                      <output id="tune-world-density-out">—</output>
+                      <button id="tune-world-density-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-world-density" type="range" min="0.08" max="2.5" step="0.02" />
+                  <div class="tune-note">
+                    Scales overall global asteroid population target.
+                    <div class="tune-saved">Saved default: <span id="tune-world-density-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>XL radius</span>
+                    <span class="tune-actions">
+                      <output id="tune-xl-radius-out">—</output>
+                      <button id="tune-xl-radius-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-xl-radius" type="range" min="56" max="180" step="1" />
+                  <div class="tune-note">
+                    Radius for extra-large asteroids.
+                    <div class="tune-saved">Saved default: <span id="tune-xl-radius-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>XXL radius</span>
+                    <span class="tune-actions">
+                      <output id="tune-xxl-radius-out">—</output>
+                      <button id="tune-xxl-radius-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-xxl-radius" type="range" min="90" max="260" step="1" />
+                  <div class="tune-note">
+                    Radius for double extra-large asteroids.
+                    <div class="tune-saved">Saved default: <span id="tune-xxl-radius-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>XL spawn weight</span>
+                    <span class="tune-actions">
+                      <output id="tune-xl-count-out">—</output>
+                      <button id="tune-xl-count-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-xl-count" type="range" min="0" max="30" step="1" />
+                  <div class="tune-note">
+                    Spawn weighting for xlarge asteroid size.
+                    <div class="tune-saved">Saved default: <span id="tune-xl-count-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>XXL spawn weight</span>
+                    <span class="tune-actions">
+                      <output id="tune-xxl-count-out">—</output>
+                      <button id="tune-xxl-count-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-xxl-count" type="range" min="0" max="20" step="1" />
+                  <div class="tune-note">
+                    Spawn weighting for xxlarge asteroid size.
+                    <div class="tune-saved">Saved default: <span id="tune-xxl-count-default">—</span></div>
+                  </div>
+                </div>
               </div>
 
-              <div class="tune-row">
-                <span>Inner ring gravity</span>
-                <span class="tune-actions">
-                  <output id="tune-inner-grav-out">—</output>
-                  <button id="tune-inner-grav-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-inner-grav" type="range" min="1" max="4" step="0.05" />
-              <div class="tune-note">
-                Gravity multiplier inside the yellow forcefield ring (helps “catch” rocks and gems instead of letting them slip by).
-                <div class="tune-saved">Saved default: <span id="tune-inner-grav-default">—</span></div>
-              </div>
+              <div class="card debug-group">
+                <div class="k">Gems + Visuals</div>
+                <div class="v">
+                  <div class="tune-row">
+                    <span>Gem lifetime</span>
+                    <span class="tune-actions">
+                      <output id="tune-gem-ttl-out">—</output>
+                      <button id="tune-gem-ttl-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-gem-ttl" type="range" min="1" max="20" step="0.5" />
+                  <div class="tune-note">
+                    How long gems stay active on the field.
+                    <div class="tune-saved">Saved default: <span id="tune-gem-ttl-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Gem lifetime</span>
-                <span class="tune-actions">
-                  <output id="tune-gem-ttl-out">—</output>
-                  <button id="tune-gem-ttl-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-gem-ttl" type="range" min="1" max="20" step="0.5" />
-              <div class="tune-note">
-                How long gems stay on the field before expiring (they strobe faster and faster as they’re about to vanish).
-                <div class="tune-saved">Saved default: <span id="tune-gem-ttl-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Gem blink max</span>
+                    <span class="tune-actions">
+                      <output id="tune-gem-blink-out">—</output>
+                      <button id="tune-gem-blink-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-gem-blink" type="range" min="1" max="10" step="0.5" />
+                  <div class="tune-note">
+                    Peak pulse rate near gem expiry.
+                    <div class="tune-saved">Saved default: <span id="tune-gem-blink-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Gem blink max</span>
-                <span class="tune-actions">
-                  <output id="tune-gem-blink-out">—</output>
-                  <button id="tune-gem-blink-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-gem-blink" type="range" min="1" max="10" step="0.5" />
-              <div class="tune-note">
-                The fastest blink rate (per second) as gems approach expiry.
-                <div class="tune-saved">Saved default: <span id="tune-gem-blink-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Star density</span>
+                    <span class="tune-actions">
+                      <output id="tune-star-density-out">—</output>
+                      <button id="tune-star-density-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-star-density" type="range" min="0.4" max="2.2" step="0.05" />
+                  <div class="tune-note">
+                    Number of stars generated in parallax layers.
+                    <div class="tune-saved">Saved default: <span id="tune-star-density-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Capture speed</span>
-                <span class="tune-actions">
-                  <output id="tune-capture-out">—</output>
-                  <button id="tune-capture-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-capture" type="range" min="120" max="700" step="10" />
-              <div class="tune-note">
-                If a rock is moving faster than this, the ring “capture” effect weakens so bursts can fling rocks out.
-                <div class="tune-saved">Saved default: <span id="tune-capture-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Parallax strength</span>
+                    <span class="tune-actions">
+                      <output id="tune-parallax-out">—</output>
+                      <button id="tune-parallax-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-parallax" type="range" min="0" max="1.8" step="0.05" />
+                  <div class="tune-note">
+                    Motion parallax amount during camera movement.
+                    <div class="tune-saved">Saved default: <span id="tune-parallax-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Burst speed</span>
-                <span class="tune-actions">
-                  <output id="tune-burst-out">—</output>
-                  <button id="tune-burst-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-burst" type="range" min="260" max="900" step="5" />
-              <div class="tune-note">
-                How fast attached rocks are launched when you burst.
-                <div class="tune-saved">Saved default: <span id="tune-burst-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Accent star chance</span>
+                    <span class="tune-actions">
+                      <output id="tune-star-accent-chance-out">—</output>
+                      <button id="tune-star-accent-chance-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-star-accent-chance" type="range" min="0" max="0.35" step="0.01" />
+                  <div class="tune-note">
+                    Probability that a star uses accent coloring.
+                    <div class="tune-saved">Saved default: <span id="tune-star-accent-chance-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Thrust</span>
-                <span class="tune-actions">
-                  <output id="tune-thrust-out">—</output>
-                  <button id="tune-thrust-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-thrust" type="range" min="120" max="520" step="5" />
-              <div class="tune-note">
-                How quickly the ship accelerates while holding thrust.
-                <div class="tune-saved">Saved default: <span id="tune-thrust-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Twinkle star chance</span>
+                    <span class="tune-actions">
+                      <output id="tune-twinkle-chance-out">—</output>
+                      <button id="tune-twinkle-chance-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-twinkle-chance" type="range" min="0" max="1" step="0.02" />
+                  <div class="tune-note">
+                    Fraction of stars that twinkle.
+                    <div class="tune-saved">Saved default: <span id="tune-twinkle-chance-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Damage speed (small)</span>
-                <span class="tune-actions">
-                  <output id="tune-dmg-out">—</output>
-                  <button id="tune-dmg-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-dmg" type="range" min="200" max="900" step="10" />
-              <div class="tune-note">
-                How fast a small rock must be moving to count as “damaging” (and break on impact).
-                <div class="tune-saved">Saved default: <span id="tune-dmg-default">—</span></div>
-              </div>
+                  <div class="tune-row">
+                    <span>Twinkle strength</span>
+                    <span class="tune-actions">
+                      <output id="tune-twinkle-strength-out">—</output>
+                      <button id="tune-twinkle-strength-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-twinkle-strength" type="range" min="0" max="0.8" step="0.02" />
+                  <div class="tune-note">
+                    Alpha/size modulation amount for twinkling stars.
+                    <div class="tune-saved">Saved default: <span id="tune-twinkle-strength-default">—</span></div>
+                  </div>
 
-              <div class="tune-row">
-                <span>Fracture speed</span>
-                <span class="tune-actions">
-                  <output id="tune-fracture-out">—</output>
-                  <button id="tune-fracture-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-fracture" type="range" min="150" max="700" step="10" />
-              <div class="tune-note">
-                How much impact speed is needed for a damaging small rock to fracture a medium/large rock.
-                <div class="tune-saved">Saved default: <span id="tune-fracture-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Star density</span>
-                <span class="tune-actions">
-                  <output id="tune-star-density-out">—</output>
-                  <button id="tune-star-density-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-star-density" type="range" min="0.4" max="2.2" step="0.05" />
-              <div class="tune-note">
-                How many background stars are generated across all parallax layers.
-                <div class="tune-saved">Saved default: <span id="tune-star-density-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Parallax strength</span>
-                <span class="tune-actions">
-                  <output id="tune-parallax-out">—</output>
-                  <button id="tune-parallax-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-parallax" type="range" min="0" max="1.8" step="0.05" />
-              <div class="tune-note">
-                How strongly star layers shift against camera movement (higher = stronger motion cue).
-                <div class="tune-saved">Saved default: <span id="tune-parallax-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Accent star chance</span>
-                <span class="tune-actions">
-                  <output id="tune-star-accent-chance-out">—</output>
-                  <button id="tune-star-accent-chance-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-star-accent-chance" type="range" min="0" max="0.35" step="0.01" />
-              <div class="tune-note">
-                Chance that a star gets a subtle gold/red/blue accent (most stars remain white).
-                <div class="tune-saved">Saved default: <span id="tune-star-accent-chance-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Twinkle star chance</span>
-                <span class="tune-actions">
-                  <output id="tune-twinkle-chance-out">—</output>
-                  <button id="tune-twinkle-chance-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-twinkle-chance" type="range" min="0" max="1" step="0.02" />
-              <div class="tune-note">
-                Fraction of stars that gently twinkle over time.
-                <div class="tune-saved">Saved default: <span id="tune-twinkle-chance-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Twinkle strength</span>
-                <span class="tune-actions">
-                  <output id="tune-twinkle-strength-out">—</output>
-                  <button id="tune-twinkle-strength-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-twinkle-strength" type="range" min="0" max="0.8" step="0.02" />
-              <div class="tune-note">
-                How much twinkling stars modulate alpha/size (kept subtle by default).
-                <div class="tune-saved">Saved default: <span id="tune-twinkle-strength-default">—</span></div>
-              </div>
-
-              <div class="tune-row">
-                <span>Twinkle speed</span>
-                <span class="tune-actions">
-                  <output id="tune-twinkle-speed-out">—</output>
-                  <button id="tune-twinkle-speed-save" class="btn-mini" type="button">Set default</button>
-                </span>
-              </div>
-              <input id="tune-twinkle-speed" type="range" min="0.2" max="3" step="0.05" />
-              <div class="tune-note">
-                Multiplier for twinkle animation speed across twinkling stars.
-                <div class="tune-saved">Saved default: <span id="tune-twinkle-speed-default">—</span></div>
+                  <div class="tune-row">
+                    <span>Twinkle speed</span>
+                    <span class="tune-actions">
+                      <output id="tune-twinkle-speed-out">—</output>
+                      <button id="tune-twinkle-speed-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-twinkle-speed" type="range" min="0.2" max="3" step="0.05" />
+                  <div class="tune-note">
+                    Animation speed multiplier for twinkling stars.
+                    <div class="tune-saved">Saved default: <span id="tune-twinkle-speed-default">—</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
