@@ -114,6 +114,97 @@
     ctx.restore();
   }
 
+  function rgbToRgba(rgb, a) {
+    const r = rgb?.[0] ?? 255;
+    const g = rgb?.[1] ?? 255;
+    const b = rgb?.[2] ?? 255;
+    return `rgba(${r},${g},${b},${clamp(a, 0, 1).toFixed(3)})`;
+  }
+
+  function lerpRgb(a, b, t) {
+    const tt = clamp(t, 0, 1);
+    return [
+      Math.round(lerp(a[0], b[0], tt)),
+      Math.round(lerp(a[1], b[1], tt)),
+      Math.round(lerp(a[2], b[2], tt)),
+    ];
+  }
+
+  function fnv1aSeed(str) {
+    const s = String(str ?? "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function xorshift32(seed) {
+    let s = seed >>> 0;
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >> 17;
+    s >>>= 0;
+    s ^= s << 5;
+    s >>>= 0;
+    return s >>> 0;
+  }
+
+  function randSigned(seed) {
+    const s = xorshift32(seed);
+    return (s / 0xffffffff) * 2 - 1;
+  }
+
+  function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (!Number.isFinite(dist) || dist < 2) return;
+    const inv = 1 / dist;
+    const nx = -dy * inv;
+    const ny = dx * inv;
+    const segs = clamp(Math.round(dist / 22), 4, 12);
+    const amp = lerp(1.5, 9.0, intensity);
+    const phase = timeSec * 18;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+
+    // Soft glow pass.
+    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.02, 0.22, intensity));
+    ctx.lineWidth = lerp(2, 7, intensity);
+    ctx.shadowColor = rgbToRgba(rgb, 0.95);
+    ctx.shadowBlur = lerp(4, 14, intensity);
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      let px = from.x + dx * t;
+      let py = from.y + dy * t;
+      if (i !== 0 && i !== segs) {
+        const wobble = Math.sin(phase + t * Math.PI * 4);
+        const r = randSigned(seedBase + i * 1013 + Math.floor(timeSec * 60) * 17);
+        const off = (wobble * 0.45 + r * 0.55) * amp * (1 - Math.abs(0.5 - t) * 1.4);
+        px += nx * off;
+        py += ny * off;
+      }
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Bright core pass with flowing dash.
+    ctx.shadowBlur = 0;
+    ctx.setLineDash([8, 12]);
+    ctx.lineDashOffset = -timeSec * lerp(40, 110, intensity);
+    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.05, 0.9, intensity));
+    ctx.lineWidth = lerp(1, 2.5, intensity);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   const ASTEROID_SIZE_ORDER = ["small", "med", "large", "xlarge", "xxlarge"];
   const ASTEROID_SPLIT_NEXT = {
     small: null,
@@ -215,6 +306,7 @@
       mass: 260,
       forcefieldScale: 1,
       attractScale: 1,
+      ringRgb: [255, 221, 88],
       ringColor: "rgba(255,221,88,0.40)",
       attractSizes: ["small"],
       renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.small),
@@ -227,6 +319,7 @@
       mass: 1040,
       forcefieldScale: 1.28,
       attractScale: 1.2,
+      ringRgb: [92, 235, 255],
       ringColor: "rgba(92,235,255,0.42)",
       attractSizes: ["small", "med"],
       renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.medium),
@@ -239,6 +332,7 @@
       mass: 4160,
       forcefieldScale: 1.62,
       attractScale: 1.42,
+      ringRgb: [255, 112, 127],
       ringColor: "rgba(255,112,127,0.42)",
       attractSizes: ["small", "med", "large"],
       renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.large),
@@ -251,6 +345,56 @@
     return SHIP_TIERS[key] || SHIP_TIERS.small;
   }
 
+  function forceFieldScaleForTierKey(params, tierKey) {
+    if (tierKey === "large") return clamp(Number(params?.tier3ForceFieldScale ?? SHIP_TIERS.large.forcefieldScale), 0.2, 6);
+    if (tierKey === "medium") return clamp(Number(params?.tier2ForceFieldScale ?? SHIP_TIERS.medium.forcefieldScale), 0.2, 6);
+    return clamp(Number(params?.tier1ForceFieldScale ?? SHIP_TIERS.small.forcefieldScale), 0.2, 6);
+  }
+
+  function shipHullRadiusForTierKey(tierKey) {
+    const tier = shipTierByKey(tierKey);
+    const renderer = tier.renderer || {};
+    if (renderer.type === "svg") {
+      const hullR = Number(renderer.hullRadius);
+      const svgScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+      if (Number.isFinite(hullR) && hullR > 0) return Math.max(tier.radius, hullR * svgScale);
+      // Fallback: approximate from the tier's polygon hull.
+    }
+    const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
+    let max2 = 0;
+    if (Array.isArray(points)) {
+      for (const p of points) {
+        const d2 = p.x * p.x + p.y * p.y;
+        if (d2 > max2) max2 = d2;
+      }
+    }
+    const baseR = Math.sqrt(max2);
+    return Math.max(tier.radius, baseR);
+  }
+
+  function requiredForceFieldRadiusForTier(params, tierKey) {
+    const base = Number(params?.forceFieldRadius ?? 0);
+    const scale = forceFieldScaleForTierKey(params, tierKey);
+    const desired = base * scale;
+    const gap = clamp(Number(params?.forceFieldHullGap ?? 14), 0, 200);
+    const hullR = shipHullRadiusForTierKey(tierKey);
+    return Math.max(desired, hullR + gap);
+  }
+
+  function ensureAttractRadiusCoversForcefield(params) {
+    if (!params) return;
+    const margin = 40; // keep ring comfortably inside gravity radius
+    let requiredBaseAttract = Number(params.attractRadius ?? 0);
+    for (const tierKey of SHIP_TIER_ORDER) {
+      const tier = shipTierByKey(tierKey);
+      const attractScale = Number(tier.attractScale || 1);
+      const fieldR = requiredForceFieldRadiusForTier(params, tierKey);
+      const need = (fieldR + margin) / Math.max(0.1, attractScale);
+      if (need > requiredBaseAttract) requiredBaseAttract = need;
+    }
+    params.attractRadius = requiredBaseAttract;
+  }
+
   function asteroidSizeRank(size) {
     return ASTEROID_SIZE_INDEX[size] ?? 0;
   }
@@ -261,6 +405,14 @@
 
   function sizeSetHas(sizeSet, size) {
     return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
+  }
+
+  function asteroidCanBreakTarget(projectileSize, targetSize) {
+    const projectileRank = ASTEROID_SIZE_INDEX[projectileSize];
+    const targetRank = ASTEROID_SIZE_INDEX[targetSize];
+    if (!Number.isFinite(projectileRank) || !Number.isFinite(targetRank)) return false;
+    // Rule: a launched asteroid can break same size, any smaller size, or one size larger.
+    return targetRank <= projectileRank + 1;
   }
 
   function makeShip(tierKey = "small") {
@@ -386,6 +538,10 @@
 
         attractRadius: 252, // +5%
         forceFieldRadius: 75,
+        tier1ForceFieldScale: SHIP_TIERS.small.forcefieldScale,
+        tier2ForceFieldScale: SHIP_TIERS.medium.forcefieldScale,
+        tier3ForceFieldScale: SHIP_TIERS.large.forcefieldScale,
+        forceFieldHullGap: 14,
         gravityK: 1200000, // gravity-well strength (tuned)
         gravitySoftening: 70,
         innerGravityMult: 1.5, // extra gravity inside the forcefield ring
@@ -460,6 +616,7 @@
         saucerLaserRadius: 4,
       },
     };
+    ensureAttractRadiusCoversForcefield(state.params);
 
     function shipTierForProgression() {
       if (state.settings.tierOverrideEnabled) {
@@ -477,7 +634,7 @@
 
     function currentForceFieldRadius() {
       const tier = currentShipTier();
-      return state.params.forceFieldRadius * tier.forcefieldScale;
+      return requiredForceFieldRadiusForTier(state.params, tier.key);
     }
 
     function currentAttractRadius() {
@@ -1333,6 +1490,7 @@
 
     function updateAsteroids(dt) {
       const ship = state.ship;
+      const tier = currentShipTier();
       const attractRadius = currentAttractRadius();
       const forceFieldRadius = currentForceFieldRadius();
       const attractRadius2 = attractRadius * attractRadius;
@@ -1369,6 +1527,10 @@
         }
         a.fractureCooldownT = Math.max(0, a.fractureCooldownT - dt);
         a.hitFxT = Math.max(0, a.hitFxT - dt);
+        if (!Number.isFinite(a.pullFx)) a.pullFx = 0;
+        const pullEaseIn = 1 - Math.exp(-dt * 10);
+        const pullEaseOut = 1 - Math.exp(-dt * 6);
+        let pullTarget = 0;
 
         if (shipCanAttractSize(a.size)) {
           const toShip = sub(ship.pos, a.pos);
@@ -1404,10 +1566,21 @@
               const vRad = dot(a.vel, dirIn);
               a.vel = sub(a.vel, mul(dirIn, vRad * state.params.ringRadialDamp * captureFactor * dt));
             }
+
+            // Attraction visualization: start with small ship pulling small asteroids.
+            if (tier.key === "small" && a.size === "small") {
+              const denom = Math.max(1, attractRadius - forceFieldRadius);
+              pullTarget = clamp(1 - (d - forceFieldRadius) / denom, 0, 1);
+              if (d < forceFieldRadius) pullTarget = 1;
+            }
           }
 
           tryAttachAsteroid(a);
         }
+
+        const blend = pullTarget > a.pullFx ? pullEaseIn : pullEaseOut;
+        a.pullFx = lerp(a.pullFx, pullTarget, blend);
+        if (a.pullFx < 1e-4) a.pullFx = 0;
 
         a.pos = add(a.pos, mul(a.vel, dt));
         if (isOutsideWorld(a, 8)) {
@@ -1689,7 +1862,7 @@
               continue;
             }
 
-            if (relSpeed >= state.params.fractureImpactSpeed) {
+            if (asteroidCanBreakTarget(projectile.size, target.size) && relSpeed >= state.params.fractureImpactSpeed) {
               const frags = fractureAsteroid(target, it.impactDir, relSpeed);
               if (frags) {
                 toRemove.add(target.id);
@@ -1906,6 +2079,30 @@
       }
 
       for (const a of state.asteroids) {
+        const tier = currentShipTier();
+        const ship = state.ship;
+        const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached;
+        const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+
+        if (pullFx > 0.01) {
+          const fieldR = currentForceFieldRadius();
+          const outward = sub(a.pos, ship.pos);
+          const outwardLen = Math.max(1e-6, len(outward));
+          const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
+          const seed = fnv1aSeed(a.id);
+          drawElectricTether(ctx, a.pos, ringPoint, tier.ringRgb, pullFx, state.time, seed);
+
+          // Soft glow around the asteroid.
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx));
+          ctx.lineWidth = lerp(2, 7, pullFx);
+          ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
+          ctx.shadowBlur = lerp(3, 14, pullFx);
+          drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+          ctx.restore();
+        }
+
         const base =
           a.size === "xxlarge"
             ? "rgba(231,240,255,0.62)"
@@ -1916,7 +2113,13 @@
                 : a.size === "med"
                   ? "rgba(231,240,255,0.80)"
                   : "rgba(231,240,255,0.88)";
-        const color = a.attached ? "rgba(255,221,88,0.95)" : base;
+        let color = a.attached ? "rgba(255,221,88,0.95)" : base;
+        if (pullFx > 0.01) {
+          const baseRgb = [231, 240, 255];
+          const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
+          const aAlpha = lerp(0.78, 0.98, pullFx);
+          color = rgbToRgba(mixed, aAlpha);
+        }
         drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
       }
 
@@ -2237,6 +2440,22 @@
   const tuneFieldOut = document.getElementById("tune-field-out");
   const tuneFieldSave = document.getElementById("tune-field-save");
   const tuneFieldDefault = document.getElementById("tune-field-default");
+  const tuneFieldScale1 = document.getElementById("tune-field-scale1");
+  const tuneFieldScale1Out = document.getElementById("tune-field-scale1-out");
+  const tuneFieldScale1Save = document.getElementById("tune-field-scale1-save");
+  const tuneFieldScale1Default = document.getElementById("tune-field-scale1-default");
+  const tuneFieldScale2 = document.getElementById("tune-field-scale2");
+  const tuneFieldScale2Out = document.getElementById("tune-field-scale2-out");
+  const tuneFieldScale2Save = document.getElementById("tune-field-scale2-save");
+  const tuneFieldScale2Default = document.getElementById("tune-field-scale2-default");
+  const tuneFieldScale3 = document.getElementById("tune-field-scale3");
+  const tuneFieldScale3Out = document.getElementById("tune-field-scale3-out");
+  const tuneFieldScale3Save = document.getElementById("tune-field-scale3-save");
+  const tuneFieldScale3Default = document.getElementById("tune-field-scale3-default");
+  const tuneFieldGap = document.getElementById("tune-field-gap");
+  const tuneFieldGapOut = document.getElementById("tune-field-gap-out");
+  const tuneFieldGapSave = document.getElementById("tune-field-gap-save");
+  const tuneFieldGapDefault = document.getElementById("tune-field-gap-default");
   const tuneGravity = document.getElementById("tune-gravity");
   const tuneGravityOut = document.getElementById("tune-gravity-out");
   const tuneGravitySave = document.getElementById("tune-gravity-save");
@@ -2369,6 +2588,37 @@
       input: tuneField,
       saveBtn: tuneFieldSave,
       savedOut: tuneFieldDefault,
+      suffix: " px",
+    },
+    {
+      key: "tier1ForceFieldScale",
+      input: tuneFieldScale1,
+      saveBtn: tuneFieldScale1Save,
+      savedOut: tuneFieldScale1Default,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "tier2ForceFieldScale",
+      input: tuneFieldScale2,
+      saveBtn: tuneFieldScale2Save,
+      savedOut: tuneFieldScale2Default,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "tier3ForceFieldScale",
+      input: tuneFieldScale3,
+      saveBtn: tuneFieldScale3Save,
+      savedOut: tuneFieldScale3Default,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "forceFieldHullGap",
+      input: tuneFieldGap,
+      saveBtn: tuneFieldGapSave,
+      savedOut: tuneFieldGapDefault,
       suffix: " px",
     },
     {
@@ -2615,7 +2865,12 @@
       attractRadius: p.attractRadius,
       forceFieldRadius: p.forceFieldRadius,
     };
-    p.forceFieldRadius = clamp(p.forceFieldRadius, 40, Math.max(60, p.attractRadius - 40));
+    p.forceFieldRadius = clamp(p.forceFieldRadius, 40, 420);
+    p.tier1ForceFieldScale = clamp(Number(p.tier1ForceFieldScale ?? SHIP_TIERS.small.forcefieldScale), 0.2, 6);
+    p.tier2ForceFieldScale = clamp(Number(p.tier2ForceFieldScale ?? SHIP_TIERS.medium.forcefieldScale), 0.2, 6);
+    p.tier3ForceFieldScale = clamp(Number(p.tier3ForceFieldScale ?? SHIP_TIERS.large.forcefieldScale), 0.2, 6);
+    p.forceFieldHullGap = clamp(Number(p.forceFieldHullGap ?? 14), 0, 200);
+    ensureAttractRadiusCoversForcefield(p);
     p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
     p.xlargeCount = clamp(Math.round(p.xlargeCount), 0, 50);
@@ -2653,8 +2908,16 @@
 
   function syncTuningUiFromParams() {
     const p = game.state.params;
-    if (tuneAttract) tuneAttract.value = String(Math.round(p.attractRadius));
+    if (tuneAttract) {
+      const maxNow = Number(tuneAttract.max || 0);
+      if (Number.isFinite(maxNow) && maxNow > 0 && p.attractRadius > maxNow) tuneAttract.max = String(Math.ceil(p.attractRadius));
+      tuneAttract.value = String(Math.round(p.attractRadius));
+    }
     if (tuneField) tuneField.value = String(Math.round(p.forceFieldRadius));
+    if (tuneFieldScale1) tuneFieldScale1.value = String(p.tier1ForceFieldScale);
+    if (tuneFieldScale2) tuneFieldScale2.value = String(p.tier2ForceFieldScale);
+    if (tuneFieldScale3) tuneFieldScale3.value = String(p.tier3ForceFieldScale);
+    if (tuneFieldGap) tuneFieldGap.value = String(Math.round(p.forceFieldHullGap));
     if (tuneGravity) tuneGravity.value = String(Math.round(p.gravityK));
     if (tuneInnerGrav) tuneInnerGrav.value = String(p.innerGravityMult);
     if (tuneGemTtl) tuneGemTtl.value = String(p.gemTtlSec);
@@ -2688,6 +2951,10 @@
     const p = game.state.params;
     setOut(tuneAttractOut, readNum(tuneAttract, p.attractRadius), " px");
     setOut(tuneFieldOut, readNum(tuneField, p.forceFieldRadius), " px");
+    if (tuneFieldScale1Out) tuneFieldScale1Out.textContent = `${readNum(tuneFieldScale1, p.tier1ForceFieldScale).toFixed(2)}x`;
+    if (tuneFieldScale2Out) tuneFieldScale2Out.textContent = `${readNum(tuneFieldScale2, p.tier2ForceFieldScale).toFixed(2)}x`;
+    if (tuneFieldScale3Out) tuneFieldScale3Out.textContent = `${readNum(tuneFieldScale3, p.tier3ForceFieldScale).toFixed(2)}x`;
+    setOut(tuneFieldGapOut, readNum(tuneFieldGap, p.forceFieldHullGap), " px");
     setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
     if (tuneInnerGravOut) tuneInnerGravOut.textContent = `x${readNum(tuneInnerGrav, p.innerGravityMult).toFixed(2)}`;
     if (tuneGemTtlOut) tuneGemTtlOut.textContent = `${readNum(tuneGemTtl, p.gemTtlSec).toFixed(1)} s`;
@@ -2735,6 +3002,10 @@
   }
   bindTuneInput(tuneAttract);
   bindTuneInput(tuneField);
+  bindTuneInput(tuneFieldScale1);
+  bindTuneInput(tuneFieldScale2);
+  bindTuneInput(tuneFieldScale3);
+  bindTuneInput(tuneFieldGap);
   bindTuneInput(tuneGravity);
   bindTuneInput(tuneInnerGrav);
   bindTuneInput(tuneGemTtl);
@@ -2766,8 +3037,12 @@
     const p = game.state.params;
     p.attractRadius = readNum(tuneAttract, p.attractRadius);
     p.forceFieldRadius = readNum(tuneField, p.forceFieldRadius);
-    // Ensure the inner forcefield ring stays inside the outer gravity radius.
-    p.forceFieldRadius = clamp(p.forceFieldRadius, 40, Math.max(60, p.attractRadius - 40));
+    p.forceFieldRadius = clamp(p.forceFieldRadius, 40, 420);
+    p.tier1ForceFieldScale = clamp(readNum(tuneFieldScale1, p.tier1ForceFieldScale), 0.2, 6);
+    p.tier2ForceFieldScale = clamp(readNum(tuneFieldScale2, p.tier2ForceFieldScale), 0.2, 6);
+    p.tier3ForceFieldScale = clamp(readNum(tuneFieldScale3, p.tier3ForceFieldScale), 0.2, 6);
+    p.forceFieldHullGap = clamp(Math.round(readNum(tuneFieldGap, p.forceFieldHullGap)), 0, 200);
+    ensureAttractRadiusCoversForcefield(p);
     p.gravityK = readNum(tuneGravity, p.gravityK);
     p.innerGravityMult = clamp(readNum(tuneInnerGrav, p.innerGravityMult), 1, 8);
     p.gemTtlSec = clamp(readNum(tuneGemTtl, p.gemTtlSec), 0.5, 60);

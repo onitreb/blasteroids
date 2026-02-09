@@ -430,7 +430,7 @@
                       <button id="tune-attract-save" class="btn-mini" type="button">Set default</button>
                     </span>
                   </div>
-                  <input id="tune-attract" type="range" min="160" max="420" step="1" />
+                  <input id="tune-attract" type="range" min="160" max="900" step="1" />
                   <div class="tune-note">
                     How far away the ship can pull asteroids and gems.
                     <div class="tune-saved">Saved default: <span id="tune-attract-default">—</span></div>
@@ -447,6 +447,58 @@
                   <div class="tune-note">
                     Base ring size used by ship tiers.
                     <div class="tune-saved">Saved default: <span id="tune-field-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Forcefield scale (Tier 1)</span>
+                    <span class="tune-actions">
+                      <output id="tune-field-scale1-out">—</output>
+                      <button id="tune-field-scale1-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-field-scale1" type="range" min="0.6" max="3.0" step="0.01" />
+                  <div class="tune-note">
+                    Multiplier applied to the base forcefield radius for the small ship.
+                    <div class="tune-saved">Saved default: <span id="tune-field-scale1-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Forcefield scale (Tier 2)</span>
+                    <span class="tune-actions">
+                      <output id="tune-field-scale2-out">—</output>
+                      <button id="tune-field-scale2-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-field-scale2" type="range" min="0.6" max="3.0" step="0.01" />
+                  <div class="tune-note">
+                    Multiplier applied to the base forcefield radius for the medium ship.
+                    <div class="tune-saved">Saved default: <span id="tune-field-scale2-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Forcefield scale (Tier 3)</span>
+                    <span class="tune-actions">
+                      <output id="tune-field-scale3-out">—</output>
+                      <button id="tune-field-scale3-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-field-scale3" type="range" min="0.6" max="3.0" step="0.01" />
+                  <div class="tune-note">
+                    Multiplier applied to the base forcefield radius for the large ship.
+                    <div class="tune-saved">Saved default: <span id="tune-field-scale3-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Forcefield hull gap</span>
+                    <span class="tune-actions">
+                      <output id="tune-field-gap-out">—</output>
+                      <button id="tune-field-gap-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-field-gap" type="range" min="0" max="80" step="1" />
+                  <div class="tune-note">
+                    Minimum extra space (in pixels) between the ship hull and the forcefield ring. The ring auto-expands if needed.
+                    <div class="tune-saved">Saved default: <span id="tune-field-gap-default">—</span></div>
                   </div>
 
                   <div class="tune-row">

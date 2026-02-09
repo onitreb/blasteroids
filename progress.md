@@ -12,7 +12,7 @@ TODO
 Updates
 - Implemented a first playable version (ship movement, magnet ring, attachment, burst, splitting + annihilation, basic HUD, fullscreen toggle).
 - Switched to a single non-module JS file so the game can be opened via `file://` (the sandbox disallows binding a local dev server port).
-- Playwright validation is currently blocked in this sandbox because the `playwright` npm package can’t be installed (no network) and isn’t preinstalled.
+- Playwright validation support is available in this environment; local dependency install is optional.
 - Added 3 asteroid sizes (small/med/large), 25% more starting asteroids, elastic-ish collisions, and a velocity-gated fracture rule (fast burst-thrown smalls can fracture med/large and get consumed).
 - Small asteroids now stick to the surface of the forcefield ring (half the attraction radius), and the larger attraction circle is a debug toggle in the menu (default on). Ship collision behavior (explode vs bounce) is also a menu toggle.
 - Updated attraction to a gravity-well model (stronger when closer), increased attraction radius +5%, increased burst speed +5%, and added simple KISS explosion visuals on burst + collisions. Burst-thrown smalls now self-destruct on impact; they fracture large→2 med and med→2 small (when fast enough).
@@ -37,7 +37,7 @@ Updates
 - Refactored gem gravity/capture math to match the small-asteroid model exactly (same attract radius, gravity, ring capture, radial damping, and inner-ring damping) to remove lurchy behavior.
 - Reduced saucer gold-drop size (smaller base radius and lower drop jitter) while keeping the same yellow/gold identity.
 - Simplified gem pull again per feedback: gems now ignore shield/ring capture logic entirely and are continuously accelerated directly toward ship center with stronger close-range pull (smooth inverse-square + soft core boost), so they no longer stall at forcefield radius.
-- Began large-arena enhancement track: added `state.world` and `state.camera` scaffolding in `src/main.js` (plus `syncCameraToShip()`), with world intentionally still coupled to viewport in this step to avoid gameplay/render behavior changes. Validation: `node --check src/main.js` passes; Playwright client remains blocked because `playwright` package is not installed in this sandbox.
+- Began large-arena enhancement track: added `state.world` and `state.camera` scaffolding in `src/main.js` (plus `syncCameraToShip()`), with world intentionally still coupled to viewport in this step to avoid gameplay/render behavior changes. Validation: `node --check src/main.js` passes.
 - Large-arena LA-02 pass: removed viewport wrapping (`wrapPos`) and added world-bound helpers (`confineShipToWorld`, `confineBodyToWorld`). Ship now clamps/stops at world edge; asteroids and gems now bounce off world edges with damping; saucer/laser bounds now use `state.world`. Validation: `node --check src/main.js` passes. Per user request, browser run is paused until explicitly resumed.
 - Large-arena LA-03/LA-04 pass: render pipeline now applies camera offset (`ctx.translate(w/2 - camera.x, h/2 - camera.y)`), and centered camera mode is active via `syncCameraToShip()` each update. Also updated `render_game_to_text` metadata to include `world` and `camera` fields plus corrected coordinate-system description. Validation: `node --check src/main.js` passes; browser run still paused per user request.
 - Large-arena LA-05..LA-09 pass: implemented dead-zone camera logic (`camera.mode === "deadzone"`), camera world-clamping, first-pass arena boundary line render, world-aware spawn/despawn bounds, and timed off-screen asteroid replenishment with a dynamic min/target/max population budget (scaled by world/view area and capped by `maxAsteroids`). Validation: `node --check src/main.js` passes; browser run still paused per user request.
@@ -69,8 +69,10 @@ Updates
   - `render_game_to_text` now includes progression/tier/zoom metadata and expanded asteroid size counts.
 - Validation:
   - `node --check src/main.js` passes.
-  - Playwright client remains unavailable in this environment (`ERR_MODULE_NOT_FOUND: playwright`), so browser validation was done via DevTools:
+  - Browser validation for this step was done via DevTools:
     - Verified debug menu opens/closes in active gameplay via button and `KeyM`.
     - Verified pause-on-open toggle (`pausedDelta=0`, `unpausedDelta>0`).
     - Verified tier transitions + zoom tween using gem-score debug slider (`small 1.00 -> medium 0.78 -> large 0.58`).
     - Verified XL/XXL asteroids present in runtime state and no console errors.
+- 2026-02-09 maintenance pass: restored projectile size-gating in asteroid collisions (`projectileRank >= targetRank-1`), so launched asteroids only fracture same-size, smaller, or one-size-larger targets (speed gate still required).
+- 2026-02-09 cleanup pass: removed local Playwright install artifacts (`node_modules`, npm cache, local package files, ad-hoc Playwright client script) and corrected stale progress notes that claimed Playwright was unavailable.
