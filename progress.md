@@ -76,3 +76,10 @@ Updates
     - Verified XL/XXL asteroids present in runtime state and no console errors.
 - 2026-02-09 maintenance pass: restored projectile size-gating in asteroid collisions (`projectileRank >= targetRank-1`), so launched asteroids only fracture same-size, smaller, or one-size-larger targets (speed gate still required).
 - 2026-02-09 cleanup pass: removed local Playwright install artifacts (`node_modules`, npm cache, local package files, ad-hoc Playwright client script) and corrected stale progress notes that claimed Playwright was unavailable.
+- 2026-02-10 RF-06/RF-07 refactor pass:
+  - Extracted deterministic simulation into `src/engine/createEngine.js` (DOM-free engine surface with state init, update, resize, arena config, and debug/test helpers).
+  - Extracted canvas drawing into `src/render/renderGame.js` as `createRenderer(engine)`, including ship SVG path caching on the renderer side (no engine mutation for render caches).
+  - Updated `src/main.js` to browser composition glue that wires engine + renderer + existing DOM/input/menu/fullscreen/localStorage flows.
+  - Preserved runtime hooks: `window.render_game_to_text`, `window.advanceTime`, and `window.set_ship_svg_renderer`.
+  - Rebuilt bundle via `npm run build` to regenerate `dist/blasteroids.js`.
+  - Smoke-tested under `file://` via DevTools: Start flow, no console errors, deterministic stepping (`advanceTime(1000)`), and thrust movement via scripted keydown/up + `advanceTime(500)`.
