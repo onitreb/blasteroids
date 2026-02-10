@@ -73,7 +73,7 @@ Design rules:
 | RF-06 | Split `engine/` (DOM-free) from current `createGame` | DONE | Added `src/engine/createEngine.js`; deterministic sim/state moved out of browser glue; `src/main.js` now composes engine + renderer while preserving debug hooks. |
 | RF-07 | Extract `render/` from engine | DONE | Added `src/render/renderGame.js` and `createRenderer(engine)`; canvas drawing reads engine state without gameplay-rule mutation. |
 | RF-08 | Extract `ui/` bindings | DONE | Added `src/ui/createUiBindings.js`; moved menu/tuning/localStorage + HUD wiring out of `src/main.js` while preserving runtime behavior and debug hooks. |
-| RF-09 | Stabilize public debug/test API | NOT_STARTED | Single `window.Blasteroids` namespace; keep legacy aliases temporarily. |
+| RF-09 | Stabilize public debug/test API | DONE | Added `window.Blasteroids` namespace with `renderGameToText`, `advanceTime`, and `setShipSvgRenderer`; legacy globals are preserved as compatibility aliases. |
 | RF-10 | Add regression checks | NOT_STARTED | Baseline unit tests for pure logic + optional Playwright file:// smoke. |
 | RF-11 | Docs + reviewability pass | NOT_STARTED | `docs/architecture.md`, module map, “how to run/build”, checklist. |
 

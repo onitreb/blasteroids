@@ -81,6 +81,11 @@ Updates
   - Simplified `src/main.js` into composition glue for engine + renderer + UI plus main loop/input/fullscreen/debug hook exports.
   - Rebuilt bundle via `npm run build`.
   - DevTools `file://` smoke validation passed with no console errors: Start flow, deterministic hooks (`render_game_to_text`, `advanceTime`), movement via scripted `KeyW`, debug menu toggle (`KeyM`/`Escape`), and restart (`KeyR`).
+- 2026-02-10 RF-09 pass (public debug/test API stabilization):
+  - Added a single `window.Blasteroids` namespace in `src/main.js` with `renderGameToText`, `advanceTime`, and `setShipSvgRenderer`.
+  - Kept legacy aliases for compatibility: `window.render_game_to_text`, `window.advanceTime`, and `window.set_ship_svg_renderer` now forward to `window.Blasteroids`.
+  - Rebuilt bundle via `npm run build`.
+  - DevTools `file://` smoke validation passed with no console errors; both namespace and legacy APIs stepped simulation and returned valid text state.
 - 2026-02-10 RF-06/RF-07 refactor pass:
   - Extracted deterministic simulation into `src/engine/createEngine.js` (DOM-free engine surface with state init, update, resize, arena config, and debug/test helpers).
   - Extracted canvas drawing into `src/render/renderGame.js` as `createRenderer(engine)`, including ship SVG path caching on the renderer side (no engine mutation for render caches).

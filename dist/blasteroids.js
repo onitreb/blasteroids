@@ -3321,9 +3321,13 @@
       requestAnimationFrame(stepRealTime);
     }
     requestAnimationFrame(stepRealTime);
-    window.render_game_to_text = () => game.renderGameToText();
-    window.set_ship_svg_renderer = (tierKey, svgPathData, svgScale = 1) => game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
-    window.advanceTime = (ms) => {
+    function renderGameToText() {
+      return game.renderGameToText();
+    }
+    function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1) {
+      game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
+    }
+    function advanceTime(ms) {
       externalStepping = true;
       const steps = Math.max(1, Math.round(ms / (1e3 / 60)));
       for (let i = 0; i < steps; i++)
@@ -3331,6 +3335,16 @@
       game.render(ctx);
       ui.updateHudScore();
       ui.syncRuntimeDebugUi();
+    }
+    const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
+    window.Blasteroids = {
+      ...existingApi,
+      renderGameToText,
+      setShipSvgRenderer,
+      advanceTime
     };
+    window.render_game_to_text = () => window.Blasteroids.renderGameToText();
+    window.set_ship_svg_renderer = (tierKey, svgPathData, svgScale = 1) => window.Blasteroids.setShipSvgRenderer(tierKey, svgPathData, svgScale);
+    window.advanceTime = (ms) => window.Blasteroids.advanceTime(ms);
   })();
 })();
