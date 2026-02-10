@@ -25,9 +25,9 @@ Asteroids-ish arcade game: fly near small asteroids to pull them into your force
 
 ## Ship Growth + Progression
 - The ship now has three tiers: **small**, **medium**, and **large**.
-- Default unlocks are based on gem score:
-  - Tier 2 (medium) at **500** gem points.
-  - Tier 3 (large) at **1000** gem points.
+- Default unlocks are based on **total score**:
+  - Tier 2 (medium) at **500** points.
+  - Tier 3 (large) at **1000** points.
 - Ship size scales by tier (`1x`, `2x`, `4x`) and each tier has a distinct hull/engine silhouette.
 - Tier forcefield behavior:
   - Small attracts/bursts `small` asteroids.

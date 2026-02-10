@@ -109,18 +109,18 @@
                     </span>
                   </div>
                   <div class="tune-row">
-                    <span>Gem score (progression)</span>
+                    <span>Score (progression)</span>
                     <span class="tune-actions">
                       <output id="dbg-gem-score-out">0</output>
                     </span>
                   </div>
                   <input id="dbg-gem-score" type="range" min="0" max="5000" step="10" value="0" />
                   <div class="tune-note">
-                    Live debug override for progression testing (does not change total score directly).
+                    Live debug override for progression testing (sets total score directly).
                   </div>
 
                   <div class="tune-row">
-                    <span>Tier 2 unlock (gems)</span>
+                    <span>Tier 2 unlock (score)</span>
                     <span class="tune-actions">
                       <output id="tune-tier2-unlock-out">—</output>
                       <button id="tune-tier2-unlock-save" class="btn-mini" type="button">Set default</button>
@@ -128,12 +128,12 @@
                   </div>
                   <input id="tune-tier2-unlock" type="range" min="100" max="3000" step="25" />
                   <div class="tune-note">
-                    Gem score needed to unlock the medium ship.
+                    Score needed to unlock the medium ship.
                     <div class="tune-saved">Saved default: <span id="tune-tier2-unlock-default">—</span></div>
                   </div>
 
                   <div class="tune-row">
-                    <span>Tier 3 unlock (gems)</span>
+                    <span>Tier 3 unlock (score)</span>
                     <span class="tune-actions">
                       <output id="tune-tier3-unlock-out">—</output>
                       <button id="tune-tier3-unlock-save" class="btn-mini" type="button">Set default</button>
@@ -141,7 +141,7 @@
                   </div>
                   <input id="tune-tier3-unlock" type="range" min="200" max="5000" step="25" />
                   <div class="tune-note">
-                    Gem score needed to unlock the large ship.
+                    Score needed to unlock the large ship.
                     <div class="tune-saved">Saved default: <span id="tune-tier3-unlock-default">—</span></div>
                   </div>
 

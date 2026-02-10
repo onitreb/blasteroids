@@ -600,9 +600,9 @@
           const idx = clamp(Math.round(state.settings.tierOverrideIndex || 1), 1, SHIP_BASE_BY_TIER_INDEX.length);
           return SHIP_BASE_BY_TIER_INDEX[idx - 1];
         }
-        if (state.progression.gemScore >= state.params.tier3UnlockGemScore)
+        if (state.score >= state.params.tier3UnlockGemScore)
           return "large";
-        if (state.progression.gemScore >= state.params.tier2UnlockGemScore)
+        if (state.score >= state.params.tier2UnlockGemScore)
           return "medium";
         return "small";
       }
@@ -3015,11 +3015,11 @@
     }
     function syncRuntimeDebugUi() {
       if (dbgGemScoreOut)
-        dbgGemScoreOut.textContent = `${Math.round(game.state.progression.gemScore)}`;
+        dbgGemScoreOut.textContent = `${Math.round(game.state.score)}`;
       if (dbgCurrentTierOut)
         dbgCurrentTierOut.textContent = `${game.state.progression.currentTier}`;
       if (dbgGemScore && document.activeElement !== dbgGemScore) {
-        dbgGemScore.value = String(clamp(Math.round(game.state.progression.gemScore), 0, 5e3));
+        dbgGemScore.value = String(clamp(Math.round(game.state.score), 0, 5e3));
       }
     }
     function isMenuVisible() {
@@ -3103,7 +3103,7 @@
     }
     if (dbgGemScore) {
       dbgGemScore.addEventListener("input", () => {
-        game.state.progression.gemScore = clamp(Math.round(readNum(dbgGemScore, game.state.progression.gemScore)), 0, 5e3);
+        game.state.score = clamp(Math.round(readNum(dbgGemScore, game.state.score)), 0, 5e3);
         game.refreshProgression({ animateZoom: true });
         syncRuntimeDebugUi();
       });
