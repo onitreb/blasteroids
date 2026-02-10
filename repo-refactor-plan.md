@@ -70,7 +70,7 @@ Design rules:
 | RF-03 | Thin `index.html` and extract CSS | IN_PROGRESS | Extracted CSS to `styles.css`; next: reduce inline styles/markup noise while preserving UI element IDs. |
 | RF-04 | Create `src/app` composition root | DONE | Added `src/app/index.js` and switched bundler entrypoint to it (still imports the monolith for now). |
 | RF-05 | Extract `util/` modules | IN_PROGRESS | Extracted `math`, `vec2`, `angle`, `rng` and updated `src/main.js` to import them (more helpers to follow). |
-| RF-06 | Split `engine/` (DOM-free) from current `createGame` | NOT_STARTED | Move state + update systems into `engine/` while keeping behavior identical. |
+| RF-06 | Split `engine/` (DOM-free) from current `createGame` | IN_PROGRESS | Introduced `game.engine` and `game.renderer` API split (still co-located); next: move engine into `src/engine/` module. |
 | RF-07 | Extract `render/` from engine | NOT_STARTED | Rendering becomes `renderGame(ctx, state)`; no rule logic in render. |
 | RF-08 | Extract `ui/` bindings | NOT_STARTED | Menu bindings + tuning schema + localStorage persistence isolated from engine. |
 | RF-09 | Stabilize public debug/test API | NOT_STARTED | Single `window.Blasteroids` namespace; keep legacy aliases temporarily. |

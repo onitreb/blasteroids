@@ -2324,7 +2324,7 @@ import { add, dot, len, len2, mul, norm, rot, sub, vec } from "./util/vec2.js";
 
     rebuildStarfield();
 
-    return {
+    const engine = {
       state,
       startGame,
       resetWorld,
@@ -2334,8 +2334,18 @@ import { add, dot, len, len2, mul, norm, rot, sub, vec } from "./util/vec2.js";
       refreshProgression: (options = {}) => refreshShipTierProgression(options),
       setShipSvgRenderer,
       update,
-      render,
       renderGameToText,
+    };
+
+    const renderer = {
+      render,
+    };
+
+    return {
+      ...engine,
+      render,
+      engine,
+      renderer,
     };
   }
 

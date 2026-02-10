@@ -1847,22 +1847,22 @@
       }
       function drawShipModel(ctx2, ship, thrusting) {
         const tier = currentShipTier();
-        const renderer = tier.renderer || {};
+        const renderer2 = tier.renderer || {};
         ctx2.save();
         ctx2.translate(ship.pos.x, ship.pos.y);
         ctx2.rotate(ship.angle);
         ctx2.strokeStyle = "rgba(231,240,255,0.95)";
         ctx2.lineWidth = 2;
-        if (renderer.type === "svg" && renderer.path) {
-          const path = renderer._path2d || new Path2D(renderer.path);
-          renderer._path2d = path;
-          const scale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+        if (renderer2.type === "svg" && renderer2.path) {
+          const path = renderer2._path2d || new Path2D(renderer2.path);
+          renderer2._path2d = path;
+          const scale = Number.isFinite(renderer2.svgScale) ? renderer2.svgScale : 1;
           ctx2.save();
           ctx2.scale(scale, scale);
           ctx2.stroke(path);
           ctx2.restore();
         } else {
-          const points = Array.isArray(renderer.points) ? renderer.points : SHIP_TIERS.small.renderer.points;
+          const points = Array.isArray(renderer2.points) ? renderer2.points : SHIP_TIERS.small.renderer.points;
           ctx2.beginPath();
           for (let i = 0; i < points.length; i++) {
             const p = points[i];
@@ -1875,7 +1875,7 @@
           ctx2.stroke();
         }
         if (thrusting) {
-          const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
+          const engines = Array.isArray(renderer2.engines) ? renderer2.engines : SHIP_TIERS.small.renderer.engines;
           ctx2.strokeStyle = "rgba(255, 89, 100, 0.92)";
           for (const e of engines) {
             const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
@@ -2261,7 +2261,7 @@
         return true;
       }
       rebuildStarfield();
-      return {
+      const engine = {
         state,
         startGame,
         resetWorld,
@@ -2271,8 +2271,16 @@
         refreshProgression: (options = {}) => refreshShipTierProgression(options),
         setShipSvgRenderer,
         update,
-        render,
         renderGameToText
+      };
+      const renderer = {
+        render
+      };
+      return {
+        ...engine,
+        render,
+        engine,
+        renderer
       };
     }
     const canvas = document.getElementById("game");
