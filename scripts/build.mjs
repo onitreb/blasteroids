@@ -17,7 +17,7 @@ if (shouldClean) {
 await mkdir(distDir, { recursive: true });
 
 const common = {
-  entryPoints: ["src/main.js"],
+  entryPoints: ["src/app/index.js"],
   outfile: outFile,
   bundle: true,
   format: "iife",

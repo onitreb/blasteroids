@@ -1,0 +1,13 @@
+export function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+export function posMod(value, modulus) {
+  const r = value % modulus;
+  return r < 0 ? r + modulus : r;
+}
+

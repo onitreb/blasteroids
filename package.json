@@ -1,6 +1,7 @@
 {
   "name": "blasteroids",
   "private": true,
+  "type": "module",
   "description": "Asteroids-ish arcade game (no-server, file:// friendly build).",
   "scripts": {
     "build": "node scripts/build.mjs",

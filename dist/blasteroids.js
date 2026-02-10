@@ -1,73 +1,81 @@
 (() => {
+  // src/util/math.js
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+  function posMod(value, modulus) {
+    const r = value % modulus;
+    return r < 0 ? r + modulus : r;
+  }
+
+  // src/util/angle.js
+  function angleToVec(radians) {
+    return { x: Math.cos(radians), y: Math.sin(radians) };
+  }
+  function angleOf(v) {
+    return Math.atan2(v.y, v.x);
+  }
+  function wrapAngle(a) {
+    while (a <= -Math.PI)
+      a += Math.PI * 2;
+    while (a > Math.PI)
+      a -= Math.PI * 2;
+    return a;
+  }
+
+  // src/util/rng.js
+  function seededRng(seed = 305419896) {
+    let s = seed >>> 0;
+    return () => {
+      s ^= s << 13;
+      s >>>= 0;
+      s ^= s >> 17;
+      s >>>= 0;
+      s ^= s << 5;
+      s >>>= 0;
+      return (s >>> 0) / 4294967295;
+    };
+  }
+
+  // src/util/vec2.js
+  function vec(x = 0, y = 0) {
+    return { x, y };
+  }
+  function add(a, b) {
+    return { x: a.x + b.x, y: a.y + b.y };
+  }
+  function sub(a, b) {
+    return { x: a.x - b.x, y: a.y - b.y };
+  }
+  function mul(a, s) {
+    return { x: a.x * s, y: a.y * s };
+  }
+  function dot(a, b) {
+    return a.x * b.x + a.y * b.y;
+  }
+  function len2(a) {
+    return a.x * a.x + a.y * a.y;
+  }
+  function len(a) {
+    return Math.sqrt(len2(a));
+  }
+  function norm(a) {
+    const l = len(a);
+    if (l <= 1e-9)
+      return { x: 0, y: 0 };
+    return { x: a.x / l, y: a.y / l };
+  }
+  function rot(a, radians) {
+    const c = Math.cos(radians);
+    const s = Math.sin(radians);
+    return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
+  }
+
   // src/main.js
   (() => {
-    function clamp(v, lo, hi) {
-      return Math.max(lo, Math.min(hi, v));
-    }
-    function lerp(a, b, t) {
-      return a + (b - a) * t;
-    }
-    function vec(x = 0, y = 0) {
-      return { x, y };
-    }
-    function add(a, b) {
-      return { x: a.x + b.x, y: a.y + b.y };
-    }
-    function sub(a, b) {
-      return { x: a.x - b.x, y: a.y - b.y };
-    }
-    function mul(a, s) {
-      return { x: a.x * s, y: a.y * s };
-    }
-    function dot(a, b) {
-      return a.x * b.x + a.y * b.y;
-    }
-    function len2(a) {
-      return a.x * a.x + a.y * a.y;
-    }
-    function len(a) {
-      return Math.sqrt(len2(a));
-    }
-    function norm(a) {
-      const l = len(a);
-      if (l <= 1e-9)
-        return { x: 0, y: 0 };
-      return { x: a.x / l, y: a.y / l };
-    }
-    function rot(a, radians) {
-      const c = Math.cos(radians);
-      const s = Math.sin(radians);
-      return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
-    }
-    function angleToVec(radians) {
-      return { x: Math.cos(radians), y: Math.sin(radians) };
-    }
-    function angleOf(v) {
-      return Math.atan2(v.y, v.x);
-    }
-    function wrapAngle(a) {
-      while (a <= -Math.PI)
-        a += Math.PI * 2;
-      while (a > Math.PI)
-        a -= Math.PI * 2;
-      return a;
-    }
-    function posMod(v, m) {
-      const r = v % m;
-      return r < 0 ? r + m : r;
-    }
-    function seededRng(seed = 305419896) {
-      let s = seed >>> 0;
-      return () => {
-        s ^= s << 13;
-        s >>>= 0;
-        s ^= s >> 17;
-        s >>>= 0;
-        s ^= s << 5;
-        s >>>= 0;
-        return (s >>> 0) / 4294967295;
-      };
-    }
     function makeAsteroidShape(rng, radius, verts = 10) {
       const pts = [];
       const step = Math.PI * 2 / verts;
