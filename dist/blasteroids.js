@@ -2308,162 +2308,152 @@
     };
   }
 
-  // src/main.js
-  (() => {
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d", { alpha: false });
-    const menu = document.getElementById("menu");
-    const hudScore = document.getElementById("hud-score");
-    const debugToggleBtn = document.getElementById("debug-toggle");
-    const startBtn = document.getElementById("start-btn");
-    const dbgAttract = document.getElementById("dbg-attract");
-    const shipExplode = document.getElementById("ship-explode");
-    const dbgCameraMode = document.getElementById("dbg-camera-mode");
-    const dbgWorldScale = document.getElementById("dbg-world-scale");
-    const dbgWorldScaleOut = document.getElementById("dbg-world-scale-out");
-    const dbgPauseOnOpen = document.getElementById("dbg-pause-on-open");
-    const dbgTierOverride = document.getElementById("dbg-tier-override");
-    const dbgTierOverrideLevel = document.getElementById("dbg-tier-override-level");
-    const dbgTierOverrideOut = document.getElementById("dbg-tier-override-out");
-    const dbgGemScore = document.getElementById("dbg-gem-score");
-    const dbgGemScoreOut = document.getElementById("dbg-gem-score-out");
-    const dbgCurrentTierOut = document.getElementById("dbg-current-tier-out");
-    const tuneAttract = document.getElementById("tune-attract");
-    const tuneAttractOut = document.getElementById("tune-attract-out");
-    const tuneAttractSave = document.getElementById("tune-attract-save");
-    const tuneAttractDefault = document.getElementById("tune-attract-default");
-    const tuneField = document.getElementById("tune-field");
-    const tuneFieldOut = document.getElementById("tune-field-out");
-    const tuneFieldSave = document.getElementById("tune-field-save");
-    const tuneFieldDefault = document.getElementById("tune-field-default");
-    const tuneFieldScale1 = document.getElementById("tune-field-scale1");
-    const tuneFieldScale1Out = document.getElementById("tune-field-scale1-out");
-    const tuneFieldScale1Save = document.getElementById("tune-field-scale1-save");
-    const tuneFieldScale1Default = document.getElementById("tune-field-scale1-default");
-    const tuneFieldScale2 = document.getElementById("tune-field-scale2");
-    const tuneFieldScale2Out = document.getElementById("tune-field-scale2-out");
-    const tuneFieldScale2Save = document.getElementById("tune-field-scale2-save");
-    const tuneFieldScale2Default = document.getElementById("tune-field-scale2-default");
-    const tuneFieldScale3 = document.getElementById("tune-field-scale3");
-    const tuneFieldScale3Out = document.getElementById("tune-field-scale3-out");
-    const tuneFieldScale3Save = document.getElementById("tune-field-scale3-save");
-    const tuneFieldScale3Default = document.getElementById("tune-field-scale3-default");
-    const tuneFieldGap = document.getElementById("tune-field-gap");
-    const tuneFieldGapOut = document.getElementById("tune-field-gap-out");
-    const tuneFieldGapSave = document.getElementById("tune-field-gap-save");
-    const tuneFieldGapDefault = document.getElementById("tune-field-gap-default");
-    const tuneGravity = document.getElementById("tune-gravity");
-    const tuneGravityOut = document.getElementById("tune-gravity-out");
-    const tuneGravitySave = document.getElementById("tune-gravity-save");
-    const tuneGravityDefault = document.getElementById("tune-gravity-default");
-    const tuneInnerGrav = document.getElementById("tune-inner-grav");
-    const tuneInnerGravOut = document.getElementById("tune-inner-grav-out");
-    const tuneInnerGravSave = document.getElementById("tune-inner-grav-save");
-    const tuneInnerGravDefault = document.getElementById("tune-inner-grav-default");
-    const tuneGemTtl = document.getElementById("tune-gem-ttl");
-    const tuneGemTtlOut = document.getElementById("tune-gem-ttl-out");
-    const tuneGemTtlSave = document.getElementById("tune-gem-ttl-save");
-    const tuneGemTtlDefault = document.getElementById("tune-gem-ttl-default");
-    const tuneGemBlink = document.getElementById("tune-gem-blink");
-    const tuneGemBlinkOut = document.getElementById("tune-gem-blink-out");
-    const tuneGemBlinkSave = document.getElementById("tune-gem-blink-save");
-    const tuneGemBlinkDefault = document.getElementById("tune-gem-blink-default");
-    const tuneCapture = document.getElementById("tune-capture");
-    const tuneCaptureOut = document.getElementById("tune-capture-out");
-    const tuneCaptureSave = document.getElementById("tune-capture-save");
-    const tuneCaptureDefault = document.getElementById("tune-capture-default");
-    const tuneBurst = document.getElementById("tune-burst");
-    const tuneBurstOut = document.getElementById("tune-burst-out");
-    const tuneBurstSave = document.getElementById("tune-burst-save");
-    const tuneBurstDefault = document.getElementById("tune-burst-default");
-    const tuneThrust = document.getElementById("tune-thrust");
-    const tuneThrustOut = document.getElementById("tune-thrust-out");
-    const tuneThrustSave = document.getElementById("tune-thrust-save");
-    const tuneThrustDefault = document.getElementById("tune-thrust-default");
-    const tuneDmg = document.getElementById("tune-dmg");
-    const tuneDmgOut = document.getElementById("tune-dmg-out");
-    const tuneDmgSave = document.getElementById("tune-dmg-save");
-    const tuneDmgDefault = document.getElementById("tune-dmg-default");
-    const tuneFracture = document.getElementById("tune-fracture");
-    const tuneFractureOut = document.getElementById("tune-fracture-out");
-    const tuneFractureSave = document.getElementById("tune-fracture-save");
-    const tuneFractureDefault = document.getElementById("tune-fracture-default");
-    const tuneWorldDensity = document.getElementById("tune-world-density");
-    const tuneWorldDensityOut = document.getElementById("tune-world-density-out");
-    const tuneWorldDensitySave = document.getElementById("tune-world-density-save");
-    const tuneWorldDensityDefault = document.getElementById("tune-world-density-default");
-    const tuneXlRadius = document.getElementById("tune-xl-radius");
-    const tuneXlRadiusOut = document.getElementById("tune-xl-radius-out");
-    const tuneXlRadiusSave = document.getElementById("tune-xl-radius-save");
-    const tuneXlRadiusDefault = document.getElementById("tune-xl-radius-default");
-    const tuneXxlRadius = document.getElementById("tune-xxl-radius");
-    const tuneXxlRadiusOut = document.getElementById("tune-xxl-radius-out");
-    const tuneXxlRadiusSave = document.getElementById("tune-xxl-radius-save");
-    const tuneXxlRadiusDefault = document.getElementById("tune-xxl-radius-default");
-    const tuneXlCount = document.getElementById("tune-xl-count");
-    const tuneXlCountOut = document.getElementById("tune-xl-count-out");
-    const tuneXlCountSave = document.getElementById("tune-xl-count-save");
-    const tuneXlCountDefault = document.getElementById("tune-xl-count-default");
-    const tuneXxlCount = document.getElementById("tune-xxl-count");
-    const tuneXxlCountOut = document.getElementById("tune-xxl-count-out");
-    const tuneXxlCountSave = document.getElementById("tune-xxl-count-save");
-    const tuneXxlCountDefault = document.getElementById("tune-xxl-count-default");
-    const tuneTier2Unlock = document.getElementById("tune-tier2-unlock");
-    const tuneTier2UnlockOut = document.getElementById("tune-tier2-unlock-out");
-    const tuneTier2UnlockSave = document.getElementById("tune-tier2-unlock-save");
-    const tuneTier2UnlockDefault = document.getElementById("tune-tier2-unlock-default");
-    const tuneTier3Unlock = document.getElementById("tune-tier3-unlock");
-    const tuneTier3UnlockOut = document.getElementById("tune-tier3-unlock-out");
-    const tuneTier3UnlockSave = document.getElementById("tune-tier3-unlock-save");
-    const tuneTier3UnlockDefault = document.getElementById("tune-tier3-unlock-default");
-    const tuneTier1Zoom = document.getElementById("tune-tier1-zoom");
-    const tuneTier1ZoomOut = document.getElementById("tune-tier1-zoom-out");
-    const tuneTier1ZoomSave = document.getElementById("tune-tier1-zoom-save");
-    const tuneTier1ZoomDefault = document.getElementById("tune-tier1-zoom-default");
-    const tuneTier2Zoom = document.getElementById("tune-tier2-zoom");
-    const tuneTier2ZoomOut = document.getElementById("tune-tier2-zoom-out");
-    const tuneTier2ZoomSave = document.getElementById("tune-tier2-zoom-save");
-    const tuneTier2ZoomDefault = document.getElementById("tune-tier2-zoom-default");
-    const tuneTier3Zoom = document.getElementById("tune-tier3-zoom");
-    const tuneTier3ZoomOut = document.getElementById("tune-tier3-zoom-out");
-    const tuneTier3ZoomSave = document.getElementById("tune-tier3-zoom-save");
-    const tuneTier3ZoomDefault = document.getElementById("tune-tier3-zoom-default");
-    const tuneTierZoomSec = document.getElementById("tune-tier-zoom-sec");
-    const tuneTierZoomSecOut = document.getElementById("tune-tier-zoom-sec-out");
-    const tuneTierZoomSecSave = document.getElementById("tune-tier-zoom-sec-save");
-    const tuneTierZoomSecDefault = document.getElementById("tune-tier-zoom-sec-default");
-    const tuneStarDensity = document.getElementById("tune-star-density");
-    const tuneStarDensityOut = document.getElementById("tune-star-density-out");
-    const tuneStarDensitySave = document.getElementById("tune-star-density-save");
-    const tuneStarDensityDefault = document.getElementById("tune-star-density-default");
-    const tuneParallax = document.getElementById("tune-parallax");
-    const tuneParallaxOut = document.getElementById("tune-parallax-out");
-    const tuneParallaxSave = document.getElementById("tune-parallax-save");
-    const tuneParallaxDefault = document.getElementById("tune-parallax-default");
-    const tuneStarAccentChance = document.getElementById("tune-star-accent-chance");
-    const tuneStarAccentChanceOut = document.getElementById("tune-star-accent-chance-out");
-    const tuneStarAccentChanceSave = document.getElementById("tune-star-accent-chance-save");
-    const tuneStarAccentChanceDefault = document.getElementById("tune-star-accent-chance-default");
-    const tuneTwinkleChance = document.getElementById("tune-twinkle-chance");
-    const tuneTwinkleChanceOut = document.getElementById("tune-twinkle-chance-out");
-    const tuneTwinkleChanceSave = document.getElementById("tune-twinkle-chance-save");
-    const tuneTwinkleChanceDefault = document.getElementById("tune-twinkle-chance-default");
-    const tuneTwinkleStrength = document.getElementById("tune-twinkle-strength");
-    const tuneTwinkleStrengthOut = document.getElementById("tune-twinkle-strength-out");
-    const tuneTwinkleStrengthSave = document.getElementById("tune-twinkle-strength-save");
-    const tuneTwinkleStrengthDefault = document.getElementById("tune-twinkle-strength-default");
-    const tuneTwinkleSpeed = document.getElementById("tune-twinkle-speed");
-    const tuneTwinkleSpeedOut = document.getElementById("tune-twinkle-speed-out");
-    const tuneTwinkleSpeedSave = document.getElementById("tune-twinkle-speed-save");
-    const tuneTwinkleSpeedDefault = document.getElementById("tune-twinkle-speed-default");
-    const engine = createEngine({ width: canvas.width, height: canvas.height });
-    const renderer = createRenderer(engine);
-    const game = {
-      ...engine,
-      render: (drawCtx) => renderer.render(drawCtx),
-      engine,
-      renderer
-    };
+  // src/ui/createUiBindings.js
+  function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
+    const menu = documentRef.getElementById("menu");
+    const hudScore = documentRef.getElementById("hud-score");
+    const debugToggleBtn = documentRef.getElementById("debug-toggle");
+    const startBtn = documentRef.getElementById("start-btn");
+    const dbgAttract = documentRef.getElementById("dbg-attract");
+    const shipExplode = documentRef.getElementById("ship-explode");
+    const dbgCameraMode = documentRef.getElementById("dbg-camera-mode");
+    const dbgWorldScale = documentRef.getElementById("dbg-world-scale");
+    const dbgWorldScaleOut = documentRef.getElementById("dbg-world-scale-out");
+    const dbgPauseOnOpen = documentRef.getElementById("dbg-pause-on-open");
+    const dbgTierOverride = documentRef.getElementById("dbg-tier-override");
+    const dbgTierOverrideLevel = documentRef.getElementById("dbg-tier-override-level");
+    const dbgTierOverrideOut = documentRef.getElementById("dbg-tier-override-out");
+    const dbgGemScore = documentRef.getElementById("dbg-gem-score");
+    const dbgGemScoreOut = documentRef.getElementById("dbg-gem-score-out");
+    const dbgCurrentTierOut = documentRef.getElementById("dbg-current-tier-out");
+    const tuneAttract = documentRef.getElementById("tune-attract");
+    const tuneAttractOut = documentRef.getElementById("tune-attract-out");
+    const tuneAttractSave = documentRef.getElementById("tune-attract-save");
+    const tuneAttractDefault = documentRef.getElementById("tune-attract-default");
+    const tuneField = documentRef.getElementById("tune-field");
+    const tuneFieldOut = documentRef.getElementById("tune-field-out");
+    const tuneFieldSave = documentRef.getElementById("tune-field-save");
+    const tuneFieldDefault = documentRef.getElementById("tune-field-default");
+    const tuneFieldScale1 = documentRef.getElementById("tune-field-scale1");
+    const tuneFieldScale1Out = documentRef.getElementById("tune-field-scale1-out");
+    const tuneFieldScale1Save = documentRef.getElementById("tune-field-scale1-save");
+    const tuneFieldScale1Default = documentRef.getElementById("tune-field-scale1-default");
+    const tuneFieldScale2 = documentRef.getElementById("tune-field-scale2");
+    const tuneFieldScale2Out = documentRef.getElementById("tune-field-scale2-out");
+    const tuneFieldScale2Save = documentRef.getElementById("tune-field-scale2-save");
+    const tuneFieldScale2Default = documentRef.getElementById("tune-field-scale2-default");
+    const tuneFieldScale3 = documentRef.getElementById("tune-field-scale3");
+    const tuneFieldScale3Out = documentRef.getElementById("tune-field-scale3-out");
+    const tuneFieldScale3Save = documentRef.getElementById("tune-field-scale3-save");
+    const tuneFieldScale3Default = documentRef.getElementById("tune-field-scale3-default");
+    const tuneFieldGap = documentRef.getElementById("tune-field-gap");
+    const tuneFieldGapOut = documentRef.getElementById("tune-field-gap-out");
+    const tuneFieldGapSave = documentRef.getElementById("tune-field-gap-save");
+    const tuneFieldGapDefault = documentRef.getElementById("tune-field-gap-default");
+    const tuneGravity = documentRef.getElementById("tune-gravity");
+    const tuneGravityOut = documentRef.getElementById("tune-gravity-out");
+    const tuneGravitySave = documentRef.getElementById("tune-gravity-save");
+    const tuneGravityDefault = documentRef.getElementById("tune-gravity-default");
+    const tuneInnerGrav = documentRef.getElementById("tune-inner-grav");
+    const tuneInnerGravOut = documentRef.getElementById("tune-inner-grav-out");
+    const tuneInnerGravSave = documentRef.getElementById("tune-inner-grav-save");
+    const tuneInnerGravDefault = documentRef.getElementById("tune-inner-grav-default");
+    const tuneGemTtl = documentRef.getElementById("tune-gem-ttl");
+    const tuneGemTtlOut = documentRef.getElementById("tune-gem-ttl-out");
+    const tuneGemTtlSave = documentRef.getElementById("tune-gem-ttl-save");
+    const tuneGemTtlDefault = documentRef.getElementById("tune-gem-ttl-default");
+    const tuneGemBlink = documentRef.getElementById("tune-gem-blink");
+    const tuneGemBlinkOut = documentRef.getElementById("tune-gem-blink-out");
+    const tuneGemBlinkSave = documentRef.getElementById("tune-gem-blink-save");
+    const tuneGemBlinkDefault = documentRef.getElementById("tune-gem-blink-default");
+    const tuneCapture = documentRef.getElementById("tune-capture");
+    const tuneCaptureOut = documentRef.getElementById("tune-capture-out");
+    const tuneCaptureSave = documentRef.getElementById("tune-capture-save");
+    const tuneCaptureDefault = documentRef.getElementById("tune-capture-default");
+    const tuneBurst = documentRef.getElementById("tune-burst");
+    const tuneBurstOut = documentRef.getElementById("tune-burst-out");
+    const tuneBurstSave = documentRef.getElementById("tune-burst-save");
+    const tuneBurstDefault = documentRef.getElementById("tune-burst-default");
+    const tuneThrust = documentRef.getElementById("tune-thrust");
+    const tuneThrustOut = documentRef.getElementById("tune-thrust-out");
+    const tuneThrustSave = documentRef.getElementById("tune-thrust-save");
+    const tuneThrustDefault = documentRef.getElementById("tune-thrust-default");
+    const tuneDmg = documentRef.getElementById("tune-dmg");
+    const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
+    const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
+    const tuneDmgDefault = documentRef.getElementById("tune-dmg-default");
+    const tuneFracture = documentRef.getElementById("tune-fracture");
+    const tuneFractureOut = documentRef.getElementById("tune-fracture-out");
+    const tuneFractureSave = documentRef.getElementById("tune-fracture-save");
+    const tuneFractureDefault = documentRef.getElementById("tune-fracture-default");
+    const tuneWorldDensity = documentRef.getElementById("tune-world-density");
+    const tuneWorldDensityOut = documentRef.getElementById("tune-world-density-out");
+    const tuneWorldDensitySave = documentRef.getElementById("tune-world-density-save");
+    const tuneWorldDensityDefault = documentRef.getElementById("tune-world-density-default");
+    const tuneXlRadius = documentRef.getElementById("tune-xl-radius");
+    const tuneXlRadiusOut = documentRef.getElementById("tune-xl-radius-out");
+    const tuneXlRadiusSave = documentRef.getElementById("tune-xl-radius-save");
+    const tuneXlRadiusDefault = documentRef.getElementById("tune-xl-radius-default");
+    const tuneXxlRadius = documentRef.getElementById("tune-xxl-radius");
+    const tuneXxlRadiusOut = documentRef.getElementById("tune-xxl-radius-out");
+    const tuneXxlRadiusSave = documentRef.getElementById("tune-xxl-radius-save");
+    const tuneXxlRadiusDefault = documentRef.getElementById("tune-xxl-radius-default");
+    const tuneXlCount = documentRef.getElementById("tune-xl-count");
+    const tuneXlCountOut = documentRef.getElementById("tune-xl-count-out");
+    const tuneXlCountSave = documentRef.getElementById("tune-xl-count-save");
+    const tuneXlCountDefault = documentRef.getElementById("tune-xl-count-default");
+    const tuneXxlCount = documentRef.getElementById("tune-xxl-count");
+    const tuneXxlCountOut = documentRef.getElementById("tune-xxl-count-out");
+    const tuneXxlCountSave = documentRef.getElementById("tune-xxl-count-save");
+    const tuneXxlCountDefault = documentRef.getElementById("tune-xxl-count-default");
+    const tuneTier2Unlock = documentRef.getElementById("tune-tier2-unlock");
+    const tuneTier2UnlockOut = documentRef.getElementById("tune-tier2-unlock-out");
+    const tuneTier2UnlockSave = documentRef.getElementById("tune-tier2-unlock-save");
+    const tuneTier2UnlockDefault = documentRef.getElementById("tune-tier2-unlock-default");
+    const tuneTier3Unlock = documentRef.getElementById("tune-tier3-unlock");
+    const tuneTier3UnlockOut = documentRef.getElementById("tune-tier3-unlock-out");
+    const tuneTier3UnlockSave = documentRef.getElementById("tune-tier3-unlock-save");
+    const tuneTier3UnlockDefault = documentRef.getElementById("tune-tier3-unlock-default");
+    const tuneTier1Zoom = documentRef.getElementById("tune-tier1-zoom");
+    const tuneTier1ZoomOut = documentRef.getElementById("tune-tier1-zoom-out");
+    const tuneTier1ZoomSave = documentRef.getElementById("tune-tier1-zoom-save");
+    const tuneTier1ZoomDefault = documentRef.getElementById("tune-tier1-zoom-default");
+    const tuneTier2Zoom = documentRef.getElementById("tune-tier2-zoom");
+    const tuneTier2ZoomOut = documentRef.getElementById("tune-tier2-zoom-out");
+    const tuneTier2ZoomSave = documentRef.getElementById("tune-tier2-zoom-save");
+    const tuneTier2ZoomDefault = documentRef.getElementById("tune-tier2-zoom-default");
+    const tuneTier3Zoom = documentRef.getElementById("tune-tier3-zoom");
+    const tuneTier3ZoomOut = documentRef.getElementById("tune-tier3-zoom-out");
+    const tuneTier3ZoomSave = documentRef.getElementById("tune-tier3-zoom-save");
+    const tuneTier3ZoomDefault = documentRef.getElementById("tune-tier3-zoom-default");
+    const tuneTierZoomSec = documentRef.getElementById("tune-tier-zoom-sec");
+    const tuneTierZoomSecOut = documentRef.getElementById("tune-tier-zoom-sec-out");
+    const tuneTierZoomSecSave = documentRef.getElementById("tune-tier-zoom-sec-save");
+    const tuneTierZoomSecDefault = documentRef.getElementById("tune-tier-zoom-sec-default");
+    const tuneStarDensity = documentRef.getElementById("tune-star-density");
+    const tuneStarDensityOut = documentRef.getElementById("tune-star-density-out");
+    const tuneStarDensitySave = documentRef.getElementById("tune-star-density-save");
+    const tuneStarDensityDefault = documentRef.getElementById("tune-star-density-default");
+    const tuneParallax = documentRef.getElementById("tune-parallax");
+    const tuneParallaxOut = documentRef.getElementById("tune-parallax-out");
+    const tuneParallaxSave = documentRef.getElementById("tune-parallax-save");
+    const tuneParallaxDefault = documentRef.getElementById("tune-parallax-default");
+    const tuneStarAccentChance = documentRef.getElementById("tune-star-accent-chance");
+    const tuneStarAccentChanceOut = documentRef.getElementById("tune-star-accent-chance-out");
+    const tuneStarAccentChanceSave = documentRef.getElementById("tune-star-accent-chance-save");
+    const tuneStarAccentChanceDefault = documentRef.getElementById("tune-star-accent-chance-default");
+    const tuneTwinkleChance = documentRef.getElementById("tune-twinkle-chance");
+    const tuneTwinkleChanceOut = documentRef.getElementById("tune-twinkle-chance-out");
+    const tuneTwinkleChanceSave = documentRef.getElementById("tune-twinkle-chance-save");
+    const tuneTwinkleChanceDefault = documentRef.getElementById("tune-twinkle-chance-default");
+    const tuneTwinkleStrength = documentRef.getElementById("tune-twinkle-strength");
+    const tuneTwinkleStrengthOut = documentRef.getElementById("tune-twinkle-strength-out");
+    const tuneTwinkleStrengthSave = documentRef.getElementById("tune-twinkle-strength-save");
+    const tuneTwinkleStrengthDefault = documentRef.getElementById("tune-twinkle-strength-default");
+    const tuneTwinkleSpeed = documentRef.getElementById("tune-twinkle-speed");
+    const tuneTwinkleSpeedOut = documentRef.getElementById("tune-twinkle-speed-out");
+    const tuneTwinkleSpeedSave = documentRef.getElementById("tune-twinkle-speed-save");
+    const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
     const nf = new Intl.NumberFormat();
     function setOut(outEl, value, suffix = "") {
       if (!outEl)
@@ -2797,8 +2787,9 @@
             f.savedOut.textContent = f.format(v);
           else
             setOut(f.savedOut, v, f.suffix);
-        } else if (f.savedOut)
+        } else if (f.savedOut) {
           f.savedOut.textContent = "\u2014";
+        }
       }
     }
     function syncTuningUiFromParams() {
@@ -2930,46 +2921,6 @@
         tuneTwinkleSpeedOut.textContent = `${readNum(tuneTwinkleSpeed, p.starTwinkleSpeed).toFixed(2)}x`;
       }
     }
-    function bindTuneInput(el) {
-      if (!el)
-        return;
-      el.addEventListener("input", () => {
-        syncTuningUiLabels();
-        applyTuningFromMenu();
-      });
-    }
-    bindTuneInput(tuneAttract);
-    bindTuneInput(tuneField);
-    bindTuneInput(tuneFieldScale1);
-    bindTuneInput(tuneFieldScale2);
-    bindTuneInput(tuneFieldScale3);
-    bindTuneInput(tuneFieldGap);
-    bindTuneInput(tuneGravity);
-    bindTuneInput(tuneInnerGrav);
-    bindTuneInput(tuneGemTtl);
-    bindTuneInput(tuneGemBlink);
-    bindTuneInput(tuneCapture);
-    bindTuneInput(tuneBurst);
-    bindTuneInput(tuneThrust);
-    bindTuneInput(tuneDmg);
-    bindTuneInput(tuneXlRadius);
-    bindTuneInput(tuneXxlRadius);
-    bindTuneInput(tuneXlCount);
-    bindTuneInput(tuneXxlCount);
-    bindTuneInput(tuneFracture);
-    bindTuneInput(tuneTier2Unlock);
-    bindTuneInput(tuneTier3Unlock);
-    bindTuneInput(tuneTier1Zoom);
-    bindTuneInput(tuneTier2Zoom);
-    bindTuneInput(tuneTier3Zoom);
-    bindTuneInput(tuneTierZoomSec);
-    bindTuneInput(tuneWorldDensity);
-    bindTuneInput(tuneStarDensity);
-    bindTuneInput(tuneParallax);
-    bindTuneInput(tuneStarAccentChance);
-    bindTuneInput(tuneTwinkleChance);
-    bindTuneInput(tuneTwinkleStrength);
-    bindTuneInput(tuneTwinkleSpeed);
     function applyTuningFromMenu() {
       const p = game.state.params;
       p.attractRadius = readNum(tuneAttract, p.attractRadius);
@@ -3060,11 +3011,17 @@
         dbgGemScoreOut.textContent = `${Math.round(game.state.score)}`;
       if (dbgCurrentTierOut)
         dbgCurrentTierOut.textContent = `${game.state.progression.currentTier}`;
-      if (dbgGemScore && document.activeElement !== dbgGemScore) {
+      if (dbgGemScore && documentRef.activeElement !== dbgGemScore) {
         dbgGemScore.value = String(clamp(Math.round(game.state.score), 0, 5e3));
       }
     }
+    function updateHudScore() {
+      if (hudScore)
+        hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
+    }
     function isMenuVisible() {
+      if (!menu)
+        return false;
       return menu.style.display !== "none";
     }
     function clearHeldInput() {
@@ -3086,6 +3043,8 @@
       }
     }
     function setMenuVisible(visible) {
+      if (!menu)
+        return;
       menu.style.display = visible ? "grid" : "none";
       if (visible)
         clearHeldInput();
@@ -3106,37 +3065,75 @@
       setMenuVisible(false);
     }
     function toggleDebugMenu() {
-      if (isMenuVisible())
+      if (isMenuVisible()) {
         setMenuVisible(false);
-      else {
+      } else {
         syncTuningUiFromParams();
         syncArenaUi();
         setMenuVisible(true);
       }
     }
-    startBtn.addEventListener("click", () => startOrResume());
+    function applyAllFromMenu() {
+      applyTuningFromMenu();
+      applyDebugFlagsFromMenu();
+      applyArenaFromMenu();
+    }
+    function bindTuneInput(el) {
+      if (!el)
+        return;
+      el.addEventListener("input", () => {
+        syncTuningUiLabels();
+        applyTuningFromMenu();
+      });
+    }
+    bindTuneInput(tuneAttract);
+    bindTuneInput(tuneField);
+    bindTuneInput(tuneFieldScale1);
+    bindTuneInput(tuneFieldScale2);
+    bindTuneInput(tuneFieldScale3);
+    bindTuneInput(tuneFieldGap);
+    bindTuneInput(tuneGravity);
+    bindTuneInput(tuneInnerGrav);
+    bindTuneInput(tuneGemTtl);
+    bindTuneInput(tuneGemBlink);
+    bindTuneInput(tuneCapture);
+    bindTuneInput(tuneBurst);
+    bindTuneInput(tuneThrust);
+    bindTuneInput(tuneDmg);
+    bindTuneInput(tuneXlRadius);
+    bindTuneInput(tuneXxlRadius);
+    bindTuneInput(tuneXlCount);
+    bindTuneInput(tuneXxlCount);
+    bindTuneInput(tuneFracture);
+    bindTuneInput(tuneTier2Unlock);
+    bindTuneInput(tuneTier3Unlock);
+    bindTuneInput(tuneTier1Zoom);
+    bindTuneInput(tuneTier2Zoom);
+    bindTuneInput(tuneTier3Zoom);
+    bindTuneInput(tuneTierZoomSec);
+    bindTuneInput(tuneWorldDensity);
+    bindTuneInput(tuneStarDensity);
+    bindTuneInput(tuneParallax);
+    bindTuneInput(tuneStarAccentChance);
+    bindTuneInput(tuneTwinkleChance);
+    bindTuneInput(tuneTwinkleStrength);
+    bindTuneInput(tuneTwinkleSpeed);
+    if (startBtn)
+      startBtn.addEventListener("click", () => startOrResume());
     if (debugToggleBtn)
       debugToggleBtn.addEventListener("click", () => toggleDebugMenu());
-    applyTuningDefaultsToParams();
-    syncTuningUiFromParams();
-    applyTuningFromMenu();
-    syncArenaUi();
-    applyArenaFromMenu();
-    applyDebugFlagsFromMenu();
-    syncMenuButtons();
-    syncRuntimeDebugUi();
-    syncTuningDefaultLabels();
     if (dbgCameraMode)
       dbgCameraMode.addEventListener("change", () => applyArenaFromMenu());
     if (dbgWorldScale)
       dbgWorldScale.addEventListener("input", () => applyArenaFromMenu());
     if (dbgPauseOnOpen)
       dbgPauseOnOpen.addEventListener("change", () => applyDebugFlagsFromMenu());
-    if (dbgTierOverride)
+    if (dbgTierOverride) {
       dbgTierOverride.addEventListener("change", () => {
         applyDebugFlagsFromMenu();
         game.refreshProgression({ animateZoom: false });
       });
+    }
     if (dbgTierOverrideLevel) {
       dbgTierOverrideLevel.addEventListener("input", () => {
         applyDebugFlagsFromMenu();
@@ -3164,11 +3161,50 @@
         syncTuningDefaultLabels();
         const prev = f.saveBtn.textContent;
         f.saveBtn.textContent = "Saved";
-        window.setTimeout(() => {
+        windowRef.setTimeout(() => {
           f.saveBtn.textContent = prev;
         }, 800);
       });
     }
+    applyTuningDefaultsToParams();
+    syncTuningUiFromParams();
+    applyTuningFromMenu();
+    syncArenaUi();
+    applyArenaFromMenu();
+    applyDebugFlagsFromMenu();
+    syncMenuButtons();
+    syncRuntimeDebugUi();
+    syncTuningDefaultLabels();
+    if (canvas) {
+      canvas.addEventListener("click", () => {
+        if (game.state.mode === "menu")
+          startOrResume();
+      });
+    }
+    return {
+      applyAllFromMenu,
+      isMenuVisible,
+      setMenuVisible,
+      startOrResume,
+      toggleDebugMenu,
+      syncRuntimeDebugUi,
+      updateHudScore
+    };
+  }
+
+  // src/main.js
+  (() => {
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const engine = createEngine({ width: canvas.width, height: canvas.height });
+    const renderer = createRenderer(engine);
+    const game = {
+      ...engine,
+      render: (drawCtx) => renderer.render(drawCtx),
+      engine,
+      renderer
+    };
+    const ui = createUiBindings({ game, canvas, documentRef: document, windowRef: window });
     function resizeCanvasToCss() {
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -3180,11 +3216,22 @@
         game.resize(w, h);
       }
     }
+    function toggleFullscreen() {
+      const el = document.documentElement;
+      if (!document.fullscreenElement) {
+        el.requestFullscreen?.().catch(() => {
+        });
+      } else {
+        document.exitFullscreen?.().catch(() => {
+        });
+      }
+    }
     window.addEventListener("resize", () => resizeCanvasToCss());
+    document.addEventListener("fullscreenchange", () => resizeCanvasToCss());
     resizeCanvasToCss();
     const input = game.state.input;
     function setKey(e, isDown) {
-      const menuOpen = isMenuVisible();
+      const menuOpen = ui.isMenuVisible();
       switch (e.code) {
         case "ArrowLeft":
         case "KeyA":
@@ -3217,12 +3264,10 @@
           break;
         case "KeyR":
           if (isDown) {
-            applyTuningFromMenu();
-            applyDebugFlagsFromMenu();
-            applyArenaFromMenu();
+            ui.applyAllFromMenu();
             game.resetWorld();
             game.state.mode = "playing";
-            setMenuVisible(false);
+            ui.setMenuVisible(false);
           }
           break;
         case "KeyF":
@@ -3233,13 +3278,13 @@
         case "Backquote":
           if (isDown) {
             if (game.state.mode === "playing" || game.state.mode === "gameover")
-              toggleDebugMenu();
+              ui.toggleDebugMenu();
           }
           e.preventDefault();
           break;
         case "Escape":
-          if (isDown && isMenuVisible() && (game.state.mode === "playing" || game.state.mode === "gameover")) {
-            setMenuVisible(false);
+          if (isDown && ui.isMenuVisible() && (game.state.mode === "playing" || game.state.mode === "gameover")) {
+            ui.setMenuVisible(false);
             e.preventDefault();
           }
           break;
@@ -3251,17 +3296,6 @@
       if (e.button === 0 && game.state.mode === "playing")
         input.burst = true;
     });
-    function toggleFullscreen() {
-      const el = document.documentElement;
-      if (!document.fullscreenElement) {
-        el.requestFullscreen?.().catch(() => {
-        });
-      } else {
-        document.exitFullscreen?.().catch(() => {
-        });
-      }
-    }
-    document.addEventListener("fullscreenchange", () => resizeCanvasToCss());
     let externalStepping = false;
     let last = performance.now();
     let accumulator = 0;
@@ -3270,7 +3304,7 @@
       const dtMs = Math.min(50, ts - last);
       last = ts;
       accumulator += dtMs / 1e3;
-      const pausedByMenu = isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
+      const pausedByMenu = ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (!externalStepping) {
         while (!pausedByMenu && accumulator >= fixedDt) {
           game.update(fixedDt);
@@ -3282,9 +3316,8 @@
         accumulator = 0;
       }
       game.render(ctx);
-      if (hudScore)
-        hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
-      syncRuntimeDebugUi();
+      ui.updateHudScore();
+      ui.syncRuntimeDebugUi();
       requestAnimationFrame(stepRealTime);
     }
     requestAnimationFrame(stepRealTime);
@@ -3296,13 +3329,8 @@
       for (let i = 0; i < steps; i++)
         game.update(1 / 60);
       game.render(ctx);
-      if (hudScore)
-        hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
-      syncRuntimeDebugUi();
+      ui.updateHudScore();
+      ui.syncRuntimeDebugUi();
     };
-    canvas.addEventListener("click", () => {
-      if (game.state.mode === "menu")
-        startOrResume();
-    });
   })();
 })();

@@ -76,6 +76,11 @@ Updates
     - Verified XL/XXL asteroids present in runtime state and no console errors.
 - 2026-02-09 maintenance pass: restored projectile size-gating in asteroid collisions (`projectileRank >= targetRank-1`), so launched asteroids only fracture same-size, smaller, or one-size-larger targets (speed gate still required).
 - 2026-02-09 cleanup pass: removed local Playwright install artifacts (`node_modules`, npm cache, local package files, ad-hoc Playwright client script) and corrected stale progress notes that claimed Playwright was unavailable.
+- 2026-02-10 RF-08 pass (UI extraction):
+  - Added `src/ui/createUiBindings.js` and moved browser UI concerns there: menu/tuning bindings, localStorage tuning defaults, HUD updates, and debug toggle/start-or-resume flows.
+  - Simplified `src/main.js` into composition glue for engine + renderer + UI plus main loop/input/fullscreen/debug hook exports.
+  - Rebuilt bundle via `npm run build`.
+  - DevTools `file://` smoke validation passed with no console errors: Start flow, deterministic hooks (`render_game_to_text`, `advanceTime`), movement via scripted `KeyW`, debug menu toggle (`KeyM`/`Escape`), and restart (`KeyR`).
 - 2026-02-10 RF-06/RF-07 refactor pass:
   - Extracted deterministic simulation into `src/engine/createEngine.js` (DOM-free engine surface with state init, update, resize, arena config, and debug/test helpers).
   - Extracted canvas drawing into `src/render/renderGame.js` as `createRenderer(engine)`, including ship SVG path caching on the renderer side (no engine mutation for render caches).
