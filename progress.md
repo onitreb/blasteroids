@@ -86,6 +86,12 @@ Updates
   - Kept legacy aliases for compatibility: `window.render_game_to_text`, `window.advanceTime`, and `window.set_ship_svg_renderer` now forward to `window.Blasteroids`.
   - Rebuilt bundle via `npm run build`.
   - DevTools `file://` smoke validation passed with no console errors; both namespace and legacy APIs stepped simulation and returned valid text state.
+- 2026-02-10 RF-10 pass (regression checks baseline):
+  - Added `npm test` script (`node --test`) in `package.json`.
+  - Added `test/util.test.js` for `src/util/math|vec2|angle|rng` baseline deterministic checks.
+  - Added `test/engine.test.js` for deterministic timeline parity, arena config clamping, parseable `renderGameToText` payload shape, and `setShipSvgRenderer` behavior.
+  - Test result: `8 passed, 0 failed` (`npm test`).
+  - Updated docs to expose tests in `RUNBOOK.md` and `README.md`.
 - 2026-02-10 RF-06/RF-07 refactor pass:
   - Extracted deterministic simulation into `src/engine/createEngine.js` (DOM-free engine surface with state init, update, resize, arena config, and debug/test helpers).
   - Extracted canvas drawing into `src/render/renderGame.js` as `createRenderer(engine)`, including ship SVG path caching on the renderer side (no engine mutation for render caches).

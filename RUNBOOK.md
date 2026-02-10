@@ -35,6 +35,12 @@ Workflow:
 ## Clean
 - `npm run clean` (deletes `dist/`)
 
+## Tests
+- `npm test` (runs baseline Node tests via `node --test`)
+- Current coverage includes:
+  - utility modules under `src/util/*`
+  - deterministic engine timeline checks + API surface checks in `test/engine.test.js`
+
 ## Smoke Test Checklist (After Any Refactor)
 Open `index.html` via `file://` and verify:
 - No console errors on load
@@ -58,4 +64,3 @@ Use a repo-local npm cache:
 ## Notes On Repo Design
 - Runtime is kept `file://`-friendly by bundling to a single **IIFE** script (`dist/blasteroids.js`).
 - During refactors, we commit `dist/blasteroids.js` so anyone can run the game without installing tooling.
-

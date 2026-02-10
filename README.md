@@ -79,3 +79,4 @@ Once Pages is enabled, the game will be available at:
   - If you hit an npm cache permissions error, use: `npm install --cache ./.npm-cache`
 - Build bundle: `npm run build`
 - Watch (rebuild on change): `npm run build:watch` (then refresh `index.html`)
+- Run regression checks: `npm test`

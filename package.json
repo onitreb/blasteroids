@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:watch": "node scripts/build.mjs --watch",
-    "clean": "node scripts/build.mjs --clean"
+    "clean": "node scripts/build.mjs --clean",
+    "test": "node --test"
   },
   "devDependencies": {
     "esbuild": "^0.20.2"

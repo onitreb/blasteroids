@@ -74,7 +74,7 @@ Design rules:
 | RF-07 | Extract `render/` from engine | DONE | Added `src/render/renderGame.js` and `createRenderer(engine)`; canvas drawing reads engine state without gameplay-rule mutation. |
 | RF-08 | Extract `ui/` bindings | DONE | Added `src/ui/createUiBindings.js`; moved menu/tuning/localStorage + HUD wiring out of `src/main.js` while preserving runtime behavior and debug hooks. |
 | RF-09 | Stabilize public debug/test API | DONE | Added `window.Blasteroids` namespace with `renderGameToText`, `advanceTime`, and `setShipSvgRenderer`; legacy globals are preserved as compatibility aliases. |
-| RF-10 | Add regression checks | NOT_STARTED | Baseline unit tests for pure logic + optional Playwright file:// smoke. |
+| RF-10 | Add regression checks | DONE | Added baseline `node --test` suite for `src/util/*` and deterministic engine/API checks (`test/util.test.js`, `test/engine.test.js`). |
 | RF-11 | Docs + reviewability pass | NOT_STARTED | `docs/architecture.md`, module map, “how to run/build”, checklist. |
 
 ## RF-01 Details (Hygiene)
