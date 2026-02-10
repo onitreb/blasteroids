@@ -80,3 +80,8 @@ Once Pages is enabled, the game will be available at:
 - Build bundle: `npm run build`
 - Watch (rebuild on change): `npm run build:watch` (then refresh `index.html`)
 - Run regression checks: `npm test`
+
+## Project Docs
+- Architecture: `docs/architecture.md`
+- Module ownership map: `docs/module-map.md`
+- Refactor review checklist: `docs/review-checklist.md`

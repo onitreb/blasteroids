@@ -1,6 +1,7 @@
 import { clamp, lerp } from "../util/math.js";
 import { angleOf, angleToVec, wrapAngle } from "../util/angle.js";
 import { seededRng } from "../util/rng.js";
+import { circleCollide, circleHit } from "../util/collision.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../util/vec2.js";
 
 function makeAsteroidShape(rng, radius, verts = 10) {
@@ -239,22 +240,6 @@ function makeShip(tierKey = "small") {
 
 function shipForward(ship) {
   return angleToVec(ship.angle);
-}
-
-function circleHit(a, b) {
-  const d2 = len2(sub(a.pos, b.pos));
-  const r = a.radius + b.radius;
-  return d2 <= r * r;
-}
-
-function circleCollide(a, b) {
-  const delta = sub(b.pos, a.pos);
-  const dist2 = len2(delta);
-  const minDist = a.radius + b.radius;
-  if (dist2 <= 1e-9 || dist2 >= minDist * minDist) return null;
-  const dist = Math.sqrt(dist2);
-  const n = mul(delta, 1 / dist);
-  return { n, dist, penetration: minDist - dist };
 }
 
 function asteroidRadiusForSize(params, size) {

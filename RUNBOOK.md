@@ -46,8 +46,9 @@ Open `index.html` via `file://` and verify:
 - No console errors on load
 - Start → ship moves (W/A/D/S), bursts (Space/click), restart (R), fullscreen (F)
 - Debug menu opens/closes (M), pause-on-open works
-- `render_game_to_text()` returns a JSON string
-- `advanceTime(1000)` advances without throwing
+- `window.Blasteroids.renderGameToText()` returns a JSON string
+- `window.Blasteroids.advanceTime(1000)` advances without throwing
+- Legacy aliases still work: `render_game_to_text()`, `advanceTime(1000)`, `set_ship_svg_renderer(...)`
 - Tier progression: ship grows at **500** and **1000** total score (default)
 
 ## Troubleshooting

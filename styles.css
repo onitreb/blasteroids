@@ -86,6 +86,10 @@ p {
   line-height: 1.45;
 }
 
+.accent-text {
+  color: var(--accent);
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -93,11 +97,20 @@ p {
   margin: 14px 0 18px;
 }
 
+.grid-tight {
+  margin-top: 0;
+}
+
 .card {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 12px 12px 10px;
   background: rgba(0, 0, 0, 0.15);
+}
+
+.card-label {
+  display: block;
+  cursor: pointer;
 }
 
 .k {
@@ -137,6 +150,32 @@ details.card[open] summary {
 input[type="range"] {
   width: 100%;
   margin-top: 6px;
+}
+
+.select-block {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.inline-split {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-gap {
+  margin-top: 8px;
+}
+
+.stack-top {
+  margin-top: 12px;
 }
 
 #start-row {

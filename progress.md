@@ -99,3 +99,30 @@ Updates
   - Preserved runtime hooks: `window.render_game_to_text`, `window.advanceTime`, and `window.set_ship_svg_renderer`.
   - Rebuilt bundle via `npm run build` to regenerate `dist/blasteroids.js`.
   - Smoke-tested under `file://` via DevTools: Start flow, no console errors, deterministic stepping (`advanceTime(1000)`), and thrust movement via scripted keydown/up + `advanceTime(500)`.
+- 2026-02-10 RF-03 cleanup pass (index thinning, no behavior changes):
+  - Removed remaining inline style attributes from `index.html` and replaced them with reusable CSS classes in `styles.css` (`accent-text`, `grid-tight`, `card-label`, `select-block`, `inline-split`, `inline-toggle`, `top-gap`, `stack-top`).
+  - Kept all existing UI control IDs required by `src/ui/createUiBindings.js` intact.
+  - Validation:
+    - `npm test`: `9 passed, 0 failed`.
+    - `npm run build` rebuilt committed runtime bundle `dist/blasteroids.js`.
+    - DevTools `file://` smoke passed with no console errors:
+      - start flow, movement (`W`), burst (`Space`), restart (`R`), fullscreen toggle (`F`),
+      - debug menu toggle (`M`) and pause-on-open behavior (`movedWhileMenuOpen=0`, `movedWhileMenuClosed>0`),
+      - both `window.Blasteroids.*` and legacy hook aliases callable and returning parseable state.
+- 2026-02-10 RF-05 util extraction slice:
+  - Added `src/util/collision.js` with `circleHit` and `circleCollide`.
+  - Updated `src/engine/createEngine.js` to import collision helpers from `src/util/collision.js` and removed duplicate local implementations.
+  - Extended `test/util.test.js` with baseline checks for collision helper behavior.
+  - Validation:
+    - `npm test`: `9 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - DevTools `file://` smoke recheck after build: no console errors; required controls/debug/hook checks remained green.
+- 2026-02-10 RF-11 docs/reviewability pass:
+  - Added architecture documentation: `docs/architecture.md` (runtime constraints, composition flow, module boundaries, build/runtime rules, testing expectations).
+  - Added ownership reference: `docs/module-map.md` (file-to-responsibility map and dependency rules).
+  - Added review checklist: `docs/review-checklist.md` (invariants, automated checks, `file://` smoke checks, boundary review, handoff steps).
+  - Updated `README.md` with a new `Project Docs` section linking to the docs above.
+  - Polished `RUNBOOK.md` smoke checklist to validate both namespace hooks (`window.Blasteroids.*`) and legacy aliases.
+  - Updated refactor status in `repo-refactor-plan.md` to mark RF-11 as `DONE`.
+  - Validation:
+    - `npm test`: `9 passed, 0 failed`.

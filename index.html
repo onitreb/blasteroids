@@ -15,7 +15,7 @@
         <div id="panel">
           <h1>Blasteroids</h1>
           <p>
-            You don’t shoot the little rocks — you <span style="color: var(--accent)">collect</span> them. Fly near
+            You don’t shoot the little rocks — you <span class="accent-text">collect</span> them. Fly near
             <b>small asteroids</b> to attract them into your magnet ring, then burst them outward to smash big ones.
           </p>
           <div class="grid">
@@ -40,41 +40,41 @@
             <button id="start-btn" type="button">Start</button>
             <div id="hint">Tip: keep your <code>forcefield ring</code> just grazing the small rocks.</div>
           </div>
-          <div class="grid" style="margin-top: 0">
-            <label class="card" style="display: block; cursor: pointer">
+          <div class="grid grid-tight">
+            <label class="card card-label">
               <div class="k">Debug</div>
               <div class="v">
                 <input id="dbg-attract" type="checkbox" checked />
                 <span>Show attraction radius</span>
               </div>
             </label>
-            <label class="card" style="display: block; cursor: pointer">
+            <label class="card card-label">
               <div class="k">Ship Collisions</div>
               <div class="v">
                 <input id="ship-explode" type="checkbox" />
                 <span>Explode on med/large impact</span>
               </div>
             </label>
-            <label class="card" style="display: block; cursor: pointer">
+            <label class="card card-label">
               <div class="k">Camera Mode</div>
               <div class="v">
-                <select id="dbg-camera-mode" style="margin-top: 6px; width: 100%">
+                <select id="dbg-camera-mode" class="select-block">
                   <option value="centered">Centered</option>
                   <option value="deadzone" selected>Dead-zone pan</option>
                 </select>
               </div>
             </label>
-            <label class="card" style="display: block; cursor: pointer">
+            <label class="card card-label">
               <div class="k">Arena Size</div>
               <div class="v">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+                <div class="inline-split">
                   <span>World scale</span>
                   <output id="dbg-world-scale-out">3.00x</output>
                 </div>
                 <input id="dbg-world-scale" type="range" min="1" max="10" step="0.25" value="3" />
               </div>
             </label>
-            <label class="card" style="display: block; cursor: pointer">
+            <label class="card card-label">
               <div class="k">Menu Behavior</div>
               <div class="v">
                 <input id="dbg-pause-on-open" type="checkbox" checked />
@@ -84,11 +84,11 @@
             <div class="card">
               <div class="k">Tier Override</div>
               <div class="v">
-                <label style="display: flex; align-items: center; gap: 8px">
+                <label class="inline-toggle">
                   <input id="dbg-tier-override" type="checkbox" />
                   <span>Override ship tier</span>
                 </label>
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px">
+                <div class="inline-split top-gap">
                   <span>Tier</span>
                   <output id="dbg-tier-override-out">1</output>
                 </div>
@@ -96,7 +96,7 @@
               </div>
             </div>
           </div>
-          <details class="card" id="tuning" style="margin: 12px 0 0">
+          <details class="card stack-top" id="tuning">
             <summary class="k">Tuning (debug)</summary>
             <div class="debug-groups">
               <div class="card debug-group">

@@ -67,15 +67,15 @@ Design rules:
 | RF-00 | Lock invariants and acceptance checks | DONE | No-server runtime; commit bundle; preserve deterministic hooks. |
 | RF-01 | Repo hygiene: move/ignore artifacts | DONE | Removed tmp screenshots; added `.editorconfig`; expanded `.gitignore`; kept `.vscode/settings.json` (user preference). |
 | RF-02 | Add minimal build tooling + committed bundle | DONE | Added `package.json` + `scripts/build.mjs` (esbuild IIFE); built `dist/blasteroids.js`; `index.html` now loads `dist/blasteroids.js`. |
-| RF-03 | Thin `index.html` and extract CSS | IN_PROGRESS | Extracted CSS to `styles.css`; next: reduce inline styles/markup noise while preserving UI element IDs. |
+| RF-03 | Thin `index.html` and extract CSS | DONE | Removed remaining inline-style clutter and standardized reusable CSS classes while preserving all UI element IDs/behavior. |
 | RF-04 | Create `src/app` composition root | DONE | Added `src/app/index.js` and switched bundler entrypoint to it (still imports the monolith for now). |
-| RF-05 | Extract `util/` modules | IN_PROGRESS | Extracted `math`, `vec2`, `angle`, `rng` and updated `src/main.js` to import them (more helpers to follow). |
+| RF-05 | Extract `util/` modules | IN_PROGRESS | Extracted `math`, `vec2`, `angle`, `rng`, and `collision`; engine now imports shared circle collision helpers (more helpers to follow). |
 | RF-06 | Split `engine/` (DOM-free) from current `createGame` | DONE | Added `src/engine/createEngine.js`; deterministic sim/state moved out of browser glue; `src/main.js` now composes engine + renderer while preserving debug hooks. |
 | RF-07 | Extract `render/` from engine | DONE | Added `src/render/renderGame.js` and `createRenderer(engine)`; canvas drawing reads engine state without gameplay-rule mutation. |
 | RF-08 | Extract `ui/` bindings | DONE | Added `src/ui/createUiBindings.js`; moved menu/tuning/localStorage + HUD wiring out of `src/main.js` while preserving runtime behavior and debug hooks. |
 | RF-09 | Stabilize public debug/test API | DONE | Added `window.Blasteroids` namespace with `renderGameToText`, `advanceTime`, and `setShipSvgRenderer`; legacy globals are preserved as compatibility aliases. |
 | RF-10 | Add regression checks | DONE | Added baseline `node --test` suite for `src/util/*` and deterministic engine/API checks (`test/util.test.js`, `test/engine.test.js`). |
-| RF-11 | Docs + reviewability pass | NOT_STARTED | `docs/architecture.md`, module map, “how to run/build”, checklist. |
+| RF-11 | Docs + reviewability pass | DONE | Added `docs/architecture.md`, `docs/module-map.md`, and `docs/review-checklist.md`; linked docs in README and polished runbook smoke checklist for namespace + legacy hooks. |
 
 ## RF-01 Details (Hygiene)
 - Decide what stays versioned:

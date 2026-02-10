@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { angleOf, angleToVec, wrapAngle } from "../src/util/angle.js";
+import { circleCollide, circleHit } from "../src/util/collision.js";
 import { clamp, lerp, posMod } from "../src/util/math.js";
 import { seededRng } from "../src/util/rng.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../src/util/vec2.js";
@@ -57,4 +58,22 @@ test("seededRng is deterministic for same seed", () => {
   for (let i = 0; i < 20; i++) {
     near(a(), b(), 0);
   }
+});
+
+test("circle collision helpers", () => {
+  const a = { pos: vec(0, 0), radius: 10 };
+  const b = { pos: vec(15, 0), radius: 6 };
+  const c = { pos: vec(40, 0), radius: 6 };
+
+  assert.equal(circleHit(a, b), true);
+  assert.equal(circleHit(a, c), false);
+
+  const hit = circleCollide(a, b);
+  assert.ok(hit);
+  near(hit.n.x, 1);
+  near(hit.n.y, 0);
+  near(hit.penetration, 1);
+  near(hit.dist, 15);
+
+  assert.equal(circleCollide(a, c), null);
 });
