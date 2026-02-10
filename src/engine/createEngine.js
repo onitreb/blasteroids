@@ -2,6 +2,16 @@ import { clamp, lerp } from "../util/math.js";
 import { angleOf, angleToVec, wrapAngle } from "../util/angle.js";
 import { seededRng } from "../util/rng.js";
 import { circleCollide, circleHit } from "../util/collision.js";
+import {
+  asteroidCanBreakTarget,
+  asteroidDamageSpeedForSize,
+  asteroidMassForRadius,
+  asteroidNextSize,
+  asteroidRadiusForSize,
+  asteroidSizeRank,
+  asteroidSpawnWeightForSize,
+  sizeSetHas,
+} from "../util/asteroid.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../util/vec2.js";
 
 function makeAsteroidShape(rng, radius, verts = 10) {
@@ -17,13 +27,6 @@ function makeAsteroidShape(rng, radius, verts = 10) {
 
 
 const ASTEROID_SIZE_ORDER = ["small", "med", "large", "xlarge", "xxlarge"];
-const ASTEROID_SPLIT_NEXT = {
-  small: null,
-  med: "small",
-  large: "med",
-  xlarge: "large",
-  xxlarge: "xlarge",
-};
 const ASTEROID_BASE_SPEED = {
   small: 68,
   med: 50,
@@ -45,10 +48,6 @@ const ASTEROID_ROT_VEL_MAX = {
   xlarge: 0.38,
   xxlarge: 0.25,
 };
-const ASTEROID_SIZE_INDEX = ASTEROID_SIZE_ORDER.reduce((acc, key, idx) => {
-  acc[key] = idx;
-  return acc;
-}, {});
 
 const DEFAULT_SHIP_RENDERERS = {
   small: {
@@ -206,26 +205,6 @@ export function ensureAttractRadiusCoversForcefield(params) {
   params.attractRadius = requiredBaseAttract;
 }
 
-function asteroidSizeRank(size) {
-  return ASTEROID_SIZE_INDEX[size] ?? 0;
-}
-
-function asteroidNextSize(size) {
-  return ASTEROID_SPLIT_NEXT[size] || null;
-}
-
-function sizeSetHas(sizeSet, size) {
-  return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
-}
-
-function asteroidCanBreakTarget(projectileSize, targetSize) {
-  const projectileRank = ASTEROID_SIZE_INDEX[projectileSize];
-  const targetRank = ASTEROID_SIZE_INDEX[targetSize];
-  if (!Number.isFinite(projectileRank) || !Number.isFinite(targetRank)) return false;
-  // Rule: a launched asteroid can break same size, any smaller size, or one size larger.
-  return targetRank <= projectileRank + 1;
-}
-
 function makeShip(tierKey = "small") {
   const tier = shipTierByKey(tierKey);
   return {
@@ -241,20 +220,6 @@ function makeShip(tierKey = "small") {
 function shipForward(ship) {
   return angleToVec(ship.angle);
 }
-
-function asteroidRadiusForSize(params, size) {
-  if (size === "xxlarge") return params.xxlargeRadius;
-  if (size === "xlarge") return params.xlargeRadius;
-  if (size === "large") return params.largeRadius;
-  if (size === "med") return params.medRadius;
-  return params.smallRadius;
-}
-
-function asteroidMassForRadius(radius) {
-  // 2D-ish: mass proportional to area.
-  return Math.max(1, radius * radius);
-}
-
 
 export function createEngine({ width, height }) {
   const rng = seededRng(0xdecafbad);
@@ -448,22 +413,6 @@ export function createEngine({ width, height }) {
     return sizeSetHas(currentShipAttractSizes(), size);
   }
 
-  function asteroidSpawnWeightForSize(size) {
-    if (size === "xxlarge") return Math.max(0, state.params.xxlargeCount);
-    if (size === "xlarge") return Math.max(0, state.params.xlargeCount);
-    if (size === "large") return Math.max(0, state.params.largeCount);
-    if (size === "med") return Math.max(0, state.params.medCount);
-    return Math.max(0, state.params.smallCount);
-  }
-
-  function asteroidDamageSpeedForSize(size) {
-    if (size === "xxlarge") return state.params.xxlargeDamageSpeedMin;
-    if (size === "xlarge") return state.params.xlargeDamageSpeedMin;
-    if (size === "large") return state.params.largeDamageSpeedMin;
-    if (size === "med") return state.params.medDamageSpeedMin;
-    return state.params.smallDamageSpeedMin;
-  }
-
   function cameraZoomForTier(tierKey) {
     if (tierKey === "large") return clamp(state.params.tier3Zoom, 0.35, 1.2);
     if (tierKey === "medium") return clamp(state.params.tier2Zoom, 0.35, 1.2);
@@ -551,7 +500,7 @@ export function createEngine({ width, height }) {
   }
 
   function asteroidSeedCount() {
-    const total = ASTEROID_SIZE_ORDER.reduce((n, size) => n + asteroidSpawnWeightForSize(size), 0);
+    const total = ASTEROID_SIZE_ORDER.reduce((n, size) => n + asteroidSpawnWeightForSize(state.params, size), 0);
     return Math.max(1, Math.round(total));
   }
 
@@ -675,7 +624,7 @@ export function createEngine({ width, height }) {
   function pickSpawnAsteroidSize() {
     const weights = ASTEROID_SIZE_ORDER.map((size) => ({
       size,
-      w: Math.max(0, asteroidSpawnWeightForSize(size)),
+      w: Math.max(0, asteroidSpawnWeightForSize(state.params, size)),
     }));
     const sum = weights.reduce((acc, it) => acc + it.w, 0);
     if (sum <= 0) return "small";
@@ -944,7 +893,7 @@ export function createEngine({ width, height }) {
     if (!a?.shipLaunched) return false;
     const spd = len(a.vel);
     const v = Math.max(spd, impactSpeed);
-    return v >= asteroidDamageSpeedForSize(a.size);
+    return v >= asteroidDamageSpeedForSize(state.params, a.size);
   }
 
   function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {

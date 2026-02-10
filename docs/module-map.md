@@ -29,6 +29,7 @@ This map is for reviewability: where logic lives, what each module owns, and wha
 | `src/util/angle.js` | Angle conversion/normalization helpers | none |
 | `src/util/rng.js` | Seeded deterministic RNG | none |
 | `src/util/collision.js` | Circle hit/collision resolution helpers | `vec2` |
+| `src/util/asteroid.js` | Asteroid size/radius/mass/rank and size-mapping helpers | none |
 
 ## Tests
 

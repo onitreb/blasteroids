@@ -2,6 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { angleOf, angleToVec, wrapAngle } from "../src/util/angle.js";
+import {
+  asteroidCanBreakTarget,
+  asteroidDamageSpeedForSize,
+  asteroidMassForRadius,
+  asteroidNextSize,
+  asteroidRadiusForSize,
+  asteroidSizeRank,
+  asteroidSpawnWeightForSize,
+  sizeSetHas,
+} from "../src/util/asteroid.js";
 import { circleCollide, circleHit } from "../src/util/collision.js";
 import { clamp, lerp, posMod } from "../src/util/math.js";
 import { seededRng } from "../src/util/rng.js";
@@ -76,4 +86,45 @@ test("circle collision helpers", () => {
   near(hit.dist, 15);
 
   assert.equal(circleCollide(a, c), null);
+});
+
+test("asteroid helpers", () => {
+  const params = {
+    xxlargeRadius: 150,
+    xlargeRadius: 90,
+    largeRadius: 54,
+    medRadius: 30,
+    smallRadius: 12,
+    xxlargeCount: 1,
+    xlargeCount: 3,
+    largeCount: 6,
+    medCount: 10,
+    smallCount: 22,
+    xxlargeDamageSpeedMin: 250,
+    xlargeDamageSpeedMin: 280,
+    largeDamageSpeedMin: 310,
+    medDamageSpeedMin: 360,
+    smallDamageSpeedMin: 420,
+  };
+
+  assert.equal(asteroidSizeRank("small"), 0);
+  assert.equal(asteroidSizeRank("xxlarge"), 4);
+  assert.equal(asteroidNextSize("xxlarge"), "xlarge");
+  assert.equal(asteroidNextSize("small"), null);
+  assert.equal(sizeSetHas(["small", "med"], "med"), true);
+  assert.equal(sizeSetHas(["small"], "large"), false);
+
+  assert.equal(asteroidCanBreakTarget("small", "med"), true);
+  assert.equal(asteroidCanBreakTarget("small", "large"), false);
+  assert.equal(asteroidCanBreakTarget("xlarge", "xxlarge"), true);
+
+  assert.equal(asteroidRadiusForSize(params, "xxlarge"), 150);
+  assert.equal(asteroidRadiusForSize(params, "med"), 30);
+  assert.equal(asteroidMassForRadius(0), 1);
+  assert.equal(asteroidMassForRadius(12), 144);
+
+  assert.equal(asteroidSpawnWeightForSize(params, "xxlarge"), 1);
+  assert.equal(asteroidSpawnWeightForSize(params, "small"), 22);
+  assert.equal(asteroidDamageSpeedForSize(params, "large"), 310);
+  assert.equal(asteroidDamageSpeedForSize(params, "small"), 420);
 });

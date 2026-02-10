@@ -126,3 +126,15 @@ Updates
   - Updated refactor status in `repo-refactor-plan.md` to mark RF-11 as `DONE`.
   - Validation:
     - `npm test`: `9 passed, 0 failed`.
+- 2026-02-10 RF-05 util extraction slice (asteroid helpers):
+  - Added `src/util/asteroid.js` with shared asteroid size/rank/split and param-mapping helpers:
+    - `asteroidSizeRank`, `asteroidNextSize`, `sizeSetHas`, `asteroidCanBreakTarget`
+    - `asteroidRadiusForSize`, `asteroidMassForRadius`
+    - `asteroidSpawnWeightForSize`, `asteroidDamageSpeedForSize`
+  - Updated `src/engine/createEngine.js` to import and use the new asteroid util helpers, removing duplicate local implementations.
+  - Extended `test/util.test.js` with asteroid util coverage.
+  - Updated docs to reflect new utility module in architecture/module map and RF-05 status note.
+  - Validation:
+    - `npm test`: `10 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - DevTools `file://` smoke recheck: no console errors; start/move/burst/restart/fullscreen/debug pause behavior passed; both namespace and legacy hook surfaces callable.

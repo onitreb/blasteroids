@@ -54,7 +54,7 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
 
 ### Utilities (`src/util/*`)
 
-- Pure reusable helpers (`math`, `vec2`, `angle`, `rng`, `collision`).
+- Pure reusable helpers (`math`, `vec2`, `angle`, `rng`, `collision`, `asteroid`).
 - Safe extraction target for shared logic currently duplicated in feature modules.
 
 ## Build and Runtime Packaging
