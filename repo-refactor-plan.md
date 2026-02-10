@@ -65,9 +65,9 @@ Design rules:
 | ID | Step | Status | Notes |
 |---|---|---|---|
 | RF-00 | Lock invariants and acceptance checks | DONE | No-server runtime; commit bundle; preserve deterministic hooks. |
-| RF-01 | Repo hygiene: move/ignore artifacts | NOT_STARTED | Remove or relocate `firebase-debug.log`, tmp screenshots; expand `.gitignore`. |
-| RF-02 | Add minimal build tooling + committed bundle | NOT_STARTED | `package.json` + bundler config; output IIFE bundle to `dist/` and commit it. |
-| RF-03 | Thin `index.html` and extract CSS | NOT_STARTED | Move inline CSS to `styles.css`; keep markup minimal; preserve IDs used by UI. |
+| RF-01 | Repo hygiene: move/ignore artifacts | DONE | Removed tmp screenshots; added `.editorconfig`; expanded `.gitignore`; kept `.vscode/settings.json` (user preference). |
+| RF-02 | Add minimal build tooling + committed bundle | DONE | Added `package.json` + `scripts/build.mjs` (esbuild IIFE); built `dist/blasteroids.js`; `index.html` now loads `dist/blasteroids.js`. |
+| RF-03 | Thin `index.html` and extract CSS | IN_PROGRESS | Extracted CSS to `styles.css`; next: reduce inline styles/markup noise while preserving UI element IDs. |
 | RF-04 | Create `src/app` composition root | NOT_STARTED | Centralize boot + loop + `window.*` exports in one place. |
 | RF-05 | Extract `util/` modules | NOT_STARTED | `math`, `geom`, `rng` first (pure functions). |
 | RF-06 | Split `engine/` (DOM-free) from current `createGame` | NOT_STARTED | Move state + update systems into `engine/` while keeping behavior identical. |
@@ -103,4 +103,3 @@ Server-ready design choices:
 - Gameplay feels identical for a fixed seed and scripted `advanceTime()` sequence.
 - `render_game_to_text()` fields remain stable (or changes are intentional and documented).
 - Bundled output is reproducible from source (no manual edits to `dist/`).
-

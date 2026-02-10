@@ -1,3 +1,13 @@
 output/
-.DS_Store
+node_modules/
+.npm-cache/
 
+.DS_Store
+*.log
+
+# Local tooling/editor
+.vscode/*
+!.vscode/settings.json
+
+# Scratch / temp artifacts
+tmp_*

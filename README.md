@@ -2,6 +2,9 @@
 
 Asteroids-ish arcade game: fly near small asteroids to pull them into your forcefield ring, then burst them out to smash bigger ones. Small asteroids can drop gems for points.
 
+## Run (no server)
+- Open `index.html` directly (double-click). The repo includes a prebuilt `dist/blasteroids.js` so there’s no install step required to play.
+
 ## Play
 - **W / ↑** thrust
 - **A,D / ←,→** rotate
@@ -70,3 +73,9 @@ Open the in-game menu to tweak sliders/switches and click **Set default** to sav
 ## GitHub Pages
 Once Pages is enabled, the game will be available at:
 `https://onitreb.github.io/blasteroids/`
+
+## Development
+- Install deps: `npm install`  
+  - If you hit an npm cache permissions error, use: `npm install --cache ./.npm-cache`
+- Build bundle: `npm run build`
+- Watch (rebuild on change): `npm run build:watch` (then refresh `index.html`)
