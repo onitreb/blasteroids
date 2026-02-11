@@ -518,9 +518,26 @@ export function createRenderer(engine) {
         18,
       );
     } else if (state.mode === "gameover") {
-      ctx.fillStyle = "rgba(255,89,100,0.92)";
+      // Game-over overlay: clearer restart prompt without requiring the debug menu.
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.fillStyle = "rgba(255,89,100,0.96)";
+      ctx.font = "700 52px ui-sans-serif, system-ui";
+      ctx.fillText("GAME OVER", w * 0.5, h * 0.5 - 70);
+
+      ctx.fillStyle = "rgba(231,240,255,0.92)";
       ctx.font = "16px ui-sans-serif, system-ui";
-      ctx.fillText("Impact with a heavy asteroid. Press R to restart.", 14, 28);
+      ctx.fillText(`Score: ${state.score}`, w * 0.5, h * 0.5 - 26);
+      ctx.fillText("Press R or click to restart", w * 0.5, h * 0.5 + 6);
+
+      ctx.fillStyle = "rgba(231,240,255,0.70)";
+      ctx.fillText("Press M for debug/tuning", w * 0.5, h * 0.5 + 34);
+      ctx.restore();
     }
     ctx.restore();
   }

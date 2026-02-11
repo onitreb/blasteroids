@@ -43,6 +43,12 @@ import { createUiBindings } from "./ui/createUiBindings.js";
   resizeCanvasToCss();
 
   const input = game.state.input;
+  function restartGame() {
+    ui.applyAllFromMenu();
+    game.resetWorld();
+    game.state.mode = "playing";
+    ui.setMenuVisible(false);
+  }
   function setKey(e, isDown) {
     const menuOpen = ui.isMenuVisible();
     switch (e.code) {
@@ -72,10 +78,7 @@ import { createUiBindings } from "./ui/createUiBindings.js";
         break;
       case "KeyR":
         if (isDown) {
-          ui.applyAllFromMenu();
-          game.resetWorld();
-          game.state.mode = "playing";
-          ui.setMenuVisible(false);
+          restartGame();
         }
         break;
       case "KeyF":
@@ -101,7 +104,14 @@ import { createUiBindings } from "./ui/createUiBindings.js";
   window.addEventListener("keyup", (e) => setKey(e, false));
 
   canvas.addEventListener("mousedown", (e) => {
-    if (e.button === 0 && game.state.mode === "playing") input.burst = true;
+    if (e.button !== 0) return;
+    if (game.state.mode === "playing") {
+      if (!ui.isMenuVisible()) input.burst = true;
+      return;
+    }
+    if (game.state.mode === "gameover") {
+      if (!ui.isMenuVisible()) restartGame();
+    }
   });
 
   let externalStepping = false;

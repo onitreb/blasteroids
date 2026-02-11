@@ -211,3 +211,10 @@ Updates
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke: pending (Chrome DevTools MCP transport was closed in this session; rerun per `RUNBOOK.md`).
+- 2026-02-11 UX + optional sound pass:
+  - Game over overlay is now centered and includes explicit restart instructions (Press R / click).
+  - Added optional simple SFX toggle in debug menu (WebAudio; default off; persisted via localStorage).
+  - Validation:
+    - `npm test`: `12 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` smoke: pending (Chrome DevTools MCP tool returned `Transport closed` in this session; rerun per `RUNBOOK.md`).

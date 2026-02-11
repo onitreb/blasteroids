@@ -2393,9 +2393,21 @@
           18
         );
       } else if (state.mode === "gameover") {
-        ctx.fillStyle = "rgba(255,89,100,0.92)";
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(0, 0, w, h);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(255,89,100,0.96)";
+        ctx.font = "700 52px ui-sans-serif, system-ui";
+        ctx.fillText("GAME OVER", w * 0.5, h * 0.5 - 70);
+        ctx.fillStyle = "rgba(231,240,255,0.92)";
         ctx.font = "16px ui-sans-serif, system-ui";
-        ctx.fillText("Impact with a heavy asteroid. Press R to restart.", 14, 28);
+        ctx.fillText(`Score: ${state.score}`, w * 0.5, h * 0.5 - 26);
+        ctx.fillText("Press R or click to restart", w * 0.5, h * 0.5 + 6);
+        ctx.fillStyle = "rgba(231,240,255,0.70)";
+        ctx.fillText("Press M for debug/tuning", w * 0.5, h * 0.5 + 34);
+        ctx.restore();
       }
       ctx.restore();
     }
@@ -2411,6 +2423,7 @@
     "dbg-camera-mode",
     "dbg-world-scale",
     "dbg-pause-on-open",
+    "dbg-sound",
     "dbg-tier-override",
     "dbg-tier-override-level",
     "dbg-gem-score",
@@ -2463,6 +2476,7 @@
     const dbgWorldScale = documentRef.getElementById("dbg-world-scale");
     const dbgWorldScaleOut = documentRef.getElementById("dbg-world-scale-out");
     const dbgPauseOnOpen = documentRef.getElementById("dbg-pause-on-open");
+    const dbgSound = documentRef.getElementById("dbg-sound");
     const dbgTierOverride = documentRef.getElementById("dbg-tier-override");
     const dbgTierOverrideLevel = documentRef.getElementById("dbg-tier-override-level");
     const dbgTierOverrideOut = documentRef.getElementById("dbg-tier-override-out");
@@ -2618,6 +2632,71 @@
     const tuneTwinkleSpeedSave = documentRef.getElementById("tune-twinkle-speed-save");
     const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
     const nf = new Intl.NumberFormat();
+    const SOUND_ENABLED_STORAGE_KEY = "blasteroids.soundEnabled.v1";
+    let soundEnabled = false;
+    let sfx = null;
+    const sfxState = {
+      mode: game.state.mode,
+      time: game.state.time,
+      blastPulseT: game.state.blastPulseT,
+      gemScore: game.state.progression?.gemScore ?? 0
+    };
+    function readSoundEnabledFromStorage() {
+      try {
+        const raw = windowRef?.localStorage?.getItem?.(SOUND_ENABLED_STORAGE_KEY);
+        if (raw === "1")
+          return true;
+        if (raw === "0")
+          return false;
+        return false;
+      } catch {
+        return false;
+      }
+    }
+    function writeSoundEnabledToStorage(enabled) {
+      try {
+        windowRef?.localStorage?.setItem?.(SOUND_ENABLED_STORAGE_KEY, enabled ? "1" : "0");
+      } catch {
+      }
+    }
+    function createSfx() {
+      const AC = windowRef?.AudioContext || windowRef?.webkitAudioContext;
+      if (!AC)
+        return null;
+      const ctx = new AC();
+      const master = ctx.createGain();
+      master.gain.value = 0.18;
+      master.connect(ctx.destination);
+      function unlock() {
+        if (ctx.state === "suspended")
+          ctx.resume().catch(() => {
+          });
+      }
+      function tone({ freq = 440, dur = 0.08, type = "sine", gain = 0.6, slideTo = null } = {}) {
+        unlock();
+        const t0 = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t0);
+        if (Number.isFinite(slideTo))
+          osc.frequency.linearRampToValueAtTime(slideTo, t0 + Math.max(0.01, dur));
+        g.gain.setValueAtTime(1e-4, t0);
+        g.gain.exponentialRampToValueAtTime(Math.max(1e-4, gain), t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(1e-4, t0 + Math.max(0.02, dur));
+        osc.connect(g);
+        g.connect(master);
+        osc.start(t0);
+        osc.stop(t0 + Math.max(0.03, dur) + 0.02);
+      }
+      return {
+        unlock,
+        burst: () => tone({ freq: 540, slideTo: 320, dur: 0.07, type: "triangle", gain: 0.65 }),
+        gem: () => tone({ freq: 880, slideTo: 1120, dur: 0.055, type: "sine", gain: 0.5 }),
+        start: () => tone({ freq: 420, slideTo: 660, dur: 0.09, type: "sine", gain: 0.55 }),
+        gameover: () => tone({ freq: 220, slideTo: 130, dur: 0.16, type: "sawtooth", gain: 0.45 })
+      };
+    }
     function setOut(outEl, value, suffix = "") {
       if (!outEl)
         return;
@@ -3208,6 +3287,8 @@
         dbgWorldScaleOut.textContent = `${Number(game.state.world.scale || 1).toFixed(2)}x`;
       if (dbgPauseOnOpen)
         dbgPauseOnOpen.checked = !!game.state.settings.pauseOnMenuOpen;
+      if (dbgSound)
+        dbgSound.checked = !!soundEnabled;
       if (dbgTierOverride)
         dbgTierOverride.checked = !!game.state.settings.tierOverrideEnabled;
       if (dbgTierOverrideLevel)
@@ -3239,6 +3320,43 @@
       if (dbgTierOverrideOut)
         dbgTierOverrideOut.textContent = `${Math.round(game.state.settings.tierOverrideIndex)}`;
     }
+    function applySoundFromMenu() {
+      const enabled = !!dbgSound?.checked;
+      soundEnabled = enabled;
+      writeSoundEnabledToStorage(enabled);
+      if (enabled) {
+        if (!sfx)
+          sfx = createSfx();
+        sfx?.unlock?.();
+      }
+    }
+    function syncSfx() {
+      if (!soundEnabled || !sfx) {
+        sfxState.mode = game.state.mode;
+        sfxState.time = game.state.time;
+        sfxState.blastPulseT = game.state.blastPulseT;
+        sfxState.gemScore = game.state.progression?.gemScore ?? 0;
+        return;
+      }
+      const mode = game.state.mode;
+      const t = game.state.time;
+      const gemScore = game.state.progression?.gemScore ?? 0;
+      const blastPulseT = game.state.blastPulseT;
+      if (sfxState.mode !== "gameover" && mode === "gameover")
+        sfx.gameover();
+      if (sfxState.mode !== "playing" && mode === "playing")
+        sfx.start();
+      if (sfxState.blastPulseT <= 0.01 && blastPulseT >= 0.15)
+        sfx.burst();
+      if (gemScore > sfxState.gemScore)
+        sfx.gem();
+      if (sfxState.mode === "playing" && mode === "playing" && t + 0.1 < sfxState.time)
+        sfx.start();
+      sfxState.mode = mode;
+      sfxState.time = t;
+      sfxState.blastPulseT = blastPulseT;
+      sfxState.gemScore = gemScore;
+    }
     function syncRuntimeDebugUi() {
       if (dbgGemScoreOut)
         dbgGemScoreOut.textContent = `${Math.round(game.state.score)}`;
@@ -3247,6 +3365,7 @@
       if (dbgGemScore && documentRef.activeElement !== dbgGemScore) {
         dbgGemScore.value = String(clamp(Math.round(game.state.score), 0, 5e3));
       }
+      syncSfx();
     }
     function updateHudScore() {
       if (hudScore)
@@ -3268,7 +3387,7 @@
     function syncMenuButtons() {
       const playing = game.state.mode === "playing";
       if (startBtn)
-        startBtn.textContent = playing ? "Apply + Resume" : "Start";
+        startBtn.textContent = playing ? "Apply + Resume" : game.state.mode === "gameover" ? "Restart" : "Start";
       if (debugToggleBtn) {
         const visible = isMenuVisible();
         debugToggleBtn.textContent = visible ? "Close Debug (M)" : "Open Debug (M)";
@@ -3289,6 +3408,7 @@
       applyTuningFromMenu();
       applyDebugFlagsFromMenu();
       applyArenaFromMenu();
+      applySoundFromMenu();
       if (game.state.mode === "menu") {
         game.startGame();
       } else if (game.state.mode === "gameover") {
@@ -3329,6 +3449,7 @@
       { el: dbgCameraMode, event: "change", handler: () => applyArenaFromMenu() },
       { el: dbgWorldScale, event: "input", handler: () => applyArenaFromMenu() },
       { el: dbgPauseOnOpen, event: "change", handler: () => applyDebugFlagsFromMenu() },
+      { el: dbgSound, event: "change", handler: () => applySoundFromMenu() },
       {
         el: dbgTierOverride,
         event: "change",
@@ -3378,11 +3499,17 @@
       });
     }
     applyTuningDefaultsToParams();
+    soundEnabled = readSoundEnabledFromStorage();
+    if (dbgSound)
+      dbgSound.checked = !!soundEnabled;
+    if (soundEnabled)
+      sfx = createSfx();
     syncTuningUiFromParams();
     applyTuningFromMenu();
     syncArenaUi();
     applyArenaFromMenu();
     applyDebugFlagsFromMenu();
+    applySoundFromMenu();
     syncMenuButtons();
     syncRuntimeDebugUi();
     syncTuningDefaultLabels();
@@ -3441,6 +3568,12 @@
     document.addEventListener("fullscreenchange", () => resizeCanvasToCss());
     resizeCanvasToCss();
     const input = game.state.input;
+    function restartGame() {
+      ui.applyAllFromMenu();
+      game.resetWorld();
+      game.state.mode = "playing";
+      ui.setMenuVisible(false);
+    }
     function setKey(e, isDown) {
       const menuOpen = ui.isMenuVisible();
       switch (e.code) {
@@ -3475,10 +3608,7 @@
           break;
         case "KeyR":
           if (isDown) {
-            ui.applyAllFromMenu();
-            game.resetWorld();
-            game.state.mode = "playing";
-            ui.setMenuVisible(false);
+            restartGame();
           }
           break;
         case "KeyF":
@@ -3504,8 +3634,17 @@
     window.addEventListener("keydown", (e) => setKey(e, true));
     window.addEventListener("keyup", (e) => setKey(e, false));
     canvas.addEventListener("mousedown", (e) => {
-      if (e.button === 0 && game.state.mode === "playing")
-        input.burst = true;
+      if (e.button !== 0)
+        return;
+      if (game.state.mode === "playing") {
+        if (!ui.isMenuVisible())
+          input.burst = true;
+        return;
+      }
+      if (game.state.mode === "gameover") {
+        if (!ui.isMenuVisible())
+          restartGame();
+      }
     });
     let externalStepping = false;
     let last = performance.now();
