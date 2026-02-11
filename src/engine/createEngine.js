@@ -12,6 +12,7 @@ import {
   asteroidSpawnWeightForSize,
   sizeSetHas,
 } from "../util/asteroid.js";
+import { polygonHullRadius } from "../util/ship.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../util/vec2.js";
 
 function makeAsteroidShape(rng, radius, verts = 10) {
@@ -171,14 +172,7 @@ function shipHullRadiusForTierKey(tierKey) {
     // Fallback: approximate from the tier's polygon hull.
   }
   const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
-  let max2 = 0;
-  if (Array.isArray(points)) {
-    for (const p of points) {
-      const d2 = p.x * p.x + p.y * p.y;
-      if (d2 > max2) max2 = d2;
-    }
-  }
-  const baseR = Math.sqrt(max2);
+  const baseR = polygonHullRadius(points);
   return Math.max(tier.radius, baseR);
 }
 

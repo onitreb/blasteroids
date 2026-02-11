@@ -176,3 +176,11 @@ Updates
   - Validation (per request, no DevTools/Chrome launch in this pass):
     - `npm test`: `10 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 RF-05 completion pass (util extraction closure):
+  - Added `src/util/ship.js` with shared `polygonHullRadius(...)`.
+  - Updated `src/engine/createEngine.js` and `src/render/renderGame.js` to import `polygonHullRadius` from util instead of duplicating hull radius math.
+  - Added `ship` util coverage in `test/util.test.js`.
+  - Updated docs/module map and refactor tracker status for RF-05 completion.
+  - Validation:
+    - `npm test`: `11 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).

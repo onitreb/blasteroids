@@ -159,6 +159,19 @@
     return params.smallDamageSpeedMin;
   }
 
+  // src/util/ship.js
+  function polygonHullRadius(points) {
+    if (!Array.isArray(points) || points.length === 0)
+      return 0;
+    let max2 = 0;
+    for (const p of points) {
+      const d2 = p.x * p.x + p.y * p.y;
+      if (d2 > max2)
+        max2 = d2;
+    }
+    return Math.sqrt(max2);
+  }
+
   // src/engine/createEngine.js
   function makeAsteroidShape(rng, radius, verts = 10) {
     const pts = [];
@@ -309,15 +322,7 @@
         return Math.max(tier.radius, hullR * svgScale);
     }
     const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
-    let max2 = 0;
-    if (Array.isArray(points)) {
-      for (const p of points) {
-        const d2 = p.x * p.x + p.y * p.y;
-        if (d2 > max2)
-          max2 = d2;
-      }
-    }
-    const baseR = Math.sqrt(max2);
+    const baseR = polygonHullRadius(points);
     return Math.max(tier.radius, baseR);
   }
   function requiredForceFieldRadiusForTier(params, tierKey) {
@@ -2009,17 +2014,6 @@
     if (kind === "ruby")
       return [255, 89, 100];
     return [84, 240, 165];
-  }
-  function polygonHullRadius(points) {
-    if (!Array.isArray(points) || points.length === 0)
-      return 0;
-    let max2 = 0;
-    for (const p of points) {
-      const d2 = p.x * p.x + p.y * p.y;
-      if (d2 > max2)
-        max2 = d2;
-    }
-    return Math.sqrt(max2);
   }
   function createRenderer(engine) {
     const state = engine.state;

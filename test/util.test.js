@@ -15,6 +15,7 @@ import {
 import { circleCollide, circleHit } from "../src/util/collision.js";
 import { clamp, lerp, posMod } from "../src/util/math.js";
 import { seededRng } from "../src/util/rng.js";
+import { polygonHullRadius } from "../src/util/ship.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../src/util/vec2.js";
 
 function near(actual, expected, epsilon = 1e-6) {
@@ -127,4 +128,16 @@ test("asteroid helpers", () => {
   assert.equal(asteroidSpawnWeightForSize(params, "small"), 22);
   assert.equal(asteroidDamageSpeedForSize(params, "large"), 310);
   assert.equal(asteroidDamageSpeedForSize(params, "small"), 420);
+});
+
+test("ship helpers", () => {
+  assert.equal(polygonHullRadius(null), 0);
+  assert.equal(polygonHullRadius([]), 0);
+  near(
+    polygonHullRadius([
+      { x: 3, y: 4 },
+      { x: -2, y: 1 },
+    ]),
+    5,
+  );
 });
