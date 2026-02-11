@@ -200,4 +200,7 @@ Updates
   - Validation:
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
-    - `file://` smoke: not run in this pass (run per `RUNBOOK.md` before committing).
+    - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
+      - Start flow; movement (W/A/D/S); burst (Space + click); restart (R); fullscreen (F).
+      - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open).
+      - Hooks verified: `window.Blasteroids.*` and legacy aliases callable; `renderGameToText()` returns parseable JSON.
