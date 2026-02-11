@@ -204,3 +204,10 @@ Updates
       - Start flow; movement (W/A/D/S); burst (Space + click); restart (R); fullscreen (F).
       - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open).
       - Hooks verified: `window.Blasteroids.*` and legacy aliases callable; `renderGameToText()` returns parseable JSON.
+- 2026-02-11 LA-13 completion pass (10x scale spawn tuning):
+  - Capped asteroid population scaling so very large worlds don’t imply a quadratic asteroid count.
+  - Population refills now prefer spawning near the camera (off-screen when possible) to keep local feel consistent at high world scales.
+  - Validation:
+    - `npm test`: `12 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` smoke: pending (Chrome DevTools MCP transport was closed in this session; rerun per `RUNBOOK.md`).

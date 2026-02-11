@@ -726,7 +726,8 @@
       const viewArea = Math.max(1, state.view.w * state.view.h);
       const worldArea = Math.max(1, state.world.w * state.world.h);
       const densityScale = clamp(state.params.asteroidWorldDensityScale || 0.32, 0.08, 2.5);
-      const scaledTarget = Math.round(seed * (worldArea / viewArea) * densityScale);
+      const worldFactor = Math.min(worldArea / viewArea, 25);
+      const scaledTarget = Math.round(seed * worldFactor * densityScale);
       const max = Math.max(1, Math.floor(state.params.maxAsteroids));
       const target = clamp(scaledTarget, Math.min(seed, max), max);
       const min = clamp(Math.floor(target * 0.8), 8, target);
@@ -866,9 +867,30 @@
       const burst = clamp(Math.ceil(deficit / 120), 1, urgent ? 56 : 20);
       const excludeViews = currentSpawnExclusionViews();
       let spawned = false;
+      const zoom = Math.max(0.1, state.camera.zoom || 1);
+      const halfViewW = state.view.w * 0.5 / zoom;
+      const halfViewH = state.view.h * 0.5 / zoom;
+      const viewDiag = Math.hypot(halfViewW, halfViewH);
+      const worldHalfMin = Math.min(state.world.w, state.world.h) * 0.5;
+      const nearPos = vec(state.camera.x, state.camera.y);
+      const nearRadius = Math.min(worldHalfMin, viewDiag + 520);
+      const minDistFromShip = clamp(Math.max(260, viewDiag * 0.82), 120, Math.max(140, nearRadius - 60));
+      const canSpawnNearCamera = nearRadius > minDistFromShip + 40;
+      const spawnExcludeViews = worldHalfMin <= viewDiag + 140 ? [] : excludeViews;
       for (let i = 0; i < burst && state.asteroids.length < max; i++) {
-        if (!trySpawnAmbientAsteroid({ excludeViews }))
+        const preferNearCamera = urgent || rng() < 0.75;
+        const useNearCamera = canSpawnNearCamera && preferNearCamera;
+        if (!trySpawnAmbientAsteroid(
+          useNearCamera ? {
+            nearPos,
+            nearRadius,
+            minDistFromShip,
+            maxCellCount: urgent ? 14 : 12,
+            excludeViews: spawnExcludeViews
+          } : { excludeViews: spawnExcludeViews }
+        )) {
           break;
+        }
         spawned = true;
       }
       scheduleNextAsteroidSpawn(urgent);

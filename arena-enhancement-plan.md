@@ -1,6 +1,6 @@
 # Large Arena Enhancement Plan
 
-Last updated: 2026-02-07  
+Last updated: 2026-02-11  
 Project: Blasteroids  
 Scope: Convert the current viewport-sized world into a larger arena with camera panning, arena edges, and scalable spawning.
 
@@ -38,7 +38,7 @@ Scope: Convert the current viewport-sized world into a larger arena with camera 
 | LA-10 | Add world cell/chunk index for spawning and bookkeeping | DONE | Added per-cell asteroid index and active camera-neighborhood cells; spawn logic now skips overcrowded/inactive cells. |
 | LA-11 | Add broadphase collision partitioning (spatial hash/grid) | DONE | Replaced asteroid global pair scan with spatial-hash nearby-pair iteration (`forEachNearbyAsteroidPair`). |
 | LA-12 | Update debug export (`render_game_to_text`) for world/camera metadata | DONE | Added `world` and `camera` metadata and corrected coordinate system text. |
-| LA-13 | Playtest + tuning pass (camera feel, spawn rates, edge behavior) | IN_PROGRESS | Browser-validated camera mode toggle and world scale; further tuning still pending. |
+| LA-13 | Playtest + tuning pass (camera feel, spawn rates, edge behavior) | DONE | Camera mode + scale validated; spawn tuning updated for 10x scaling and local feel. |
 | LA-14 | Documentation update (`README.md`, controls/behavior notes) | DONE | README now documents arena/camera defaults, 10x scale, global spawn model, and current multiplayer-authority status. |
 
 ## Decision Log (Open)
@@ -67,6 +67,7 @@ Scope: Convert the current viewport-sized world into a larger arena with camera 
 | 2026-02-07 | LA-13 tuning slice: added subtle star accent colors + twinkle behavior and new debug tuning controls (`Accent star chance`, `Twinkle star chance`, `Twinkle strength`, `Twinkle speed`) with saved defaults + `render_game_to_text` background telemetry fields. Validation: `node --check src/main.js` passed. |
 | 2026-02-07 | LA-13 design pass: expanded arena scale support to `10x` and refactored asteroid spawning to global arena-cell authority (removed camera-local replenishment). Added startup local-presence guard so initial view is populated. Validation at `10x`: immediate gameplay had populated on-screen asteroids and hundreds of indexed asteroid cells with no console errors. |
 | 2026-02-07 | Completed LA-14 docs sync: updated `README.md` for current arena/camera/spawn behavior and added explicit note that multiplayer authority is not yet implemented (single-client authority today). |
+| 2026-02-11 | LA-13 tuning pass: capped asteroid population scaling so `10x` arena doesn't imply `100x` asteroids; biased population refills to spawn near the camera (off-screen when possible) to keep local feel consistent at high scale. Validation: `npm test`, `npm run build`. |
 
 ## Next Step
-- Continue LA-13 tuning pass (camera feel + spawn rates), especially high-scale (`10x`) density/performance balance and spawn distribution behavior.
+- Revisit game-over UX and magnet/burst feel (see `progress.md` TODO).
