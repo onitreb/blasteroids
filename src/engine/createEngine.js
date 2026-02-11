@@ -258,7 +258,7 @@ export function createEngine({ width, height }) {
     },
     // Large-arena scaffold (phase LA-01). Kept equal to view for now.
     world: {
-      scale: 3,
+      scale: 10,
       w: width,
       h: height,
     },
@@ -275,7 +275,7 @@ export function createEngine({ width, height }) {
     camera: {
       x: 0,
       y: 0,
-      mode: "deadzone", // centered | deadzone
+      mode: "centered", // centered | deadzone
       deadZoneFracX: 0.35,
       deadZoneFracY: 0.3,
       zoom: 1,
@@ -927,7 +927,9 @@ export function createEngine({ width, height }) {
     const targetMass = Math.max(1, Number(target?.mass) || 1);
     const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
     const massRatio = Math.sqrt(targetMass / projMass);
-    return base * massRatio;
+    const size = target?.size;
+    const sizeMult = size === "xxlarge" ? 0.88 : size === "xlarge" ? 0.9 : size === "large" ? 0.92 : 1;
+    return base * massRatio * sizeMult;
   }
 
   function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {

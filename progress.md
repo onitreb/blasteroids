@@ -5,8 +5,6 @@ Notes
 - Controls target: rotate + thrust like classic Asteroids; burst on Space or left mouse.
 
 TODO
-- Add game over / restart UX polish.
-- Tune magnet strength and burst speed.
 - Add simple sound effects (optional).
 
 Updates
@@ -229,3 +227,11 @@ Updates
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
       - Start; movement (W); burst (Space); restart (R); debug menu toggle (M/Escape); hooks callable.
+- 2026-02-11 arena defaults + fracture tuning pass:
+  - Changed default arena scale to `10.00x` and default camera mode to `centered`.
+  - Made large+ asteroids a bit more fracture-friendly by lowering the required fracture speed for large/xlarge/xxlarge targets.
+  - Removed the experimental SFX toggle and wiring (we’ll revisit sound later).
+  - Validation:
+    - `npm test`: `12 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` smoke (Chrome DevTools MCP): passed with no console errors.
