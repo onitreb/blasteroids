@@ -928,7 +928,8 @@ export function createEngine({ width, height }) {
     const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
     const massRatio = Math.sqrt(targetMass / projMass);
     const size = target?.size;
-    const sizeMult = size === "xxlarge" ? 0.88 : size === "xlarge" ? 0.9 : size === "large" ? 0.92 : 1;
+    // Make large targets a bit easier to fracture so med→large breaks feel achievable at typical launch speeds.
+    const sizeMult = size === "xxlarge" ? 0.88 : size === "xlarge" ? 0.9 : size === "large" ? 0.85 : 1;
     return base * massRatio * sizeMult;
   }
 
