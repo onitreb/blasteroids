@@ -1037,13 +1037,11 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   applyTuningDefaultsToParams();
   soundEnabled = readSoundEnabledFromStorage();
   if (dbgSound) dbgSound.checked = !!soundEnabled;
-  if (soundEnabled) sfx = createSfx();
   syncTuningUiFromParams();
   applyTuningFromMenu();
   syncArenaUi();
   applyArenaFromMenu();
   applyDebugFlagsFromMenu();
-  applySoundFromMenu();
   syncMenuButtons();
   syncRuntimeDebugUi();
   syncTuningDefaultLabels();

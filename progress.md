@@ -221,3 +221,11 @@ Updates
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors (including toggling Sound).
+- 2026-02-11 magnet/burst tuning pass:
+  - Slightly reduced default magnet gravity (`gravityK`) and increased default burst speed (`burstSpeed`) for a bit more “fling” and less “vacuum”.
+  - Fixed a `file://` console warning by deferring `AudioContext` creation until after a user gesture (no autoplay-policy warnings on load even when Sound is persisted ON).
+  - Validation:
+    - `npm test`: `12 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
+      - Start; movement (W); burst (Space); restart (R); debug menu toggle (M/Escape); hooks callable.

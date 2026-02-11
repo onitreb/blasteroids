@@ -448,7 +448,7 @@
         tier2ForceFieldScale: SHIP_TIERS.medium.forcefieldScale,
         tier3ForceFieldScale: SHIP_TIERS.large.forcefieldScale,
         forceFieldHullGap: 14,
-        gravityK: 12e5,
+        gravityK: 115e4,
         // gravity-well strength (tuned)
         gravitySoftening: 70,
         innerGravityMult: 1.5,
@@ -463,8 +463,8 @@
         attachBand: 14,
         attachSpeedMax: 220,
         attachPadding: 6,
-        burstSpeed: 546,
-        // +5%
+        burstSpeed: 580,
+        // tuned
         burstCooldownSec: 0.35,
         xxlargeRadius: 150,
         xlargeRadius: 90,
@@ -3502,14 +3502,11 @@
     soundEnabled = readSoundEnabledFromStorage();
     if (dbgSound)
       dbgSound.checked = !!soundEnabled;
-    if (soundEnabled)
-      sfx = createSfx();
     syncTuningUiFromParams();
     applyTuningFromMenu();
     syncArenaUi();
     applyArenaFromMenu();
     applyDebugFlagsFromMenu();
-    applySoundFromMenu();
     syncMenuButtons();
     syncRuntimeDebugUi();
     syncTuningDefaultLabels();

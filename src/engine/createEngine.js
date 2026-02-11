@@ -297,7 +297,7 @@ export function createEngine({ width, height }) {
       tier2ForceFieldScale: SHIP_TIERS.medium.forcefieldScale,
       tier3ForceFieldScale: SHIP_TIERS.large.forcefieldScale,
       forceFieldHullGap: 14,
-      gravityK: 1200000, // gravity-well strength (tuned)
+      gravityK: 1150000, // gravity-well strength (tuned)
       gravitySoftening: 70,
       innerGravityMult: 1.5, // extra gravity inside the forcefield ring
       innerDrag: 4.0, // damp velocity inside ring to reduce "slingshot" escapes
@@ -308,7 +308,7 @@ export function createEngine({ width, height }) {
       attachSpeedMax: 220,
       attachPadding: 6,
 
-      burstSpeed: 546, // +5%
+      burstSpeed: 580, // tuned
       burstCooldownSec: 0.35,
 
       xxlargeRadius: 150,
