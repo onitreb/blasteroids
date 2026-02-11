@@ -124,6 +124,16 @@ function gemRgb(kind) {
   return [84, 240, 165];
 }
 
+function polygonHullRadius(points) {
+  if (!Array.isArray(points) || points.length === 0) return 0;
+  let max2 = 0;
+  for (const p of points) {
+    const d2 = p.x * p.x + p.y * p.y;
+    if (d2 > max2) max2 = d2;
+  }
+  return Math.sqrt(max2);
+}
+
 export function createRenderer(engine) {
   const state = engine.state;
   const currentShipTier = () => engine.getCurrentShipTier();
@@ -134,12 +144,15 @@ export function createRenderer(engine) {
   function drawShipModel(ctx, ship, thrusting) {
     const tier = currentShipTier();
     const renderer = tier.renderer || {};
+    const shipRadius = Math.max(1, Number(ship.radius) || Number(tier.radius) || 1);
     ctx.save();
     ctx.translate(ship.pos.x, ship.pos.y);
     ctx.rotate(ship.angle);
     ctx.strokeStyle = "rgba(231,240,255,0.95)";
     ctx.lineWidth = 2;
 
+    const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
+    let drawScale = 1;
     if (renderer.type === "svg" && renderer.path) {
       // SVG path support for easy future ship replacement.
       const cacheKey = `${tier.key}:${renderer.path}`;
@@ -148,13 +161,30 @@ export function createRenderer(engine) {
         path = new Path2D(renderer.path);
         svgPathCache.set(cacheKey, path);
       }
-      const scale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+      const baseScale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+      const explicitHullRadius = Number(renderer.hullRadius);
+      const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+      drawScale = baseScale * autoScale;
       ctx.save();
-      ctx.scale(scale, scale);
+      ctx.scale(drawScale, drawScale);
       ctx.stroke(path);
+      if (thrusting) {
+        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
+        for (const e of engines) {
+          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
+          ctx.beginPath();
+          ctx.moveTo(e.x, e.y);
+          ctx.lineTo(e.x - flameLen, e.y);
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     } else {
       const points = Array.isArray(renderer.points) ? renderer.points : SHIP_TIERS.small.renderer.points;
+      const hullRadius = polygonHullRadius(points);
+      if (hullRadius > 1e-6) drawScale = shipRadius / hullRadius;
+      ctx.save();
+      ctx.scale(drawScale, drawScale);
       ctx.beginPath();
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
@@ -163,18 +193,17 @@ export function createRenderer(engine) {
       }
       ctx.closePath();
       ctx.stroke();
-    }
-
-    if (thrusting) {
-      const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
-      ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-      for (const e of engines) {
-        const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-        ctx.beginPath();
-        ctx.moveTo(e.x, e.y);
-        ctx.lineTo(e.x - flameLen, e.y);
-        ctx.stroke();
+      if (thrusting) {
+        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
+        for (const e of engines) {
+          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
+          ctx.beginPath();
+          ctx.moveTo(e.x, e.y);
+          ctx.lineTo(e.x - flameLen, e.y);
+          ctx.stroke();
+        }
       }
+      ctx.restore();
     }
     ctx.restore();
   }

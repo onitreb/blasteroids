@@ -263,9 +263,9 @@
     medium: {
       key: "medium",
       label: "Medium",
-      scale: 2,
-      radius: 28,
-      mass: 1040,
+      scale: 2.7,
+      radius: 38,
+      mass: 1920,
       forcefieldScale: 1.28,
       attractScale: 1.2,
       ringRgb: [92, 235, 255],
@@ -1008,6 +1008,13 @@
       const v = Math.max(spd, impactSpeed);
       return v >= asteroidDamageSpeedForSize(state.params, a.size);
     }
+    function fractureSpeedRequired(projectile, target) {
+      const projMass = Math.max(1, Number(projectile?.mass) || 1);
+      const targetMass = Math.max(1, Number(target?.mass) || 1);
+      const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
+      const massRatio = Math.sqrt(targetMass / projMass);
+      return base * massRatio;
+    }
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       state.effects.push({
         kind,
@@ -1087,7 +1094,7 @@
         removeSet.add(a.id);
       }
       spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 18, ttl: 0.16 });
-      spawnGem(a.pos, velHint);
+      spawnGem(a.pos, vec(0, 0), { jitterMag: 0 });
     }
     function resetWorld() {
       state.time = 0;
@@ -1612,14 +1619,20 @@
         return;
       const shipRemovals = /* @__PURE__ */ new Set();
       const shipAdds = [];
+      const smallBreakSpeed = asteroidDamageSpeedForSize(state.params, "small");
       for (const a of state.asteroids) {
         if (a.attached)
           continue;
-        if (isDamagingProjectile(a, len(a.vel)) && circleHit(state.ship, a)) {
+        const impactSpeed = len(a.vel);
+        if (!a.shipLaunched && a.size === "small" && impactSpeed >= smallBreakSpeed && circleHit(state.ship, a)) {
+          breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+          continue;
+        }
+        if (isDamagingProjectile(a, impactSpeed) && circleHit(state.ship, a)) {
           if (a.size === "small") {
             breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          } else if (len(a.vel) >= state.params.fractureImpactSpeed) {
-            const frags = fractureAsteroid(a, norm(a.vel), len(a.vel));
+          } else if (impactSpeed >= fractureSpeedRequired(a, a)) {
+            const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
             if (frags) {
               shipRemovals.add(a.id);
               const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
@@ -1665,6 +1678,15 @@
         const velAlongNormal = dot(rv, hit.n);
         const impactSpeed = -velAlongNormal;
         const relSpeed = len(rv);
+        const aFastAmbientSmall = !a.shipLaunched && a.size === "small" && relSpeed >= smallBreakSpeed;
+        const bFastAmbientSmall = !b.shipLaunched && b.size === "small" && relSpeed >= smallBreakSpeed;
+        if (aFastAmbientSmall || bFastAmbientSmall) {
+          if (aFastAmbientSmall)
+            breakSmallAsteroid(a, { velHint: a.vel, removeSet: toRemove });
+          if (bFastAmbientSmall)
+            breakSmallAsteroid(b, { velHint: b.vel, removeSet: toRemove });
+          return;
+        }
         const aDamaging = isDamagingProjectile(a, relSpeed);
         const bDamaging = isDamagingProjectile(b, relSpeed);
         if (aDamaging || bDamaging) {
@@ -1691,7 +1713,8 @@
               state.score += 1;
               continue;
             }
-            if (asteroidCanBreakTarget(projectile.size, target.size) && relSpeed >= state.params.fractureImpactSpeed) {
+            const requiredSpeed = fractureSpeedRequired(projectile, target);
+            if (asteroidCanBreakTarget(projectile.size, target.size) && relSpeed >= requiredSpeed) {
               const frags = fractureAsteroid(target, it.impactDir, relSpeed);
               if (frags) {
                 toRemove.add(target.id);
@@ -1701,7 +1724,10 @@
               }
             }
             spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
-            target.vel = add(target.vel, mul(it.impactDir, Math.min(180, relSpeed * 0.5)));
+            const massRatio = projectile.mass > 0 && target.mass > 0 ? projectile.mass / target.mass : 1;
+            const shoveScale = Math.min(1, Math.max(0, massRatio));
+            const shove = Math.min(180, relSpeed * 0.5 * shoveScale);
+            target.vel = add(target.vel, mul(it.impactDir, shove));
           }
           return;
         }
@@ -1812,7 +1838,8 @@
           vx: Math.round(ship.vel.x),
           vy: Math.round(ship.vel.y),
           angle: +ship.angle.toFixed(3),
-          tier: ship.tier
+          tier: ship.tier,
+          radius: +ship.radius.toFixed(2)
         },
         saucer: state.saucer ? {
           x: Math.round(state.saucer.pos.x),
@@ -1983,6 +2010,17 @@
       return [255, 89, 100];
     return [84, 240, 165];
   }
+  function polygonHullRadius(points) {
+    if (!Array.isArray(points) || points.length === 0)
+      return 0;
+    let max2 = 0;
+    for (const p of points) {
+      const d2 = p.x * p.x + p.y * p.y;
+      if (d2 > max2)
+        max2 = d2;
+    }
+    return Math.sqrt(max2);
+  }
   function createRenderer(engine) {
     const state = engine.state;
     const currentShipTier = () => engine.getCurrentShipTier();
@@ -1992,11 +2030,14 @@
     function drawShipModel(ctx, ship, thrusting) {
       const tier = currentShipTier();
       const renderer = tier.renderer || {};
+      const shipRadius = Math.max(1, Number(ship.radius) || Number(tier.radius) || 1);
       ctx.save();
       ctx.translate(ship.pos.x, ship.pos.y);
       ctx.rotate(ship.angle);
       ctx.strokeStyle = "rgba(231,240,255,0.95)";
       ctx.lineWidth = 2;
+      const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
+      let drawScale = 1;
       if (renderer.type === "svg" && renderer.path) {
         const cacheKey = `${tier.key}:${renderer.path}`;
         let path = svgPathCache.get(cacheKey);
@@ -2004,13 +2045,31 @@
           path = new Path2D(renderer.path);
           svgPathCache.set(cacheKey, path);
         }
-        const scale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+        const baseScale = Number.isFinite(renderer.svgScale) ? renderer.svgScale : 1;
+        const explicitHullRadius = Number(renderer.hullRadius);
+        const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+        drawScale = baseScale * autoScale;
         ctx.save();
-        ctx.scale(scale, scale);
+        ctx.scale(drawScale, drawScale);
         ctx.stroke(path);
+        if (thrusting) {
+          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
+          for (const e of engines) {
+            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
+            ctx.beginPath();
+            ctx.moveTo(e.x, e.y);
+            ctx.lineTo(e.x - flameLen, e.y);
+            ctx.stroke();
+          }
+        }
         ctx.restore();
       } else {
         const points = Array.isArray(renderer.points) ? renderer.points : SHIP_TIERS.small.renderer.points;
+        const hullRadius = polygonHullRadius(points);
+        if (hullRadius > 1e-6)
+          drawScale = shipRadius / hullRadius;
+        ctx.save();
+        ctx.scale(drawScale, drawScale);
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
           const p = points[i];
@@ -2021,17 +2080,17 @@
         }
         ctx.closePath();
         ctx.stroke();
-      }
-      if (thrusting) {
-        const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
-        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-        for (const e of engines) {
-          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x - flameLen, e.y);
-          ctx.stroke();
+        if (thrusting) {
+          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
+          for (const e of engines) {
+            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
+            ctx.beginPath();
+            ctx.moveTo(e.x, e.y);
+            ctx.lineTo(e.x - flameLen, e.y);
+            ctx.stroke();
+          }
         }
+        ctx.restore();
       }
       ctx.restore();
     }

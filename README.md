@@ -28,7 +28,7 @@ Asteroids-ish arcade game: fly near small asteroids to pull them into your force
 - Default unlocks are based on **total score**:
   - Tier 2 (medium) at **500** points.
   - Tier 3 (large) at **1000** points.
-- Ship size scales by tier (`1x`, `2x`, `4x`) and each tier has a distinct hull/engine silhouette.
+- Ship size scales by tier (defaults: hull radii `14 / 38 / 56`) and each tier has a distinct hull/engine silhouette.
 - Tier forcefield behavior:
   - Small attracts/bursts `small` asteroids.
   - Medium attracts/bursts `small + med`.

@@ -138,3 +138,41 @@ Updates
     - `npm test`: `10 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - DevTools `file://` smoke recheck: no console errors; start/move/burst/restart/fullscreen/debug pause behavior passed; both namespace and legacy hook surfaces callable.
+- 2026-02-10 regression fix (ship visual growth restored):
+  - Root cause: renderer hull drawing did not normalize polygon hull size to gameplay `ship.radius`, so tier transitions could appear nearly same-sized on screen.
+  - Updated `src/render/renderGame.js`:
+    - Added `polygonHullRadius(...)`.
+    - In `drawShipModel(...)`, polygon renderer now scales hull/engine drawing to `ship.radius`.
+    - SVG renderer keeps explicit `svgScale`, and now also supports optional `renderer.hullRadius` auto-normalization to `ship.radius` when provided.
+  - Validation:
+    - `npm test`: `10 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - DevTools `file://` check confirmed restored visual growth in-canvas:
+      - small tier measured draw radius ~`14`
+      - medium tier measured draw radius ~`29`
+      - large tier measured draw radius ~`56`
+- 2026-02-10 regression fixes (ship growth + mass/fracture tuning):
+  - Increased medium tier hull radius and mass (`38`, `1920`) to amplify visible growth while keeping large at `56`.
+  - Adjusted default tier zoom targets to `1.20` for medium/large to keep growth visible on screen.
+  - Added `ship.radius` to `renderGameToText` payload for precise tier-size checks.
+  - Reworked asteroid fracture logic to use mass-scaled speed requirements; size gate remains one size larger.
+  - Scaled non-fracture impact shove by projectile/target mass ratio to reduce large-rock knockback from small hits.
+  - Updated UI rules copy + README ship-size wording and ship-growth plan defaults to match new scaling/zoom.
+  - Validation:
+    - `npm test`: `10 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - DevTools `file://` smoke:
+      - Start flow OK; movement + burst + restart OK.
+      - Fullscreen hotkey attempted; blocked by browser gesture restrictions (no errors).
+      - Debug menu toggle works; pause-on-open verified.
+      - Hooks: `window.Blasteroids.renderGameToText/advanceTime` and legacy aliases callable without errors.
+      - Tier size check via `renderGameToText` after zoom tween: small `radius=14`, `zoom=1.00` → screen radius `14.0`; medium `radius=38`, `zoom=1.20` → screen radius `45.6`; large `radius=56`, `zoom=1.20` → screen radius `67.2`.
+- 2026-02-11 gameplay quirk pass (gems + small-impact breaks + camera defaults):
+  - Gem drops from small-asteroid breaks now spawn stationary at the impact point (no inherited velocity and no jitter).
+  - High-speed ambient small asteroids now self-break on impact with ship/other asteroids even when not ship-launched.
+  - Kept ship-launched fracture permissions unchanged (size-gate logic unchanged).
+  - Restored default growth zoom targets to zoom-out values in engine params (`tier2Zoom=0.78`, `tier3Zoom=0.58`).
+  - Synced ship growth plan docs to match restored zoom defaults.
+  - Validation (per request, no DevTools/Chrome launch in this pass):
+    - `npm test`: `10 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).

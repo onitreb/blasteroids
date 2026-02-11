@@ -18,7 +18,7 @@ Scope: Add ship size tiers, expanded asteroid sizes, tiered forcefield behavior,
 ## Requested Defaults (First Pass)
 - Ship tiers
   - Tier 1 `small`: `1.0x` scale, triangle-ish hull, 1 engine.
-  - Tier 2 `medium`: `2.0x` scale, rectangle hull, 2 engines.
+  - Tier 2 `medium`: `~2.7x` scale, rectangle hull, 2 engines.
   - Tier 3 `large`: `4.0x` scale, heavy wedge hull, 3 engines.
 - Unlock thresholds (gem points)
   - Tier 2 at `500`.
