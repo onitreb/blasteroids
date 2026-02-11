@@ -40,6 +40,7 @@ Workflow:
 - Current coverage includes:
   - utility modules under `src/util/*`
   - deterministic engine timeline checks + API surface checks in `test/engine.test.js`
+  - debug menu metadata coverage check vs `index.html` in `test/debug-menu-metadata.test.js`
 
 ## Smoke Test Checklist (After Any Refactor)
 Open `index.html` via `file://` and verify:

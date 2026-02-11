@@ -192,3 +192,12 @@ Updates
   - Validation:
     - `npm test`: `11 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 SG-10/SG-11 closure pass (growth balancing knobs + telemetry + metadata coverage):
+  - Added debug tuning knobs for ring feel: gravity softening, inner drag, ring pull (`ringK`), ring radial damping.
+  - Added debug tuning knob for spawn pressure pacing: `asteroidSpawnRateScale` (scales time between population refill spawns).
+  - Extended `renderGameToText` with population budget + spawn timer fields to support long-session tuning.
+  - Added `test/debug-menu-metadata.test.js` to enforce that every interactive debug-menu control in `index.html` is represented in metadata.
+  - Validation:
+    - `npm test`: `12 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` smoke: not run in this pass (run per `RUNBOOK.md` before committing).

@@ -480,6 +480,7 @@
         fractureImpactSpeed: 260,
         maxAsteroids: 4e3,
         asteroidWorldDensityScale: 0.32,
+        asteroidSpawnRateScale: 1,
         asteroidSpawnMinSec: 0.18,
         asteroidSpawnMaxSec: 0.45,
         asteroidSpawnUrgentMinSec: 0.05,
@@ -734,7 +735,10 @@
     function scheduleNextAsteroidSpawn(urgent = false) {
       const lo = urgent ? state.params.asteroidSpawnUrgentMinSec : state.params.asteroidSpawnMinSec;
       const hi = urgent ? state.params.asteroidSpawnUrgentMaxSec : state.params.asteroidSpawnMaxSec;
-      state.asteroidSpawnT = lerp(lo, hi, rng());
+      const rateScale = clamp(Number(state.params.asteroidSpawnRateScale ?? 1), 0.25, 3);
+      const effLo = Math.max(0.01, lo / rateScale);
+      const effHi = Math.max(effLo, hi / rateScale);
+      state.asteroidSpawnT = lerp(effLo, effHi, rng());
     }
     function isInsideViewRect(pos, radius, view, margin = 0) {
       const halfW = view.halfW + radius + margin;
@@ -1786,6 +1790,8 @@
       const ship = state.ship;
       const attached = state.asteroids.filter((a) => a.attached).length;
       const zoom = Math.max(0.1, state.camera.zoom || 1);
+      const popBudget = asteroidPopulationBudget();
+      const spawnRateScale = clamp(Number(state.params.asteroidSpawnRateScale ?? 1), 0.25, 3);
       const counts = state.asteroids.reduce(
         (acc, a) => {
           acc[a.size] = (acc[a.size] || 0) + 1;
@@ -1860,6 +1866,14 @@
           tier2_unlock: state.params.tier2UnlockGemScore,
           tier3_unlock: state.params.tier3UnlockGemScore,
           override: state.settings.tierOverrideEnabled ? clamp(Math.round(state.settings.tierOverrideIndex), 1, 3) : 0
+        },
+        population: {
+          current: state.asteroids.length,
+          min: popBudget.min,
+          target: popBudget.target,
+          max: popBudget.max,
+          spawn_t: +Math.max(0, state.asteroidSpawnT).toFixed(3),
+          spawn_rate_scale: +spawnRateScale.toFixed(2)
         },
         counts: { ...counts, attached, score: state.score, asteroids_on_screen: asteroidsOnScreen },
         gems_on_field: gemsOnField,
@@ -2369,6 +2383,53 @@
   }
 
   // src/ui/createUiBindings.js
+  var DEBUG_MENU_CONTROL_IDS = Object.freeze([
+    "dbg-attract",
+    "ship-explode",
+    "dbg-camera-mode",
+    "dbg-world-scale",
+    "dbg-pause-on-open",
+    "dbg-tier-override",
+    "dbg-tier-override-level",
+    "dbg-gem-score",
+    "tune-tier2-unlock",
+    "tune-tier3-unlock",
+    "tune-tier1-zoom",
+    "tune-tier2-zoom",
+    "tune-tier3-zoom",
+    "tune-tier-zoom-sec",
+    "tune-attract",
+    "tune-field",
+    "tune-field-scale1",
+    "tune-field-scale2",
+    "tune-field-scale3",
+    "tune-field-gap",
+    "tune-gravity",
+    "tune-inner-grav",
+    "tune-gravity-soft",
+    "tune-inner-drag",
+    "tune-ring-k",
+    "tune-ring-damp",
+    "tune-capture",
+    "tune-burst",
+    "tune-thrust",
+    "tune-dmg",
+    "tune-fracture",
+    "tune-world-density",
+    "tune-spawn-rate",
+    "tune-xl-radius",
+    "tune-xxl-radius",
+    "tune-xl-count",
+    "tune-xxl-count",
+    "tune-gem-ttl",
+    "tune-gem-blink",
+    "tune-star-density",
+    "tune-parallax",
+    "tune-star-accent-chance",
+    "tune-twinkle-chance",
+    "tune-twinkle-strength",
+    "tune-twinkle-speed"
+  ]);
   function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
     const menu = documentRef.getElementById("menu");
     const hudScore = documentRef.getElementById("hud-score");
@@ -2418,6 +2479,22 @@
     const tuneInnerGravOut = documentRef.getElementById("tune-inner-grav-out");
     const tuneInnerGravSave = documentRef.getElementById("tune-inner-grav-save");
     const tuneInnerGravDefault = documentRef.getElementById("tune-inner-grav-default");
+    const tuneGravitySoft = documentRef.getElementById("tune-gravity-soft");
+    const tuneGravitySoftOut = documentRef.getElementById("tune-gravity-soft-out");
+    const tuneGravitySoftSave = documentRef.getElementById("tune-gravity-soft-save");
+    const tuneGravitySoftDefault = documentRef.getElementById("tune-gravity-soft-default");
+    const tuneInnerDrag = documentRef.getElementById("tune-inner-drag");
+    const tuneInnerDragOut = documentRef.getElementById("tune-inner-drag-out");
+    const tuneInnerDragSave = documentRef.getElementById("tune-inner-drag-save");
+    const tuneInnerDragDefault = documentRef.getElementById("tune-inner-drag-default");
+    const tuneRingK = documentRef.getElementById("tune-ring-k");
+    const tuneRingKOut = documentRef.getElementById("tune-ring-k-out");
+    const tuneRingKSave = documentRef.getElementById("tune-ring-k-save");
+    const tuneRingKDefault = documentRef.getElementById("tune-ring-k-default");
+    const tuneRingDamp = documentRef.getElementById("tune-ring-damp");
+    const tuneRingDampOut = documentRef.getElementById("tune-ring-damp-out");
+    const tuneRingDampSave = documentRef.getElementById("tune-ring-damp-save");
+    const tuneRingDampDefault = documentRef.getElementById("tune-ring-damp-default");
     const tuneGemTtl = documentRef.getElementById("tune-gem-ttl");
     const tuneGemTtlOut = documentRef.getElementById("tune-gem-ttl-out");
     const tuneGemTtlSave = documentRef.getElementById("tune-gem-ttl-save");
@@ -2450,6 +2527,10 @@
     const tuneWorldDensityOut = documentRef.getElementById("tune-world-density-out");
     const tuneWorldDensitySave = documentRef.getElementById("tune-world-density-save");
     const tuneWorldDensityDefault = documentRef.getElementById("tune-world-density-default");
+    const tuneSpawnRate = documentRef.getElementById("tune-spawn-rate");
+    const tuneSpawnRateOut = documentRef.getElementById("tune-spawn-rate-out");
+    const tuneSpawnRateSave = documentRef.getElementById("tune-spawn-rate-save");
+    const tuneSpawnRateDefault = documentRef.getElementById("tune-spawn-rate-default");
     const tuneXlRadius = documentRef.getElementById("tune-xl-radius");
     const tuneXlRadiusOut = documentRef.getElementById("tune-xl-radius-out");
     const tuneXlRadiusSave = documentRef.getElementById("tune-xl-radius-save");
@@ -2579,12 +2660,43 @@
         suffix: ""
       },
       {
+        key: "gravitySoftening",
+        input: tuneGravitySoft,
+        saveBtn: tuneGravitySoftSave,
+        savedOut: tuneGravitySoftDefault,
+        suffix: " px"
+      },
+      {
         key: "innerGravityMult",
         input: tuneInnerGrav,
         saveBtn: tuneInnerGravSave,
         savedOut: tuneInnerGravDefault,
         suffix: "",
         format: (v) => `x${Number(v).toFixed(2)}`
+      },
+      {
+        key: "innerDrag",
+        input: tuneInnerDrag,
+        saveBtn: tuneInnerDragSave,
+        savedOut: tuneInnerDragDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}`
+      },
+      {
+        key: "ringK",
+        input: tuneRingK,
+        saveBtn: tuneRingKSave,
+        savedOut: tuneRingKDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}`
+      },
+      {
+        key: "ringRadialDamp",
+        input: tuneRingDamp,
+        saveBtn: tuneRingDampSave,
+        savedOut: tuneRingDampDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}`
       },
       {
         key: "gemTtlSec",
@@ -2720,6 +2832,14 @@
         format: (v) => `${Number(v).toFixed(2)}x`
       },
       {
+        key: "asteroidSpawnRateScale",
+        input: tuneSpawnRate,
+        saveBtn: tuneSpawnRateSave,
+        savedOut: tuneSpawnRateDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
         key: "starDensityScale",
         input: tuneStarDensity,
         saveBtn: tuneStarDensitySave,
@@ -2819,6 +2939,12 @@
       p.tier3ForceFieldScale = clamp(Number(p.tier3ForceFieldScale ?? SHIP_TIERS.large.forcefieldScale), 0.2, 6);
       p.forceFieldHullGap = clamp(Number(p.forceFieldHullGap ?? 14), 0, 200);
       ensureAttractRadiusCoversForcefield(p);
+      p.gravitySoftening = clamp(Number(p.gravitySoftening ?? 70), 10, 220);
+      p.innerGravityMult = clamp(Number(p.innerGravityMult ?? 1.5), 1, 8);
+      p.innerDrag = clamp(Number(p.innerDrag ?? 4), 0, 20);
+      p.ringK = clamp(Number(p.ringK ?? 6.5), 0, 30);
+      p.ringRadialDamp = clamp(Number(p.ringRadialDamp ?? 6.5), 0, 40);
+      p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
       p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
       p.xlargeCount = clamp(Math.round(p.xlargeCount), 0, 50);
@@ -2874,6 +3000,14 @@
         tuneGravity.value = String(Math.round(p.gravityK));
       if (tuneInnerGrav)
         tuneInnerGrav.value = String(p.innerGravityMult);
+      if (tuneGravitySoft)
+        tuneGravitySoft.value = String(Math.round(p.gravitySoftening));
+      if (tuneInnerDrag)
+        tuneInnerDrag.value = String(p.innerDrag);
+      if (tuneRingK)
+        tuneRingK.value = String(p.ringK);
+      if (tuneRingDamp)
+        tuneRingDamp.value = String(p.ringRadialDamp);
       if (tuneGemTtl)
         tuneGemTtl.value = String(p.gemTtlSec);
       if (tuneGemBlink)
@@ -2910,6 +3044,8 @@
         tuneTierZoomSec.value = String(p.tierZoomTweenSec);
       if (tuneWorldDensity)
         tuneWorldDensity.value = String(p.asteroidWorldDensityScale);
+      if (tuneSpawnRate)
+        tuneSpawnRate.value = String(p.asteroidSpawnRateScale);
       if (tuneStarDensity)
         tuneStarDensity.value = String(p.starDensityScale);
       if (tuneParallax)
@@ -2938,6 +3074,13 @@
       setOut(tuneGravityOut, readNum(tuneGravity, p.gravityK));
       if (tuneInnerGravOut)
         tuneInnerGravOut.textContent = `x${readNum(tuneInnerGrav, p.innerGravityMult).toFixed(2)}`;
+      setOut(tuneGravitySoftOut, readNum(tuneGravitySoft, p.gravitySoftening), " px");
+      if (tuneInnerDragOut)
+        tuneInnerDragOut.textContent = `${readNum(tuneInnerDrag, p.innerDrag).toFixed(2)}`;
+      if (tuneRingKOut)
+        tuneRingKOut.textContent = `${readNum(tuneRingK, p.ringK).toFixed(2)}`;
+      if (tuneRingDampOut)
+        tuneRingDampOut.textContent = `${readNum(tuneRingDamp, p.ringRadialDamp).toFixed(2)}`;
       if (tuneGemTtlOut)
         tuneGemTtlOut.textContent = `${readNum(tuneGemTtl, p.gemTtlSec).toFixed(1)} s`;
       if (tuneGemBlinkOut)
@@ -2963,6 +3106,9 @@
         tuneTierZoomSecOut.textContent = `${readNum(tuneTierZoomSec, p.tierZoomTweenSec).toFixed(2)} s`;
       if (tuneWorldDensityOut) {
         tuneWorldDensityOut.textContent = `${readNum(tuneWorldDensity, p.asteroidWorldDensityScale).toFixed(2)}x`;
+      }
+      if (tuneSpawnRateOut) {
+        tuneSpawnRateOut.textContent = `${readNum(tuneSpawnRate, p.asteroidSpawnRateScale).toFixed(2)}x`;
       }
       if (tuneStarDensityOut)
         tuneStarDensityOut.textContent = `${readNum(tuneStarDensity, p.starDensityScale).toFixed(2)}x`;
@@ -2992,7 +3138,11 @@
       p.forceFieldHullGap = clamp(Math.round(readNum(tuneFieldGap, p.forceFieldHullGap)), 0, 200);
       ensureAttractRadiusCoversForcefield(p);
       p.gravityK = readNum(tuneGravity, p.gravityK);
+      p.gravitySoftening = clamp(Math.round(readNum(tuneGravitySoft, p.gravitySoftening)), 10, 220);
       p.innerGravityMult = clamp(readNum(tuneInnerGrav, p.innerGravityMult), 1, 8);
+      p.innerDrag = clamp(readNum(tuneInnerDrag, p.innerDrag), 0, 20);
+      p.ringK = clamp(readNum(tuneRingK, p.ringK), 0, 30);
+      p.ringRadialDamp = clamp(readNum(tuneRingDamp, p.ringRadialDamp), 0, 40);
       p.gemTtlSec = clamp(readNum(tuneGemTtl, p.gemTtlSec), 0.5, 60);
       p.gemBlinkMaxHz = clamp(readNum(tuneGemBlink, p.gemBlinkMaxHz), 0.25, 12);
       p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
@@ -3013,6 +3163,7 @@
       p.tier3Zoom = clamp(readNum(tuneTier3Zoom, p.tier3Zoom), 0.35, 1.2);
       p.tierZoomTweenSec = clamp(readNum(tuneTierZoomSec, p.tierZoomTweenSec), 0.05, 1.2);
       p.asteroidWorldDensityScale = clamp(readNum(tuneWorldDensity, p.asteroidWorldDensityScale), 0.08, 2.5);
+      p.asteroidSpawnRateScale = clamp(readNum(tuneSpawnRate, p.asteroidSpawnRateScale), 0.25, 3);
       p.starDensityScale = clamp(readNum(tuneStarDensity, p.starDensityScale), 0.4, 2.2);
       p.starParallaxStrength = clamp(readNum(tuneParallax, p.starParallaxStrength), 0, 1.8);
       p.starAccentChance = clamp(readNum(tuneStarAccentChance, p.starAccentChance), 0, 0.35);
@@ -3146,71 +3297,49 @@
         applyTuningFromMenu();
       });
     }
-    bindTuneInput(tuneAttract);
-    bindTuneInput(tuneField);
-    bindTuneInput(tuneFieldScale1);
-    bindTuneInput(tuneFieldScale2);
-    bindTuneInput(tuneFieldScale3);
-    bindTuneInput(tuneFieldGap);
-    bindTuneInput(tuneGravity);
-    bindTuneInput(tuneInnerGrav);
-    bindTuneInput(tuneGemTtl);
-    bindTuneInput(tuneGemBlink);
-    bindTuneInput(tuneCapture);
-    bindTuneInput(tuneBurst);
-    bindTuneInput(tuneThrust);
-    bindTuneInput(tuneDmg);
-    bindTuneInput(tuneXlRadius);
-    bindTuneInput(tuneXxlRadius);
-    bindTuneInput(tuneXlCount);
-    bindTuneInput(tuneXxlCount);
-    bindTuneInput(tuneFracture);
-    bindTuneInput(tuneTier2Unlock);
-    bindTuneInput(tuneTier3Unlock);
-    bindTuneInput(tuneTier1Zoom);
-    bindTuneInput(tuneTier2Zoom);
-    bindTuneInput(tuneTier3Zoom);
-    bindTuneInput(tuneTierZoomSec);
-    bindTuneInput(tuneWorldDensity);
-    bindTuneInput(tuneStarDensity);
-    bindTuneInput(tuneParallax);
-    bindTuneInput(tuneStarAccentChance);
-    bindTuneInput(tuneTwinkleChance);
-    bindTuneInput(tuneTwinkleStrength);
-    bindTuneInput(tuneTwinkleSpeed);
+    for (const f of TUNING_FIELDS)
+      bindTuneInput(f.input);
     if (startBtn)
       startBtn.addEventListener("click", () => startOrResume());
     if (debugToggleBtn)
       debugToggleBtn.addEventListener("click", () => toggleDebugMenu());
-    if (dbgCameraMode)
-      dbgCameraMode.addEventListener("change", () => applyArenaFromMenu());
-    if (dbgWorldScale)
-      dbgWorldScale.addEventListener("input", () => applyArenaFromMenu());
-    if (dbgPauseOnOpen)
-      dbgPauseOnOpen.addEventListener("change", () => applyDebugFlagsFromMenu());
-    if (dbgTierOverride) {
-      dbgTierOverride.addEventListener("change", () => {
-        applyDebugFlagsFromMenu();
-        game.refreshProgression({ animateZoom: false });
-      });
+    const DEBUG_MENU_BINDINGS = [
+      { el: dbgCameraMode, event: "change", handler: () => applyArenaFromMenu() },
+      { el: dbgWorldScale, event: "input", handler: () => applyArenaFromMenu() },
+      { el: dbgPauseOnOpen, event: "change", handler: () => applyDebugFlagsFromMenu() },
+      {
+        el: dbgTierOverride,
+        event: "change",
+        handler: () => {
+          applyDebugFlagsFromMenu();
+          game.refreshProgression({ animateZoom: false });
+        }
+      },
+      {
+        el: dbgTierOverrideLevel,
+        event: "input",
+        handler: () => {
+          applyDebugFlagsFromMenu();
+          game.refreshProgression({ animateZoom: false });
+        }
+      },
+      {
+        el: dbgGemScore,
+        event: "input",
+        handler: () => {
+          game.state.score = clamp(Math.round(readNum(dbgGemScore, game.state.score)), 0, 5e3);
+          game.refreshProgression({ animateZoom: true });
+          syncRuntimeDebugUi();
+        }
+      },
+      { el: dbgAttract, event: "change", handler: () => applyDebugFlagsFromMenu() },
+      { el: shipExplode, event: "change", handler: () => applyDebugFlagsFromMenu() }
+    ];
+    for (const b of DEBUG_MENU_BINDINGS) {
+      if (!b.el)
+        continue;
+      b.el.addEventListener(b.event, b.handler);
     }
-    if (dbgTierOverrideLevel) {
-      dbgTierOverrideLevel.addEventListener("input", () => {
-        applyDebugFlagsFromMenu();
-        game.refreshProgression({ animateZoom: false });
-      });
-    }
-    if (dbgGemScore) {
-      dbgGemScore.addEventListener("input", () => {
-        game.state.score = clamp(Math.round(readNum(dbgGemScore, game.state.score)), 0, 5e3);
-        game.refreshProgression({ animateZoom: true });
-        syncRuntimeDebugUi();
-      });
-    }
-    if (dbgAttract)
-      dbgAttract.addEventListener("change", () => applyDebugFlagsFromMenu());
-    if (shipExplode)
-      shipExplode.addEventListener("change", () => applyDebugFlagsFromMenu());
     for (const f of TUNING_FIELDS) {
       if (!f.saveBtn || !f.input)
         continue;

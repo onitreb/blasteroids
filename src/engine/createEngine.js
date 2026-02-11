@@ -326,6 +326,7 @@ export function createEngine({ width, height }) {
       fractureImpactSpeed: 260,
       maxAsteroids: 4000,
       asteroidWorldDensityScale: 0.32,
+      asteroidSpawnRateScale: 1,
       asteroidSpawnMinSec: 0.18,
       asteroidSpawnMaxSec: 0.45,
       asteroidSpawnUrgentMinSec: 0.05,
@@ -594,7 +595,10 @@ export function createEngine({ width, height }) {
   function scheduleNextAsteroidSpawn(urgent = false) {
     const lo = urgent ? state.params.asteroidSpawnUrgentMinSec : state.params.asteroidSpawnMinSec;
     const hi = urgent ? state.params.asteroidSpawnUrgentMaxSec : state.params.asteroidSpawnMaxSec;
-    state.asteroidSpawnT = lerp(lo, hi, rng());
+    const rateScale = clamp(Number(state.params.asteroidSpawnRateScale ?? 1), 0.25, 3);
+    const effLo = Math.max(0.01, lo / rateScale);
+    const effHi = Math.max(effLo, hi / rateScale);
+    state.asteroidSpawnT = lerp(effLo, effHi, rng());
   }
 
   function isInsideViewRect(pos, radius, view, margin = 0) {
@@ -1700,6 +1704,8 @@ export function createEngine({ width, height }) {
     const ship = state.ship;
     const attached = state.asteroids.filter((a) => a.attached).length;
     const zoom = Math.max(0.1, state.camera.zoom || 1);
+    const popBudget = asteroidPopulationBudget();
+    const spawnRateScale = clamp(Number(state.params.asteroidSpawnRateScale ?? 1), 0.25, 3);
     const counts = state.asteroids.reduce(
       (acc, a) => {
         acc[a.size] = (acc[a.size] || 0) + 1;
@@ -1777,6 +1783,14 @@ export function createEngine({ width, height }) {
         tier2_unlock: state.params.tier2UnlockGemScore,
         tier3_unlock: state.params.tier3UnlockGemScore,
         override: state.settings.tierOverrideEnabled ? clamp(Math.round(state.settings.tierOverrideIndex), 1, 3) : 0,
+      },
+      population: {
+        current: state.asteroids.length,
+        min: popBudget.min,
+        target: popBudget.target,
+        max: popBudget.max,
+        spawn_t: +Math.max(0, state.asteroidSpawnT).toFixed(3),
+        spawn_rate_scale: +spawnRateScale.toFixed(2),
       },
       counts: { ...counts, attached, score: state.score, asteroids_on_screen: asteroidsOnScreen },
       gems_on_field: gemsOnField,

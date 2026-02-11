@@ -61,7 +61,9 @@ Open the in-game menu to tweak sliders/switches and click **Set default** to sav
 - Camera mode (`Centered` / `Dead-zone pan`)
 - Arena size (`1.00x` .. `10.00x`)
 - Global asteroid density
+- Spawn rate scale (refill pacing)
 - XL/XXL asteroid radii + spawn weights
+- Ring feel: gravity softening, inner drag, ring pull, ring radial damping
 - Star density / parallax strength
 - Star accent chance / twinkle chance / twinkle strength / twinkle speed
 

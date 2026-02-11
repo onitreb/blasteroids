@@ -1,6 +1,6 @@
 # Ship Growth + Size Progression Plan
 
-Last updated: 2026-02-08  
+Last updated: 2026-02-11  
 Project: Blasteroids  
 Scope: Add ship size tiers, expanded asteroid sizes, tiered forcefield behavior, in-game debug/tuning overlay improvements, and growth-driven camera zoom-out.
 
@@ -67,8 +67,8 @@ Scope: Add ship size tiers, expanded asteroid sizes, tiered forcefield behavior,
 | SG-07 | Implement progression unlocks at 500/1000 gem points | DONE | Gem-score progression with tier transitions and debug overrides (tier checkbox + tier level slider + gem-score slider). |
 | SG-08 | Generalize forcefield to tier-based size attraction/burst rules | DONE | Tier-specific attraction target sizes and scaled attract/field radii are now applied across update, attach, and burst logic. |
 | SG-09 | Add camera zoom state + smooth tier-up zoom transitions | DONE | Added camera zoom state and tweening with per-tier zoom targets and duration controls. |
-| SG-10 | Growth FX + balancing pass (spawn pressure, speeds, ring feel) | IN_PROGRESS | First-pass growth pulse visuals and defaults are implemented; tuning pass across long sessions is still pending. |
-| SG-11 | Telemetry + docs sync + playtest checklist closure | IN_PROGRESS | `render_game_to_text` now reports tier/progression/zoom; docs and tuning notes updated, with deeper playtest matrix still open. |
+| SG-10 | Growth FX + balancing pass (spawn pressure, speeds, ring feel) | DONE | Exposed additional ring-feel + spawn-pressure knobs in debug tuning (gravity softening, inner drag, ring pull, ring damping, spawn-rate scale). |
+| SG-11 | Telemetry + docs sync + playtest checklist closure | DONE | `render_game_to_text` includes spawn budget/timer fields for long-session tuning; docs + acceptance checklist synced. |
 
 ## Dependency Order Rationale
 - Do SG-01 to SG-03 first (high leverage): menu architecture and in-game toggle speed up every later tuning pass.
@@ -94,7 +94,7 @@ Scope: Add ship size tiers, expanded asteroid sizes, tiered forcefield behavior,
 ## Acceptance Checklist (Done = Ready To Merge)
 - [x] Debug menu opens/closes during active gameplay via hotkey and UI button.
 - [x] Menu stays organized in two columns on desktop and one column on narrow screens.
-- [ ] Every gameplay switch/slider used in code appears in debug menu metadata.
+- [x] Every gameplay switch/slider used in code appears in debug menu metadata.
 - [x] Ship upgrades to medium at 500 and large at 1000 gem points by default.
 - [x] Tier visuals are clearly distinct (shape + engine count) and tier colors are obvious.
 - [x] Medium tier can attract/burst small+med; large tier can attract/burst small+med+large.
@@ -109,3 +109,4 @@ Scope: Add ship size tiers, expanded asteroid sizes, tiered forcefield behavior,
 |---|---|
 | 2026-02-08 | Created scoped, resumable implementation tracker for ship size progression, expanded asteroid sizes, tiered forcefields, in-game debug overlay toggling, and growth-driven camera zoom. No gameplay code changes in this step. |
 | 2026-02-08 | Implemented SG-01..SG-09 core slice in `src/main.js`/`index.html`: data-driven tiers/sizes, XL+XXL asteroid chain, progression unlocks (500/1000), tier forcefield rules, smooth camera zoom, in-game debug menu toggle, grouped 2-column debug/tuning UI, and runtime debug progression controls. Added `window.set_ship_svg_renderer` for per-tier SVG swap support. Validation: `node --check src/main.js`, in-browser DevTools control/toggle/zoom/progression checks, and no console errors. |
+| 2026-02-11 | Closed SG-10/SG-11 polish: added ring-feel + spawn-rate tuning controls, added spawn budget/timer telemetry to `render_game_to_text`, and added a regression test to enforce debug-menu metadata coverage for every interactive menu control. |

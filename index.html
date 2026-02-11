@@ -307,6 +307,58 @@
                   </div>
 
                   <div class="tune-row">
+                    <span>Gravity softening</span>
+                    <span class="tune-actions">
+                      <output id="tune-gravity-soft-out">—</output>
+                      <button id="tune-gravity-soft-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-gravity-soft" type="range" min="20" max="180" step="1" />
+                  <div class="tune-note">
+                    Softening radius for gravity falloff (higher = gentler pull near the ship).
+                    <div class="tune-saved">Saved default: <span id="tune-gravity-soft-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Inner drag</span>
+                    <span class="tune-actions">
+                      <output id="tune-inner-drag-out">—</output>
+                      <button id="tune-inner-drag-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-inner-drag" type="range" min="0" max="12" step="0.1" />
+                  <div class="tune-note">
+                    Extra damping inside the ring (reduces slingshot escapes).
+                    <div class="tune-saved">Saved default: <span id="tune-inner-drag-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Ring pull</span>
+                    <span class="tune-actions">
+                      <output id="tune-ring-k-out">—</output>
+                      <button id="tune-ring-k-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-ring-k" type="range" min="0" max="16" step="0.1" />
+                  <div class="tune-note">
+                    Pull toward the ring surface (higher = snappier captures).
+                    <div class="tune-saved">Saved default: <span id="tune-ring-k-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Ring radial damp</span>
+                    <span class="tune-actions">
+                      <output id="tune-ring-damp-out">—</output>
+                      <button id="tune-ring-damp-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-ring-damp" type="range" min="0" max="20" step="0.1" />
+                  <div class="tune-note">
+                    Damps oscillation near the ring surface (higher = less wobble).
+                    <div class="tune-saved">Saved default: <span id="tune-ring-damp-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
                     <span>Capture speed</span>
                     <span class="tune-actions">
                       <output id="tune-capture-out">—</output>
@@ -387,6 +439,19 @@
                   <div class="tune-note">
                     Scales overall global asteroid population target.
                     <div class="tune-saved">Saved default: <span id="tune-world-density-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Spawn rate</span>
+                    <span class="tune-actions">
+                      <output id="tune-spawn-rate-out">—</output>
+                      <button id="tune-spawn-rate-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-spawn-rate" type="range" min="0.25" max="3" step="0.05" />
+                  <div class="tune-note">
+                    Scales time between population refill spawns (higher = refills faster).
+                    <div class="tune-saved">Saved default: <span id="tune-spawn-rate-default">—</span></div>
                   </div>
 
                   <div class="tune-row">
