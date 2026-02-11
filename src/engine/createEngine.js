@@ -946,6 +946,20 @@ export function createEngine({ width, height }) {
     });
   }
 
+  function spawnBurstWavelets({ pos, angle, speed, rgb = [255, 221, 88] }) {
+    state.effects.push({
+      kind: "wavelets",
+      x: pos.x,
+      y: pos.y,
+      angle,
+      speed,
+      t: 0,
+      ttl: 0.55,
+      rgb,
+      seed: Math.floor(rng() * 1e9),
+    });
+  }
+
   function rollGemKind() {
     const r = rng();
     if (r < 0.1) return "diamond"; // blue (rare)
@@ -1134,6 +1148,14 @@ export function createEngine({ width, height }) {
       const base = mul(dir, state.params.burstSpeed);
       a.vel = add(base, mul(shipV, 0.55));
       a.rotVel += (rng() * 2 - 1) * 1.8;
+
+      // Burst wavelets are anchored at the forcefield surface and oriented along the *actual* launch direction.
+      // This keeps the effect aligned even when the ship's velocity biases the outbound trajectory.
+      const vDir = len(a.vel) > 1e-6 ? norm(a.vel) : dir;
+      const ringP = add(state.ship.pos, mul(vDir, fieldR));
+      const ang = angleOf(vDir);
+      const spd = len(a.vel);
+      spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, rgb: [255, 221, 88] });
     }
   }
 

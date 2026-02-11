@@ -118,6 +118,84 @@ function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
   ctx.restore();
 }
 
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
+  const ttl = Math.max(1e-6, Number(e.ttl) || 0.55);
+  const age = clamp((Number(e.t) || 0) / ttl, 0, 1);
+  const fadeOut = 1 - age;
+  const speed = Math.max(0, Number(e.speed) || 520);
+  const travelDist = speed * (Number(e.t) || 0);
+  const fadeIn = smoothstep(18, 78, travelDist); // delay until the rock has clearly left the ring
+  const baseFade = fadeIn * fadeOut;
+  if (baseFade <= 1e-3) return;
+
+  const angle = Number.isFinite(e.angle) ? e.angle : 0;
+  const dirx = Math.cos(angle);
+  const diry = Math.sin(angle);
+
+  // Crowding guard: reduce detail and deterministically sample under extreme counts.
+  const many = waveletCrowd >= 18;
+  const extreme = waveletCrowd >= 30;
+  if (extreme && (e.seed ?? 0) % 2 !== 0) return;
+
+  // These live just outside the forcefield surface (anchored at e.x/e.y) and do NOT move with the asteroid.
+  // They should read as ripples on the surface, not rocket exhaust.
+  const waves = many ? 3 : 4;
+  const gap = many ? 11 : 12;
+  const arcSpan = many ? 0.5 : 0.56;
+  const arcR = many ? 12 : 13;
+  const bandStart = many ? 10 : 12;
+  const distFade = smoothstep(0, 18, travelDist);
+  const aBase = (many ? 0.3 : 0.36) * baseFade * distFade;
+
+  const rgb = Array.isArray(e.rgb) ? e.rgb : [255, 221, 88];
+  const doGlow = !many;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+
+  for (let i = 0; i < waves; i++) {
+    // Closest to the forcefield is brightest; fade out as it goes away from the ring.
+    const local = Math.pow(1 - i / Math.max(1, waves - 1), 1.15);
+    const a = Math.min(1, aBase * local);
+    if (a <= 0.01) continue;
+
+    const rJ = randSigned((e.seed ?? 1) + i * 997);
+    const wobble = rJ * (many ? 0.01 : 0.014);
+    const span = arcSpan * (0.92 + 0.08 * rJ);
+    const a0 = angle - span + wobble;
+    const a1 = angle + span + wobble;
+
+    const dist = bandStart + i * gap;
+    const cx = e.x + dirx * dist;
+    const cy = e.y + diry * dist;
+
+    if (doGlow) {
+      ctx.shadowColor = rgbToRgba(rgb, 0.9);
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = rgbToRgba(rgb, a * 0.28);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, arcR, a0, a1);
+      ctx.stroke();
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = rgbToRgba(rgb, a);
+    ctx.lineWidth = 2.25;
+    ctx.beginPath();
+    ctx.arc(cx, cy, arcR, a0, a1);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function gemRgb(kind) {
   if (kind === "gold") return [255, 221, 88];
   if (kind === "diamond") return [86, 183, 255];
@@ -312,7 +390,8 @@ export function createRenderer(engine) {
     for (const a of state.asteroids) {
       const tier = currentShipTier();
       const ship = state.ship;
-      const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached;
+      const showPullFx =
+        state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
       const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
 
       if (pullFx > 0.01) {
@@ -467,8 +546,17 @@ export function createRenderer(engine) {
       ctx.restore();
     }
 
-    // Effects (KISS explosions).
+    let waveletCrowd = 0;
     for (const e of state.effects) {
+      if (e.kind === "wavelets") waveletCrowd++;
+    }
+
+    // Effects (KISS explosions + burst wavelets).
+    for (const e of state.effects) {
+      if (e.kind === "wavelets") {
+        drawBurstWaveletsEffect(ctx, e, waveletCrowd);
+        continue;
+      }
       const t = clamp(e.t / e.ttl, 0, 1);
       const r = lerp(e.r0, e.r1, t);
       const alpha = (1 - t) * 0.9;

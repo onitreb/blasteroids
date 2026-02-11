@@ -235,3 +235,28 @@ Updates
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors.
+
+- 2026-02-11 FX pass: changed burst-launched asteroid visuals.
+  - Electric tether (gravity pull) now *excludes* `shipLaunched` asteroids so burst throws don’t reuse the “pull” look.
+  - Added a short-lived `launchFxT` timer on burst-launched asteroids and a new render pass that draws pink motion streaks + small shock arcs while that timer is active.
+  - Rebuilt bundle (`npm run build`) and validated visually via Chrome DevTools MCP (canvas screenshot captured right after burst).
+- 2026-02-11 FX tweak: burst FX color + semantics.
+  - Replaced per-asteroid motion trails (looked like rocket exhaust) with a ring-emitted repulsion effect: yellow outward slashes + expanding arc segments outside the forcefield ring.
+  - Visual validation via Chrome DevTools MCP screenshot right after a burst.
+- 2026-02-11 FX tweak: burst "gravity waves".
+  - Replaced burst slashes/streaks with concentric yellow arc wavefronts ( ))))) ) that radiate outward from just outside the forcefield ring and fade with distance.
+  - Visual validation via Chrome DevTools MCP screenshot after burst.
+- 2026-02-11 FX tweak: narrow per-rock wake waves.
+  - Replaced wide ship-centered halo arcs with small wake arcs drawn just behind each burst-launched rock.
+  - Reversed ombre: closest wave to the rock is brightest; subsequent waves fade out.
+  - Added a simple "crowd" guard: if many rocks launch at once, reduce wave count and disable glow to keep it readable/cheap.
+- 2026-02-11 FX tweak: wake waves visibility.
+  - Increased launch FX TTL to 0.35s.
+  - Made wake arcs much brighter/thicker and increased glow/blur so the ))))) trails are clearly visible.
+- 2026-02-11 FX tweak: wake waves timing/shape + +25% alpha.
+  - Flipped wave orientation and added a distance-based fade-in so waves don’t appear immediately at burst (avoids “shooting out of the asteroid”).
+  - Reduced wave count a bit and toned brightness down; then bumped overall alpha by +25% per feedback.
+- 2026-02-11 FX experiment: ring-surface wave trails.
+  - Refactored burst “gravity waves” into a dedicated `effects` entity spawned at the forcefield surface (ring point) instead of being computed/rendered off each asteroid every frame.
+  - Fixed direction mismatch: wavelets now orient along the *actual* launched asteroid velocity (accounts for ship velocity bias).
+  - Wavelets are now stationary ripples just outside the ring (no longer moving with the rock), fading in only after the rock has clearly left the forcefield.

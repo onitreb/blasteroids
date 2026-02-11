@@ -167,6 +167,29 @@ import { createUiBindings } from "./ui/createUiBindings.js";
     renderGameToText,
     setShipSvgRenderer,
     advanceTime,
+    // Debug helpers for visual iteration (intentionally undocumented).
+    getGame: () => game,
+    debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 } = {}) => {
+      const n = Math.max(1, Math.min(32, Math.floor(count)));
+      const fieldR = game.getCurrentForceFieldRadius();
+      const ship = game.state.ship;
+      for (let i = 0; i < n; i++) {
+        const angle = (i / n) * Math.PI * 2 + (game.state.time % 1) * 0.4;
+        const x = ship.pos.x + Math.cos(angle) * fieldR;
+        const y = ship.pos.y + Math.sin(angle) * fieldR;
+        game.state.effects.push({
+          kind: "wavelets",
+          x,
+          y,
+          angle,
+          speed,
+          t: 0,
+          ttl,
+          rgb: [255, 221, 88],
+          seed: Math.floor(Math.random() * 1e9),
+        });
+      }
+    },
   };
 
   // Back-compat aliases kept during RF-09 transition.

@@ -1061,6 +1061,19 @@
         seed: Math.floor(rng() * 1e9)
       });
     }
+    function spawnBurstWavelets({ pos, angle, speed, rgb = [255, 221, 88] }) {
+      state.effects.push({
+        kind: "wavelets",
+        x: pos.x,
+        y: pos.y,
+        angle,
+        speed,
+        t: 0,
+        ttl: 0.55,
+        rgb,
+        seed: Math.floor(rng() * 1e9)
+      });
+    }
     function rollGemKind() {
       const r = rng();
       if (r < 0.1)
@@ -1250,6 +1263,11 @@
         const base = mul(dir, state.params.burstSpeed);
         a.vel = add(base, mul(shipV, 0.55));
         a.rotVel += (rng() * 2 - 1) * 1.8;
+        const vDir = len(a.vel) > 1e-6 ? norm(a.vel) : dir;
+        const ringP = add(state.ship.pos, mul(vDir, fieldR));
+        const ang = angleOf(vDir);
+        const spd = len(a.vel);
+        spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, rgb: [255, 221, 88] });
       }
     }
     function clampCameraToWorld() {
@@ -2044,6 +2062,70 @@
     ctx.stroke();
     ctx.restore();
   }
+  function smoothstep(edge0, edge1, x) {
+    const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+  function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
+    const ttl = Math.max(1e-6, Number(e.ttl) || 0.55);
+    const age = clamp((Number(e.t) || 0) / ttl, 0, 1);
+    const fadeOut = 1 - age;
+    const speed = Math.max(0, Number(e.speed) || 520);
+    const travelDist = speed * (Number(e.t) || 0);
+    const fadeIn = smoothstep(18, 78, travelDist);
+    const baseFade = fadeIn * fadeOut;
+    if (baseFade <= 1e-3)
+      return;
+    const angle = Number.isFinite(e.angle) ? e.angle : 0;
+    const dirx = Math.cos(angle);
+    const diry = Math.sin(angle);
+    const many = waveletCrowd >= 18;
+    const extreme = waveletCrowd >= 30;
+    if (extreme && (e.seed ?? 0) % 2 !== 0)
+      return;
+    const waves = many ? 3 : 4;
+    const gap = many ? 11 : 12;
+    const arcSpan = many ? 0.5 : 0.56;
+    const arcR = many ? 12 : 13;
+    const bandStart = many ? 10 : 12;
+    const distFade = smoothstep(0, 18, travelDist);
+    const aBase = (many ? 0.3 : 0.36) * baseFade * distFade;
+    const rgb = Array.isArray(e.rgb) ? e.rgb : [255, 221, 88];
+    const doGlow = !many;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    for (let i = 0; i < waves; i++) {
+      const local = Math.pow(1 - i / Math.max(1, waves - 1), 1.15);
+      const a = Math.min(1, aBase * local);
+      if (a <= 0.01)
+        continue;
+      const rJ = randSigned((e.seed ?? 1) + i * 997);
+      const wobble = rJ * (many ? 0.01 : 0.014);
+      const span = arcSpan * (0.92 + 0.08 * rJ);
+      const a0 = angle - span + wobble;
+      const a1 = angle + span + wobble;
+      const dist = bandStart + i * gap;
+      const cx = e.x + dirx * dist;
+      const cy = e.y + diry * dist;
+      if (doGlow) {
+        ctx.shadowColor = rgbToRgba(rgb, 0.9);
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = rgbToRgba(rgb, a * 0.28);
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, arcR, a0, a1);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = rgbToRgba(rgb, a);
+      ctx.lineWidth = 2.25;
+      ctx.beginPath();
+      ctx.arc(cx, cy, arcR, a0, a1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   function gemRgb(kind) {
     if (kind === "gold")
       return [255, 221, 88];
@@ -2226,7 +2308,7 @@
       for (const a of state.asteroids) {
         const tier = currentShipTier();
         const ship = state.ship;
-        const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached;
+        const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
         const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
         if (pullFx > 0.01) {
           const fieldR = currentForceFieldRadius();
@@ -2348,7 +2430,16 @@
         ctx.stroke();
         ctx.restore();
       }
+      let waveletCrowd = 0;
       for (const e of state.effects) {
+        if (e.kind === "wavelets")
+          waveletCrowd++;
+      }
+      for (const e of state.effects) {
+        if (e.kind === "wavelets") {
+          drawBurstWaveletsEffect(ctx, e, waveletCrowd);
+          continue;
+        }
         const t = clamp(e.t / e.ttl, 0, 1);
         const r = lerp(e.r0, e.r1, t);
         const alpha = (1 - t) * 0.9;
@@ -3578,7 +3669,30 @@
       ...existingApi,
       renderGameToText,
       setShipSvgRenderer,
-      advanceTime
+      advanceTime,
+      // Debug helpers for visual iteration (intentionally undocumented).
+      getGame: () => game,
+      debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 } = {}) => {
+        const n = Math.max(1, Math.min(32, Math.floor(count)));
+        const fieldR = game.getCurrentForceFieldRadius();
+        const ship = game.state.ship;
+        for (let i = 0; i < n; i++) {
+          const angle = i / n * Math.PI * 2 + game.state.time % 1 * 0.4;
+          const x = ship.pos.x + Math.cos(angle) * fieldR;
+          const y = ship.pos.y + Math.sin(angle) * fieldR;
+          game.state.effects.push({
+            kind: "wavelets",
+            x,
+            y,
+            angle,
+            speed,
+            t: 0,
+            ttl,
+            rgb: [255, 221, 88],
+            seed: Math.floor(Math.random() * 1e9)
+          });
+        }
+      }
     };
     window.render_game_to_text = () => window.Blasteroids.renderGameToText();
     window.set_ship_svg_renderer = (tierKey, svgPathData, svgScale = 1) => window.Blasteroids.setShipSvgRenderer(tierKey, svgPathData, svgScale);
