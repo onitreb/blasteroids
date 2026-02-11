@@ -2141,6 +2141,81 @@
     const currentForceFieldRadius = () => engine.getCurrentForceFieldRadius();
     const currentAttractRadius = () => engine.getCurrentAttractRadius();
     const svgPathCache = /* @__PURE__ */ new Map();
+    function drawForcefieldRings(ctx) {
+      if (state.mode !== "playing")
+        return;
+      const tier = currentShipTier();
+      const fieldR = currentForceFieldRadius();
+      const attractR = currentAttractRadius();
+      const pulse = clamp(state.blastPulseT / 0.22, 0, 1);
+      const tierShift = clamp(state.progression.tierShiftT / 0.7, 0, 1);
+      ctx.save();
+      ctx.strokeStyle = tier.ringColor;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
+      ctx.stroke();
+      if (pulse > 0) {
+        ctx.strokeStyle = `rgba(255,255,255,${lerp(0, 0.85, pulse).toFixed(3)})`;
+        ctx.lineWidth = lerp(2, 6, pulse);
+        ctx.beginPath();
+        ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(255,89,100,${lerp(0, 0.55, pulse).toFixed(3)})`;
+        ctx.lineWidth = lerp(1, 4, pulse);
+        ctx.beginPath();
+        ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 10, pulse), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (tierShift > 0) {
+        ctx.strokeStyle = `rgba(255,255,255,${(tierShift * 0.9).toFixed(3)})`;
+        ctx.lineWidth = lerp(2, 8, tierShift);
+        ctx.beginPath();
+        ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 34, 1 - tierShift), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+      if (state.settings.showAttractRadius) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(86,183,255,0.12)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 10]);
+        ctx.lineDashOffset = 0;
+        ctx.beginPath();
+        ctx.arc(state.ship.pos.x, state.ship.pos.y, attractR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    function drawAsteroid(ctx, a, { tier, ship }) {
+      const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
+      const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+      if (pullFx > 0.01) {
+        const fieldR = currentForceFieldRadius();
+        const outward = sub(a.pos, ship.pos);
+        const outwardLen = Math.max(1e-6, len(outward));
+        const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
+        const seed = fnv1aSeed(a.id);
+        drawElectricTether(ctx, a.pos, ringPoint, tier.ringRgb, pullFx, state.time, seed);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx));
+        ctx.lineWidth = lerp(2, 7, pullFx);
+        ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
+        ctx.shadowBlur = lerp(3, 14, pullFx);
+        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+        ctx.restore();
+      }
+      const base = a.size === "xxlarge" ? "rgba(231,240,255,0.62)" : a.size === "xlarge" ? "rgba(231,240,255,0.68)" : a.size === "large" ? "rgba(231,240,255,0.74)" : a.size === "med" ? "rgba(231,240,255,0.80)" : "rgba(231,240,255,0.88)";
+      let color = a.attached ? "rgba(255,221,88,0.95)" : base;
+      if (pullFx > 0.01) {
+        const baseRgb = [231, 240, 255];
+        const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
+        const aAlpha = lerp(0.78, 0.98, pullFx);
+        color = rgbToRgba(mixed, aAlpha);
+      }
+      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
+    }
     function drawShipModel(ctx, ship, thrusting) {
       const tier = currentShipTier();
       const renderer = tier.renderer || {};
@@ -2261,80 +2336,18 @@
       ctx.lineWidth = 2;
       ctx.strokeRect(-state.world.w / 2, -state.world.h / 2, state.world.w, state.world.h);
       ctx.restore();
-      if (state.mode === "playing") {
-        const tier = currentShipTier();
-        const fieldR = currentForceFieldRadius();
-        const attractR = currentAttractRadius();
-        const pulse = clamp(state.blastPulseT / 0.22, 0, 1);
-        const tierShift = clamp(state.progression.tierShiftT / 0.7, 0, 1);
-        ctx.save();
-        ctx.strokeStyle = tier.ringColor;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
-        ctx.stroke();
-        if (pulse > 0) {
-          ctx.strokeStyle = `rgba(255,255,255,${lerp(0, 0.85, pulse).toFixed(3)})`;
-          ctx.lineWidth = lerp(2, 6, pulse);
-          ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.strokeStyle = `rgba(255,89,100,${lerp(0, 0.55, pulse).toFixed(3)})`;
-          ctx.lineWidth = lerp(1, 4, pulse);
-          ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 10, pulse), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        if (tierShift > 0) {
-          ctx.strokeStyle = `rgba(255,255,255,${(tierShift * 0.9).toFixed(3)})`;
-          ctx.lineWidth = lerp(2, 8, tierShift);
-          ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 34, 1 - tierShift), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-        if (state.settings.showAttractRadius) {
-          ctx.save();
-          ctx.strokeStyle = "rgba(86,183,255,0.12)";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([10, 10]);
-          ctx.lineDashOffset = 0;
-          ctx.beginPath();
-          ctx.arc(state.ship.pos.x, state.ship.pos.y, attractR, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
+      const tier = currentShipTier();
+      const ship = state.ship;
       for (const a of state.asteroids) {
-        const tier = currentShipTier();
-        const ship = state.ship;
-        const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
-        const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
-        if (pullFx > 0.01) {
-          const fieldR = currentForceFieldRadius();
-          const outward = sub(a.pos, ship.pos);
-          const outwardLen = Math.max(1e-6, len(outward));
-          const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
-          const seed = fnv1aSeed(a.id);
-          drawElectricTether(ctx, a.pos, ringPoint, tier.ringRgb, pullFx, state.time, seed);
-          ctx.save();
-          ctx.globalCompositeOperation = "lighter";
-          ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx));
-          ctx.lineWidth = lerp(2, 7, pullFx);
-          ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
-          ctx.shadowBlur = lerp(3, 14, pullFx);
-          drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
-          ctx.restore();
-        }
-        const base = a.size === "xxlarge" ? "rgba(231,240,255,0.62)" : a.size === "xlarge" ? "rgba(231,240,255,0.68)" : a.size === "large" ? "rgba(231,240,255,0.74)" : a.size === "med" ? "rgba(231,240,255,0.80)" : "rgba(231,240,255,0.88)";
-        let color = a.attached ? "rgba(255,221,88,0.95)" : base;
-        if (pullFx > 0.01) {
-          const baseRgb = [231, 240, 255];
-          const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
-          const aAlpha = lerp(0.78, 0.98, pullFx);
-          color = rgbToRgba(mixed, aAlpha);
-        }
-        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
+        if (a.attached)
+          continue;
+        drawAsteroid(ctx, a, { tier, ship });
+      }
+      drawForcefieldRings(ctx);
+      for (const a of state.asteroids) {
+        if (!a.attached)
+          continue;
+        drawAsteroid(ctx, a, { tier, ship });
       }
       for (const g of state.gems) {
         const [rr, gg, bb] = gemRgb(g.kind);

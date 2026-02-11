@@ -260,3 +260,6 @@ Updates
   - Refactored burst “gravity waves” into a dedicated `effects` entity spawned at the forcefield surface (ring point) instead of being computed/rendered off each asteroid every frame.
   - Fixed direction mismatch: wavelets now orient along the *actual* launched asteroid velocity (accounts for ship velocity bias).
   - Wavelets are now stationary ripples just outside the ring (no longer moving with the rock), fading in only after the rock has clearly left the forcefield.
+- 2026-02-11 render ordering fix: forcefield + trapped rocks on top.
+  - Draw non-attached asteroids first, then the forcefield ring, then attached asteroids so trapped rocks/field always render in front of other asteroids.
+  - Visual validation via Chrome DevTools MCP (forced overlap case).
