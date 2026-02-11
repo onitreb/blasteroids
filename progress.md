@@ -263,3 +263,106 @@ Updates
 - 2026-02-11 render ordering fix: forcefield + trapped rocks on top.
   - Draw non-attached asteroids first, then the forcefield ring, then attached asteroids so trapped rocks/field always render in front of other asteroids.
   - Visual validation via Chrome DevTools MCP (forced overlap case).
+- 2026-02-11 gravity pull FX + medium-size growth pass:
+  - Increased medium-tier ship size and mass to strengthen true gameplay growth (`radius 57`, `mass 4320`), with large tier unchanged.
+  - Expanded attraction pull-intensity generation beyond small-tier-only visuals: any attractable, non-launched asteroid now gets pull intensity (`pullFx`) when inside attract radius.
+  - Updated pull-electricity rendering to scale tether count by asteroid size rank (independent of ship tier): `small=1`, `med=2`, `large=3`, `xlarge=4`, `xxlarge=5`.
+  - Kept tier-specific ring/tether colors unchanged (amber/cyan/red).
+  - Added deterministic tests:
+    - medium tier pulls nearby `med` asteroids (`pullFx > 0`),
+    - large tier pulls nearby `large` asteroids (`pullFx > 0`),
+    - non-attractable target remains `pullFx = 0`,
+    - size->tether count mapping assertions for small..xxlarge.
+  - Validation:
+    - `npm test`: `16 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+  - `file://` smoke (Chrome DevTools MCP): no console errors.
+    - Verified runtime tier radii after override: medium `57` (zoom `0.78`), large `112` (zoom `0.58`).
+    - Captured pull-FX screenshot with forced small/med/large pull cases: `/output/pullfx-lines-by-asteroid-size.png`.
+- 2026-02-11 fracture tuning tweak (medium rocks):
+  - Reduced medium-target fracture requirement slightly by adding a medium size multiplier in `fractureSpeedRequired` (`med: 1.00 -> 0.93`).
+  - Kept large/xlarge/xxlarge fracture multipliers unchanged.
+  - Validation:
+    - `npm test`: `17 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 visual color tweak (attached medium rocks):
+  - Updated attached asteroid color rule so attached `med` asteroids stay cyan/blue-green (`rgba(92,235,255,0.95)`) instead of switching to yellow.
+  - Kept attached color for non-medium asteroids unchanged.
+  - Validation:
+    - `npm test`: `17 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 ring-color consistency + pull readability pass:
+  - Attached asteroid color is now derived from current ship ring RGB (tier color), independent of asteroid size.
+    - Medium-tier ring -> attached rocks cyan.
+    - Large-tier ring -> attached rocks red.
+  - Pull tether readability now scales by ship tier (thickness/brightness/wobble/spread increase on medium/large) to compensate for zoom-out.
+  - Added render tests for:
+    - ring-color-derived attached color,
+    - tier-based pull visual scaling monotonicity.
+  - Validation:
+    - `npm test`: `19 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - `file://` visual checks captured:
+      - `/output/attached-med-on-medium-tier.png` (cyan attached med on medium tier),
+      - `/output/attached-med-on-large-tier.png` (red attached med on large tier).
+- 2026-02-11 fracture tuning tweak (xlarge rocks):
+  - Reduced xlarge-target fracture requirement by lowering size multiplier in `fractureSpeedRequired` (`xlarge: 0.90 -> 0.82`).
+  - Kept medium/large/xxlarge multipliers unchanged in this pass.
+  - Validation:
+    - `npm test`: `19 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 fracture tuning tweak (medium rocks, stronger):
+  - Further reduced medium-target fracture requirement by lowering medium size multiplier in `fractureSpeedRequired` (`med: 0.93 -> 0.75`).
+  - Kept large/xlarge/xxlarge multipliers unchanged in this pass.
+  - Validation:
+    - `npm test`: `19 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 fracture tuning tweak (medium rocks, much easier):
+  - Reduced medium-target fracture requirement again by lowering medium size multiplier in `fractureSpeedRequired` (`med: 0.75 -> 0.55`).
+  - Validation:
+    - `npm test`: `19 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 fracture + burst-force refactor pass (medium breakability):
+  - Refactored fracture size multipliers into `fractureSizeMultiplier(targetSize)` for clearer tuning by target size.
+  - Reduced medium-target fracture multiplier substantially (`med: 0.55 -> 0.35`) so medium rocks break much more easily.
+  - Added tier-scaled burst launch force via `SHIP_TIERS.*.burstForceScale` and `currentBurstSpeed()`:
+    - small `1.00x`, medium `1.38x`, large `1.85x`.
+  - `burstAttached()` now uses `currentBurstSpeed()` so larger ships launch attached rocks with proportionally more force.
+  - Added engine test `burst launch force scales up with ship tier` to prevent regressions.
+  - Validation:
+    - `npm test`: `20 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 medium-fracture bugfix pass (root-cause oriented):
+  - Identified a gameplay bug: launched asteroids were still subject to forcefield attraction/capture logic, which could suppress projectile effectiveness and cause recapture before meaningful impacts.
+  - Fixed projectile lifecycle:
+    - `tryAttachAsteroid(...)` now rejects `shipLaunched` asteroids.
+    - Attraction/ring-force application in `updateAsteroids(...)` now skips `shipLaunched` asteroids (launched rocks stay ballistic).
+  - Refined fracture model for medium-target reliability:
+    - Refactored size tuning into `fractureSizeMultiplier(targetSize)` and reduced medium target multiplier to `0.25`.
+    - Added `fractureImpactSpeed(projectile, relativeSpeed)` and use it in projectile-vs-target fracture checks so co-moving impacts still carry launched momentum (`max(relativeSpeed, projectileSpeed*0.55)`).
+  - Added/updated regression tests:
+    - `burst launch force scales up with ship tier`.
+    - `launched small can fracture co-moving medium target`.
+  - Validation:
+    - `npm test`: `21 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 medium-breakability diagnosis + fix follow-up:
+  - Found additional gating issue: medium projectiles had a high damage-speed gate (`medDamageSpeedMin=360`) before fracture checks, making many practical medium impacts non-damaging.
+  - Lowered medium damage-speed threshold to `240` so launched medium rocks count as damaging at realistic speeds.
+  - Added regression test: `launched medium fractures medium target at moderate speed`.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 strong breakability tuning pass (medium + large targets):
+  - Lowered projectile damage-speed gates:
+    - `medDamageSpeedMin: 240 -> 160`
+    - `largeDamageSpeedMin: 310 -> 190`
+  - Lowered fracture size multipliers:
+    - `med: 0.25 -> 0.18`
+    - `large: 0.85 -> 0.58`
+  - Increased carried-momentum contribution in fracture speed evaluation:
+    - `fractureImpactSpeed`: `projectileSpeed * 0.55 -> * 0.75`
+  - Added regression test: `launched medium fractures large target at moderate speed`.
+  - Validation:
+    - `npm test`: `23 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).

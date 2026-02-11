@@ -115,6 +115,7 @@ export const SHIP_TIERS = {
     scale: 1,
     radius: 14,
     mass: 260,
+    burstForceScale: 1,
     forcefieldScale: 1,
     attractScale: 1,
     ringRgb: [255, 221, 88],
@@ -126,8 +127,9 @@ export const SHIP_TIERS = {
     key: "medium",
     label: "Medium",
     scale: 2.7,
-    radius: 38,
-    mass: 1920,
+    radius: 57,
+    mass: 4320,
+    burstForceScale: 1.38,
     forcefieldScale: 1.28,
     attractScale: 1.2,
     ringRgb: [92, 235, 255],
@@ -141,6 +143,7 @@ export const SHIP_TIERS = {
     scale: 8,
     radius: 112,
     mass: 16640,
+    burstForceScale: 1.85,
     forcefieldScale: 1.62,
     attractScale: 1.42,
     ringRgb: [255, 112, 127],
@@ -334,8 +337,8 @@ export function createEngine({ width, height }) {
 
       // Damage model for fast smalls (velocity-based; no time limit).
       smallDamageSpeedMin: 420,
-      medDamageSpeedMin: 360,
-      largeDamageSpeedMin: 310,
+      medDamageSpeedMin: 160,
+      largeDamageSpeedMin: 190,
       xlargeDamageSpeedMin: 280,
       xxlargeDamageSpeedMin: 250,
 
@@ -398,6 +401,12 @@ export function createEngine({ width, height }) {
   function currentAttractRadius() {
     const tier = currentShipTier();
     return state.params.attractRadius * tier.attractScale;
+  }
+
+  function currentBurstSpeed() {
+    const tier = currentShipTier();
+    const scale = Math.max(0.2, Number(tier.burstForceScale) || 1);
+    return state.params.burstSpeed * scale;
   }
 
   function currentShipAttractSizes() {
@@ -922,15 +931,29 @@ export function createEngine({ width, height }) {
     return v >= asteroidDamageSpeedForSize(state.params, a.size);
   }
 
+  function fractureSizeMultiplier(targetSize) {
+    if (targetSize === "xxlarge") return 0.88;
+    if (targetSize === "xlarge") return 0.82;
+    if (targetSize === "large") return 0.58;
+    if (targetSize === "med") return 0.18;
+    return 1;
+  }
+
   function fractureSpeedRequired(projectile, target) {
     const projMass = Math.max(1, Number(projectile?.mass) || 1);
     const targetMass = Math.max(1, Number(target?.mass) || 1);
     const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
     const massRatio = Math.sqrt(targetMass / projMass);
-    const size = target?.size;
-    // Make large targets a bit easier to fracture so med→large breaks feel achievable at typical launch speeds.
-    const sizeMult = size === "xxlarge" ? 0.88 : size === "xlarge" ? 0.9 : size === "large" ? 0.85 : 1;
+    const sizeMult = fractureSizeMultiplier(target?.size);
     return base * massRatio * sizeMult;
+  }
+
+  function fractureImpactSpeed(projectile, relativeSpeed) {
+    const rel = Math.max(0, Number(relativeSpeed) || 0);
+    const projSpeed = Math.max(0, len(projectile?.vel || vec(0, 0)));
+    // Launched rocks should retain destructive momentum even against co-moving targets.
+    const carried = projSpeed * 0.75;
+    return Math.max(rel, carried);
   }
 
   function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
@@ -1108,7 +1131,7 @@ export function createEngine({ width, height }) {
   }
 
   function tryAttachAsteroid(a) {
-    if (!shipCanAttractSize(a.size) || a.attached) return false;
+    if (!shipCanAttractSize(a.size) || a.attached || a.shipLaunched) return false;
     const toShip = sub(a.pos, state.ship.pos);
     const d = len(toShip);
     const targetR = orbitRadiusForAsteroid(a);
@@ -1158,7 +1181,7 @@ export function createEngine({ width, height }) {
       a.shipLaunched = true;
       a.pos = orbitPosFor(a);
       const dir = norm(sub(a.pos, state.ship.pos));
-      const base = mul(dir, state.params.burstSpeed);
+      const base = mul(dir, currentBurstSpeed());
       a.vel = add(base, mul(shipV, 0.55));
       a.rotVel += (rng() * 2 - 1) * 1.8;
 
@@ -1317,7 +1340,6 @@ export function createEngine({ width, height }) {
 
   function updateAsteroids(dt) {
     const ship = state.ship;
-    const tier = currentShipTier();
     const attractRadius = currentAttractRadius();
     const forceFieldRadius = currentForceFieldRadius();
     const attractRadius2 = attractRadius * attractRadius;
@@ -1359,7 +1381,7 @@ export function createEngine({ width, height }) {
       const pullEaseOut = 1 - Math.exp(-dt * 6);
       let pullTarget = 0;
 
-      if (shipCanAttractSize(a.size)) {
+      if (shipCanAttractSize(a.size) && !a.shipLaunched) {
         const toShip = sub(ship.pos, a.pos);
         const d2 = len2(toShip);
         if (d2 < attractRadius2) {
@@ -1394,8 +1416,8 @@ export function createEngine({ width, height }) {
             a.vel = sub(a.vel, mul(dirIn, vRad * state.params.ringRadialDamp * captureFactor * dt));
           }
 
-          // Attraction visualization: start with small ship pulling small asteroids.
-          if (tier.key === "small" && a.size === "small") {
+          // Attraction visualization: show pull strength for any attractable, non-launched asteroid.
+          if (!a.shipLaunched) {
             const denom = Math.max(1, attractRadius - forceFieldRadius);
             pullTarget = clamp(1 - (d - forceFieldRadius) / denom, 0, 1);
             if (d < forceFieldRadius) pullTarget = 1;
@@ -1703,7 +1725,8 @@ export function createEngine({ width, height }) {
           }
 
           const requiredSpeed = fractureSpeedRequired(projectile, target);
-          if (asteroidCanBreakTarget(projectile.size, target.size) && relSpeed >= requiredSpeed) {
+          const impactEvalSpeed = fractureImpactSpeed(projectile, relSpeed);
+          if (asteroidCanBreakTarget(projectile.size, target.size) && impactEvalSpeed >= requiredSpeed) {
             const frags = fractureAsteroid(target, it.impactDir, relSpeed);
             if (frags) {
               toRemove.add(target.id);

@@ -1,5 +1,6 @@
 import { clamp, lerp, posMod } from "../util/math.js";
 import { angleOf } from "../util/angle.js";
+import { asteroidSizeRank } from "../util/asteroid.js";
 import { polygonHullRadius } from "../util/ship.js";
 import { add, len, mul, sub } from "../util/vec2.js";
 import { SHIP_TIERS } from "../engine/createEngine.js";
@@ -69,7 +70,16 @@ function randSigned(seed) {
   return (s / 0xffffffff) * 2 - 1;
 }
 
-function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
+function drawElectricTether(
+  ctx,
+  from,
+  to,
+  rgb,
+  intensity,
+  timeSec,
+  seedBase,
+  { thicknessScale = 1, alphaScale = 1, wobbleScale = 1 } = {},
+) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
@@ -78,7 +88,7 @@ function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
   const nx = -dy * inv;
   const ny = dx * inv;
   const segs = clamp(Math.round(dist / 22), 4, 12);
-  const amp = lerp(1.5, 9.0, intensity);
+  const amp = lerp(1.5, 9.0, intensity) * wobbleScale;
   const phase = timeSec * 18;
 
   ctx.save();
@@ -86,10 +96,10 @@ function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
   ctx.lineCap = "round";
 
   // Soft glow pass.
-  ctx.strokeStyle = rgbToRgba(rgb, lerp(0.02, 0.22, intensity));
-  ctx.lineWidth = lerp(2, 7, intensity);
+  ctx.strokeStyle = rgbToRgba(rgb, lerp(0.02, 0.22, intensity) * alphaScale);
+  ctx.lineWidth = lerp(2, 7, intensity) * thicknessScale;
   ctx.shadowColor = rgbToRgba(rgb, 0.95);
-  ctx.shadowBlur = lerp(4, 14, intensity);
+  ctx.shadowBlur = lerp(4, 14, intensity) * thicknessScale;
   ctx.beginPath();
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
@@ -111,8 +121,8 @@ function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
   ctx.shadowBlur = 0;
   ctx.setLineDash([8, 12]);
   ctx.lineDashOffset = -timeSec * lerp(40, 110, intensity);
-  ctx.strokeStyle = rgbToRgba(rgb, lerp(0.05, 0.9, intensity));
-  ctx.lineWidth = lerp(1, 2.5, intensity);
+  ctx.strokeStyle = rgbToRgba(rgb, lerp(0.05, 0.9, intensity) * alphaScale);
+  ctx.lineWidth = lerp(1, 2.5, intensity) * thicknessScale;
   ctx.stroke();
 
   ctx.restore();
@@ -121,6 +131,21 @@ function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
 function smoothstep(edge0, edge1, x) {
   const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
+}
+
+export function pullTetherLineCountForSize(size) {
+  // Keep one baseline line and scale up by asteroid size rank for readability.
+  return clamp(asteroidSizeRank(size) + 1, 1, 8);
+}
+
+export function pullFxVisualScaleForTier(tierKey) {
+  if (tierKey === "large") return { thickness: 1.45, alpha: 1.35, wobble: 1.2, spread: 1.35 };
+  if (tierKey === "medium") return { thickness: 1.22, alpha: 1.18, wobble: 1.1, spread: 1.15 };
+  return { thickness: 1, alpha: 1, wobble: 1, spread: 1 };
+}
+
+export function attachedAsteroidColorForTierRgb(ringRgb) {
+  return rgbToRgba(ringRgb, 0.95);
 }
 
 function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
@@ -267,25 +292,45 @@ export function createRenderer(engine) {
   }
 
   function drawAsteroid(ctx, a, { tier, ship }) {
-    const showPullFx =
-      state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
+    const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
+    const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
     const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
 
     if (pullFx > 0.01) {
+      const visScale = pullFxVisualScaleForTier(tier.key);
       const fieldR = currentForceFieldRadius();
       const outward = sub(a.pos, ship.pos);
       const outwardLen = Math.max(1e-6, len(outward));
       const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
       const seed = fnv1aSeed(a.id);
-      drawElectricTether(ctx, a.pos, ringPoint, tier.ringRgb, pullFx, state.time, seed);
+      const lineCount = pullTetherLineCountForSize(a.size);
+      const tether = sub(ringPoint, a.pos);
+      const tetherLen = Math.max(1e-6, len(tether));
+      const perp = { x: -tether.y / tetherLen, y: tether.x / tetherLen };
+      const lineSpread =
+        lineCount > 1 ? lerp(2.2, 3.6, Math.min(1, (lineCount - 2) / 4)) * visScale.spread : 0;
+      const half = (lineCount - 1) * 0.5;
+      for (let i = 0; i < lineCount; i++) {
+        const offset = (i - half) * lineSpread;
+        const from = add(a.pos, mul(perp, offset));
+        const to = add(ringPoint, mul(perp, offset));
+        const edgeT = half > 0 ? Math.abs(i - half) / half : 0;
+        const lineFx = pullFx * lerp(1, 0.84, edgeT);
+        drawElectricTether(ctx, from, to, tier.ringRgb, lineFx, state.time, seed + i * 1013, {
+          thicknessScale: visScale.thickness,
+          alphaScale: visScale.alpha,
+          wobbleScale: visScale.wobble,
+        });
+      }
 
       // Soft glow around the asteroid.
+      const stackScale = lineCount > 1 ? lerp(1, 0.7, Math.min(1, (lineCount - 1) / 4)) : 1;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx));
-      ctx.lineWidth = lerp(2, 7, pullFx);
+      ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx) * stackScale * visScale.alpha);
+      ctx.lineWidth = lerp(2, 7, pullFx) * stackScale * visScale.thickness;
       ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
-      ctx.shadowBlur = lerp(3, 14, pullFx);
+      ctx.shadowBlur = lerp(3, 14, pullFx) * stackScale * visScale.thickness;
       drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
       ctx.restore();
     }
@@ -300,7 +345,7 @@ export function createRenderer(engine) {
             : a.size === "med"
               ? "rgba(231,240,255,0.80)"
               : "rgba(231,240,255,0.88)";
-    let color = a.attached ? "rgba(255,221,88,0.95)" : base;
+    let color = a.attached ? attachedAsteroidColorForTierRgb(tier.ringRgb) : base;
     if (pullFx > 0.01) {
       const baseRgb = [231, 240, 255];
       const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);

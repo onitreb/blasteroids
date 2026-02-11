@@ -266,6 +266,7 @@
       scale: 1,
       radius: 14,
       mass: 260,
+      burstForceScale: 1,
       forcefieldScale: 1,
       attractScale: 1,
       ringRgb: [255, 221, 88],
@@ -277,8 +278,9 @@
       key: "medium",
       label: "Medium",
       scale: 2.7,
-      radius: 38,
-      mass: 1920,
+      radius: 57,
+      mass: 4320,
+      burstForceScale: 1.38,
       forcefieldScale: 1.28,
       attractScale: 1.2,
       ringRgb: [92, 235, 255],
@@ -292,6 +294,7 @@
       scale: 8,
       radius: 112,
       mass: 16640,
+      burstForceScale: 1.85,
       forcefieldScale: 1.62,
       attractScale: 1.42,
       ringRgb: [255, 112, 127],
@@ -487,8 +490,8 @@
         asteroidSpawnUrgentMaxSec: 0.12,
         // Damage model for fast smalls (velocity-based; no time limit).
         smallDamageSpeedMin: 420,
-        medDamageSpeedMin: 360,
-        largeDamageSpeedMin: 310,
+        medDamageSpeedMin: 160,
+        largeDamageSpeedMin: 190,
         xlargeDamageSpeedMin: 280,
         xxlargeDamageSpeedMin: 250,
         tier2UnlockGemScore: 500,
@@ -546,6 +549,11 @@
     function currentAttractRadius() {
       const tier = currentShipTier();
       return state.params.attractRadius * tier.attractScale;
+    }
+    function currentBurstSpeed() {
+      const tier = currentShipTier();
+      const scale = Math.max(0.2, Number(tier.burstForceScale) || 1);
+      return state.params.burstSpeed * scale;
     }
     function currentShipAttractSizes() {
       return currentShipTier().attractSizes;
@@ -1039,14 +1047,30 @@
       const v = Math.max(spd, impactSpeed);
       return v >= asteroidDamageSpeedForSize(state.params, a.size);
     }
+    function fractureSizeMultiplier(targetSize) {
+      if (targetSize === "xxlarge")
+        return 0.88;
+      if (targetSize === "xlarge")
+        return 0.82;
+      if (targetSize === "large")
+        return 0.58;
+      if (targetSize === "med")
+        return 0.18;
+      return 1;
+    }
     function fractureSpeedRequired(projectile, target) {
       const projMass = Math.max(1, Number(projectile?.mass) || 1);
       const targetMass = Math.max(1, Number(target?.mass) || 1);
       const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
       const massRatio = Math.sqrt(targetMass / projMass);
-      const size = target?.size;
-      const sizeMult = size === "xxlarge" ? 0.88 : size === "xlarge" ? 0.9 : size === "large" ? 0.85 : 1;
+      const sizeMult = fractureSizeMultiplier(target?.size);
       return base * massRatio * sizeMult;
+    }
+    function fractureImpactSpeed(projectile, relativeSpeed) {
+      const rel = Math.max(0, Number(relativeSpeed) || 0);
+      const projSpeed = Math.max(0, len(projectile?.vel || vec(0, 0)));
+      const carried = projSpeed * 0.75;
+      return Math.max(rel, carried);
     }
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       state.effects.push({
@@ -1220,7 +1244,7 @@
       return add(state.ship.pos, mul(angleToVec(wAngle), r));
     }
     function tryAttachAsteroid(a) {
-      if (!shipCanAttractSize(a.size) || a.attached)
+      if (!shipCanAttractSize(a.size) || a.attached || a.shipLaunched)
         return false;
       const toShip = sub(a.pos, state.ship.pos);
       const d = len(toShip);
@@ -1270,7 +1294,7 @@
         a.shipLaunched = true;
         a.pos = orbitPosFor(a);
         const dir = norm(sub(a.pos, state.ship.pos));
-        const base = mul(dir, state.params.burstSpeed);
+        const base = mul(dir, currentBurstSpeed());
         a.vel = add(base, mul(shipV, 0.55));
         a.rotVel += (rng() * 2 - 1) * 1.8;
         const shouldSpawnWavelets = stride === 1 || (attachedIndex + strideOffset) % stride === 0;
@@ -1413,7 +1437,6 @@
     }
     function updateAsteroids(dt) {
       const ship = state.ship;
-      const tier = currentShipTier();
       const attractRadius = currentAttractRadius();
       const forceFieldRadius = currentForceFieldRadius();
       const attractRadius2 = attractRadius * attractRadius;
@@ -1452,7 +1475,7 @@
         const pullEaseIn = 1 - Math.exp(-dt * 10);
         const pullEaseOut = 1 - Math.exp(-dt * 6);
         let pullTarget = 0;
-        if (shipCanAttractSize(a.size)) {
+        if (shipCanAttractSize(a.size) && !a.shipLaunched) {
           const toShip = sub(ship.pos, a.pos);
           const d2 = len2(toShip);
           if (d2 < attractRadius2) {
@@ -1478,7 +1501,7 @@
               const vRad = dot(a.vel, dirIn);
               a.vel = sub(a.vel, mul(dirIn, vRad * state.params.ringRadialDamp * captureFactor * dt));
             }
-            if (tier.key === "small" && a.size === "small") {
+            if (!a.shipLaunched) {
               const denom = Math.max(1, attractRadius - forceFieldRadius);
               pullTarget = clamp(1 - (d - forceFieldRadius) / denom, 0, 1);
               if (d < forceFieldRadius)
@@ -1779,7 +1802,8 @@
               continue;
             }
             const requiredSpeed = fractureSpeedRequired(projectile, target);
-            if (asteroidCanBreakTarget(projectile.size, target.size) && relSpeed >= requiredSpeed) {
+            const impactEvalSpeed = fractureImpactSpeed(projectile, relSpeed);
+            if (asteroidCanBreakTarget(projectile.size, target.size) && impactEvalSpeed >= requiredSpeed) {
               const frags = fractureAsteroid(target, it.impactDir, relSpeed);
               if (frags) {
                 toRemove.add(target.id);
@@ -2031,7 +2055,7 @@
     const s = xorshift32(seed);
     return s / 4294967295 * 2 - 1;
   }
-  function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase) {
+  function drawElectricTether(ctx, from, to, rgb, intensity, timeSec, seedBase, { thicknessScale = 1, alphaScale = 1, wobbleScale = 1 } = {}) {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -2041,15 +2065,15 @@
     const nx = -dy * inv;
     const ny = dx * inv;
     const segs = clamp(Math.round(dist / 22), 4, 12);
-    const amp = lerp(1.5, 9, intensity);
+    const amp = lerp(1.5, 9, intensity) * wobbleScale;
     const phase = timeSec * 18;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.lineCap = "round";
-    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.02, 0.22, intensity));
-    ctx.lineWidth = lerp(2, 7, intensity);
+    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.02, 0.22, intensity) * alphaScale);
+    ctx.lineWidth = lerp(2, 7, intensity) * thicknessScale;
     ctx.shadowColor = rgbToRgba(rgb, 0.95);
-    ctx.shadowBlur = lerp(4, 14, intensity);
+    ctx.shadowBlur = lerp(4, 14, intensity) * thicknessScale;
     ctx.beginPath();
     for (let i = 0; i <= segs; i++) {
       const t = i / segs;
@@ -2071,14 +2095,27 @@
     ctx.shadowBlur = 0;
     ctx.setLineDash([8, 12]);
     ctx.lineDashOffset = -timeSec * lerp(40, 110, intensity);
-    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.05, 0.9, intensity));
-    ctx.lineWidth = lerp(1, 2.5, intensity);
+    ctx.strokeStyle = rgbToRgba(rgb, lerp(0.05, 0.9, intensity) * alphaScale);
+    ctx.lineWidth = lerp(1, 2.5, intensity) * thicknessScale;
     ctx.stroke();
     ctx.restore();
   }
   function smoothstep(edge0, edge1, x) {
     const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
     return t * t * (3 - 2 * t);
+  }
+  function pullTetherLineCountForSize(size) {
+    return clamp(asteroidSizeRank(size) + 1, 1, 8);
+  }
+  function pullFxVisualScaleForTier(tierKey) {
+    if (tierKey === "large")
+      return { thickness: 1.45, alpha: 1.35, wobble: 1.2, spread: 1.35 };
+    if (tierKey === "medium")
+      return { thickness: 1.22, alpha: 1.18, wobble: 1.1, spread: 1.15 };
+    return { thickness: 1, alpha: 1, wobble: 1, spread: 1 };
+  }
+  function attachedAsteroidColorForTierRgb(ringRgb) {
+    return rgbToRgba(ringRgb, 0.95);
   }
   function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
     const ttl = Math.max(1e-6, Number(e.ttl) || 0.55);
@@ -2204,26 +2241,46 @@
       }
     }
     function drawAsteroid(ctx, a, { tier, ship }) {
-      const showPullFx = state.mode === "playing" && tier.key === "small" && a.size === "small" && !a.attached && !a.shipLaunched;
+      const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
+      const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
       const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
       if (pullFx > 0.01) {
+        const visScale = pullFxVisualScaleForTier(tier.key);
         const fieldR = currentForceFieldRadius();
         const outward = sub(a.pos, ship.pos);
         const outwardLen = Math.max(1e-6, len(outward));
         const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
         const seed = fnv1aSeed(a.id);
-        drawElectricTether(ctx, a.pos, ringPoint, tier.ringRgb, pullFx, state.time, seed);
+        const lineCount = pullTetherLineCountForSize(a.size);
+        const tether = sub(ringPoint, a.pos);
+        const tetherLen = Math.max(1e-6, len(tether));
+        const perp = { x: -tether.y / tetherLen, y: tether.x / tetherLen };
+        const lineSpread = lineCount > 1 ? lerp(2.2, 3.6, Math.min(1, (lineCount - 2) / 4)) * visScale.spread : 0;
+        const half = (lineCount - 1) * 0.5;
+        for (let i = 0; i < lineCount; i++) {
+          const offset = (i - half) * lineSpread;
+          const from = add(a.pos, mul(perp, offset));
+          const to = add(ringPoint, mul(perp, offset));
+          const edgeT = half > 0 ? Math.abs(i - half) / half : 0;
+          const lineFx = pullFx * lerp(1, 0.84, edgeT);
+          drawElectricTether(ctx, from, to, tier.ringRgb, lineFx, state.time, seed + i * 1013, {
+            thicknessScale: visScale.thickness,
+            alphaScale: visScale.alpha,
+            wobbleScale: visScale.wobble
+          });
+        }
+        const stackScale = lineCount > 1 ? lerp(1, 0.7, Math.min(1, (lineCount - 1) / 4)) : 1;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx));
-        ctx.lineWidth = lerp(2, 7, pullFx);
+        ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx) * stackScale * visScale.alpha);
+        ctx.lineWidth = lerp(2, 7, pullFx) * stackScale * visScale.thickness;
         ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
-        ctx.shadowBlur = lerp(3, 14, pullFx);
+        ctx.shadowBlur = lerp(3, 14, pullFx) * stackScale * visScale.thickness;
         drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
         ctx.restore();
       }
       const base = a.size === "xxlarge" ? "rgba(231,240,255,0.62)" : a.size === "xlarge" ? "rgba(231,240,255,0.68)" : a.size === "large" ? "rgba(231,240,255,0.74)" : a.size === "med" ? "rgba(231,240,255,0.80)" : "rgba(231,240,255,0.88)";
-      let color = a.attached ? "rgba(255,221,88,0.95)" : base;
+      let color = a.attached ? attachedAsteroidColorForTierRgb(tier.ringRgb) : base;
       if (pullFx > 0.01) {
         const baseRgb = [231, 240, 255];
         const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
