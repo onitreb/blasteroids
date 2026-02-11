@@ -138,9 +138,9 @@ export const SHIP_TIERS = {
   large: {
     key: "large",
     label: "Large",
-    scale: 4,
-    radius: 56,
-    mass: 4160,
+    scale: 8,
+    radius: 112,
+    mass: 16640,
     forcefieldScale: 1.62,
     attractScale: 1.42,
     ringRgb: [255, 112, 127],

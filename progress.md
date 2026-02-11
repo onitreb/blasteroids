@@ -184,3 +184,11 @@ Updates
   - Validation:
     - `npm test`: `11 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 tier-3 growth tuning pass (visual scale with camera unchanged):
+  - Increased large-tier ship size to appear 2x larger than the prior result by doubling tier-3 hull radius (`56 -> 112`).
+  - Scaled large-tier mass consistently with radius-area logic (`4160 -> 16640`).
+  - Kept tier camera zoom-out defaults unchanged (`tier2Zoom=0.78`, `tier3Zoom=0.58`).
+  - Synced docs for current hull-size defaults and growth scale notes.
+  - Validation:
+    - `npm test`: `11 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
