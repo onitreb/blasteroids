@@ -169,7 +169,7 @@ import { createUiBindings } from "./ui/createUiBindings.js";
     advanceTime,
     // Debug helpers for visual iteration (intentionally undocumented).
     getGame: () => game,
-    debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 } = {}) => {
+    debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 * 1.1 } = {}) => {
       const n = Math.max(1, Math.min(32, Math.floor(count)));
       const fieldR = game.getCurrentForceFieldRadius();
       const ship = game.state.ship;

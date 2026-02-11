@@ -138,8 +138,8 @@ function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
   const diry = Math.sin(angle);
 
   // Crowding guard: reduce detail and deterministically sample under extreme counts.
-  const many = waveletCrowd >= 18;
-  const extreme = waveletCrowd >= 30;
+  const many = waveletCrowd >= 12;
+  const extreme = waveletCrowd >= 22;
   if (extreme && (e.seed ?? 0) % 2 !== 0) return;
 
   // These live just outside the forcefield surface (anchored at e.x/e.y) and do NOT move with the asteroid.
@@ -150,14 +150,16 @@ function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
   const arcR = many ? 12 : 13;
   const bandStart = many ? 10 : 12;
   const distFade = smoothstep(0, 18, travelDist);
-  const aBase = (many ? 0.3 : 0.36) * baseFade * distFade;
+  const aBase = (many ? 0.28 : 0.34) * 1.1 * baseFade * distFade;
 
-  const rgb = Array.isArray(e.rgb) ? e.rgb : [255, 221, 88];
   const doGlow = !many;
+  const rgb = Array.isArray(e.rgb) ? e.rgb : [255, 221, 88];
+  const rr = rgb?.[0] ?? 255;
+  const gg = rgb?.[1] ?? 221;
+  const bb = rgb?.[2] ?? 88;
+  const strokeRgb = `rgb(${rr},${gg},${bb})`;
 
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.lineCap = "round";
+  ctx.strokeStyle = strokeRgb;
 
   for (let i = 0; i < waves; i++) {
     // Closest to the forcefield is brightest; fade out as it goes away from the ring.
@@ -176,24 +178,23 @@ function drawBurstWaveletsEffect(ctx, e, waveletCrowd) {
     const cy = e.y + diry * dist;
 
     if (doGlow) {
-      ctx.shadowColor = rgbToRgba(rgb, 0.9);
-      ctx.shadowBlur = 8;
-      ctx.strokeStyle = rgbToRgba(rgb, a * 0.28);
-      ctx.lineWidth = 4;
+      ctx.shadowColor = strokeRgb;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = a * 0.28;
+      ctx.lineWidth = 5;
       ctx.beginPath();
       ctx.arc(cx, cy, arcR, a0, a1);
       ctx.stroke();
     }
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = rgbToRgba(rgb, a);
-    ctx.lineWidth = 2.25;
+    ctx.globalAlpha = a;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(cx, cy, arcR, a0, a1);
     ctx.stroke();
   }
-
-  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function gemRgb(kind) {
@@ -568,12 +569,21 @@ export function createRenderer(engine) {
       if (e.kind === "wavelets") waveletCrowd++;
     }
 
-    // Effects (KISS explosions + burst wavelets).
-    for (const e of state.effects) {
-      if (e.kind === "wavelets") {
+    // Effects pass 1: burst wavelets (batch state changes once for perf).
+    if (waveletCrowd > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      for (const e of state.effects) {
+        if (e.kind !== "wavelets") continue;
         drawBurstWaveletsEffect(ctx, e, waveletCrowd);
-        continue;
       }
+      ctx.restore();
+    }
+
+    // Effects pass 2: KISS explosions.
+    for (const e of state.effects) {
+      if (e.kind === "wavelets") continue;
       const t = clamp(e.t / e.ttl, 0, 1);
       const r = lerp(e.r0, e.r1, t);
       const alpha = (1 - t) * 0.9;

@@ -946,7 +946,7 @@ export function createEngine({ width, height }) {
     });
   }
 
-  function spawnBurstWavelets({ pos, angle, speed, rgb = [255, 221, 88] }) {
+  function spawnBurstWavelets({ pos, angle, speed, ttl = 0.55 * 1.1, rgb = [255, 221, 88] }) {
     state.effects.push({
       kind: "wavelets",
       x: pos.x,
@@ -954,7 +954,7 @@ export function createEngine({ width, height }) {
       angle,
       speed,
       t: 0,
-      ttl: 0.55,
+      ttl,
       rgb,
       seed: Math.floor(rng() * 1e9),
     });
@@ -1138,7 +1138,19 @@ export function createEngine({ width, height }) {
       ttl: 0.18,
     });
 
+    let attachedCount = 0;
+    for (const a of state.asteroids) {
+      if (a.attached) attachedCount++;
+    }
+
+    // Perf guard: when many rocks burst at once, spawn wavelets for a bounded subset.
+    const maxWavelets = 14;
+    const stride = attachedCount > 0 ? Math.max(1, Math.ceil(attachedCount / maxWavelets)) : 1;
+    const strideOffset = stride > 1 ? Math.floor(rng() * stride) : 0;
+    const waveletTtl = attachedCount >= 16 ? 0.42 * 1.1 : 0.55 * 1.1;
+
     const shipV = state.ship.vel;
+    let attachedIndex = 0;
     for (const a of state.asteroids) {
       if (!a.attached) continue;
       a.attached = false;
@@ -1151,11 +1163,15 @@ export function createEngine({ width, height }) {
 
       // Burst wavelets are anchored at the forcefield surface and oriented along the *actual* launch direction.
       // This keeps the effect aligned even when the ship's velocity biases the outbound trajectory.
-      const vDir = len(a.vel) > 1e-6 ? norm(a.vel) : dir;
-      const ringP = add(state.ship.pos, mul(vDir, fieldR));
-      const ang = angleOf(vDir);
-      const spd = len(a.vel);
-      spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, rgb: [255, 221, 88] });
+      const shouldSpawnWavelets = stride === 1 || (attachedIndex + strideOffset) % stride === 0;
+      if (shouldSpawnWavelets) {
+        const vDir = len(a.vel) > 1e-6 ? norm(a.vel) : dir;
+        const ringP = add(state.ship.pos, mul(vDir, fieldR));
+        const ang = angleOf(vDir);
+        const spd = len(a.vel);
+        spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, ttl: waveletTtl, rgb: [255, 221, 88] });
+      }
+      attachedIndex++;
     }
   }
 
