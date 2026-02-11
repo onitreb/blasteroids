@@ -210,11 +210,14 @@ Updates
   - Validation:
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
-    - `file://` smoke: pending (Chrome DevTools MCP transport was closed in this session; rerun per `RUNBOOK.md`).
+    - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
+      - Start; movement (W); burst (Space); restart (R); fullscreen (F).
+      - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open while drifting).
+      - Hooks verified: `window.Blasteroids.*` and legacy aliases callable; deterministic stepping works via `advanceTime(ms)`.
 - 2026-02-11 UX + optional sound pass:
   - Game over overlay is now centered and includes explicit restart instructions (Press R / click).
   - Added optional simple SFX toggle in debug menu (WebAudio; default off; persisted via localStorage).
   - Validation:
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
-    - `file://` smoke: pending (Chrome DevTools MCP tool returned `Transport closed` in this session; rerun per `RUNBOOK.md`).
+    - `file://` smoke (Chrome DevTools MCP): passed with no console errors (including toggling Sound).
