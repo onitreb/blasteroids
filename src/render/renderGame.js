@@ -28,6 +28,119 @@ function drawPolyline(ctx, pts, x, y, angle, color, lineWidth = 2, fillColor = n
   ctx.restore();
 }
 
+function drawThrusterJets(ctx, engines, { tierKey = "small", exhaustSign = -1, t = 0 } = {}) {
+  if (!Array.isArray(engines) || engines.length === 0) return;
+  const size = tierKey === "large" ? 1.6 : tierKey === "medium" ? 1.25 : 1;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  // 'butt' avoids little circular caps at the nozzle (ship geometry already shows the ports).
+  ctx.lineCap = "butt";
+
+  for (const e of engines) {
+    const sx = Number(e.x) || 0;
+    const sy = Number(e.y) || 0;
+    const baseLen = Math.max(6, Number(e.len) || 14);
+    const flicker =
+      0.78 + 0.22 * Math.sin(t * 28 + sy * 0.35) + 0.12 * Math.sin(t * 61 + sx * 0.09) + 0.06 * Math.sin(t * 97);
+    const len = baseLen * (1.05 + flicker * 0.75) * size;
+    // Start the flame slightly behind the hull so we don't get a bright blob on the ship outline.
+    const nozzle = 1.8 * size;
+    const nx = sx + exhaustSign * nozzle;
+    const ex = nx + exhaustSign * len;
+    const jetSign = sy >= 0 ? 1 : -1;
+    const aim = (1.0 + 0.55 * Math.sin(t * 13 + sy * 0.2) + 0.25 * Math.sin(t * 7.5 + sx * 0.08)) * size;
+    const ey = sy + jetSign * aim;
+
+    // Outer glow (soft + wide).
+    const g0 = ctx.createLinearGradient(nx, sy, ex, ey);
+    // "Hot rocket" palette: white/yellow core with orange/red envelope.
+    g0.addColorStop(0, "rgba(255,248,220,0.08)");
+    g0.addColorStop(0.12, "rgba(255,210,145,0.12)");
+    g0.addColorStop(0.30, "rgba(255,135,70,0.15)");
+    g0.addColorStop(0.60, "rgba(255,75,35,0.11)");
+    g0.addColorStop(1, "rgba(160,30,15,0)");
+    ctx.strokeStyle = g0;
+    ctx.lineWidth = 7.4 * size;
+    ctx.shadowColor = "rgba(255,120,70,0.96)";
+    ctx.shadowBlur = 22 * size;
+    for (let i = 0; i < 4; i++) {
+      const wobSign = i % 2 === 0 ? 1 : -1;
+      const wobPhase = t * (15 + i * 2.8) + sy * 0.7 + i * 0.9;
+      const wob = wobSign * (0.7 + 0.95 * Math.sin(wobPhase)) * size;
+      const bend = (0.2 + 0.25 * Math.sin(t * 9.5 + i * 1.7 + sx * 0.04)) * size;
+      ctx.beginPath();
+      ctx.moveTo(nx, sy);
+      ctx.quadraticCurveTo(nx + exhaustSign * len * 0.42, sy + wob * 0.25, ex, ey + wob + bend);
+      ctx.stroke();
+    }
+
+    // Mid flame (hot orange).
+    const g1 = ctx.createLinearGradient(nx, sy, ex, ey);
+    g1.addColorStop(0, "rgba(255,255,245,0.24)");
+    g1.addColorStop(0.14, "rgba(255,235,185,0.28)");
+    g1.addColorStop(0.30, "rgba(255,170,95,0.25)");
+    g1.addColorStop(0.62, "rgba(255,105,55,0.18)");
+    g1.addColorStop(1, "rgba(255,70,30,0)");
+    ctx.strokeStyle = g1;
+    ctx.lineWidth = 4.1 * size;
+    ctx.shadowBlur = 14 * size;
+    ctx.beginPath();
+    ctx.moveTo(nx, sy);
+    ctx.quadraticCurveTo(
+      nx + exhaustSign * len * 0.50,
+      sy,
+      ex,
+      ey + Math.sin(t * 22 + sy * 0.5) * 0.8 * size,
+    );
+    ctx.stroke();
+
+    // Bright core (white-ish).
+    const g2 = ctx.createLinearGradient(nx, sy, ex, ey);
+    // Tiny hint of blue at the nozzle reads as "very hot", but the jet should stay mostly warm.
+    g2.addColorStop(0, "rgba(210,245,255,0.20)");
+    g2.addColorStop(0.10, "rgba(255,255,255,0.52)");
+    g2.addColorStop(0.26, "rgba(255,250,225,0.30)");
+    g2.addColorStop(1, "rgba(255,205,130,0)");
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = g2;
+    ctx.lineWidth = 1.7 * size;
+    ctx.beginPath();
+    ctx.moveTo(nx, sy);
+    ctx.lineTo(nx + exhaustSign * len * 0.78, sy);
+    ctx.stroke();
+
+    // Shock diamonds (tiny bright plates) to give the exhaust some structure.
+    ctx.fillStyle = "rgba(255,240,205,0.24)";
+    const diamonds = tierKey === "large" ? 4 : 3;
+    for (let i = 0; i < diamonds; i++) {
+      const u = (0.18 + i * 0.16) * len;
+      const wob = Math.sin(t * (18 + i * 6) + sy * 0.4) * 0.5 * size;
+      const px = nx + exhaustSign * u;
+      const py = sy + wob;
+      const ww = (3.8 - i * 0.55) * size;
+      const hh = (1.8 - i * 0.25) * size;
+      ctx.fillRect(px - ww * 0.5, py - hh * 0.5, ww, hh);
+    }
+
+    // Tiny heat streaks (no circles) near the tail of the flame.
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,230,180,0.30)";
+    ctx.lineWidth = 1.1 * size;
+    for (let i = 0; i < 5; i++) {
+      const tt = (0.52 + 0.42 * Math.sin(t * (26 + i * 7) + sx * 0.02 + sy * 0.17 + i * 0.7)) * len;
+      const px = nx + exhaustSign * tt;
+      const side = i % 2 === 0 ? 1 : -1;
+      const py = sy + side * (0.8 + 1.9 * Math.sin(t * 10 + sy * 0.3 + i * 0.3)) * size;
+      const streak = (2.4 + 2.8 * Math.sin(t * 16 + i * 0.9 + sy * 0.2)) * size;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + exhaustSign * streak, py);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 function rgbToRgba(rgb, a) {
   const r = rgb?.[0] ?? 255;
   const g = rgb?.[1] ?? 255;
@@ -379,18 +492,14 @@ export function createRenderer(engine) {
       const explicitHullRadius = Number(renderer.hullRadius);
       const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
       drawScale = baseScale * autoScale;
+      const mirrorX = renderer.mirrorX === true;
+      const exhaustSign = mirrorX ? 1 : -1;
       ctx.save();
       ctx.scale(drawScale, drawScale);
+      if (mirrorX) ctx.scale(-1, 1);
       ctx.stroke(path);
       if (thrusting) {
-        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-        for (const e of engines) {
-          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x - flameLen, e.y);
-          ctx.stroke();
-        }
+        drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign, t: state.time });
       }
       ctx.restore();
     } else {
@@ -408,14 +517,7 @@ export function createRenderer(engine) {
       ctx.closePath();
       ctx.stroke();
       if (thrusting) {
-        ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-        for (const e of engines) {
-          const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x - flameLen, e.y);
-          ctx.stroke();
-        }
+        drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
       }
       ctx.restore();
     }

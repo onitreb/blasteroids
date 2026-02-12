@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createEngine } from "../src/engine/createEngine.js";
-import { asteroidMassForRadius, asteroidRadiusForSize } from "../src/util/asteroid.js";
+import { asteroidMassForRadius, asteroidRadiusForSize, asteroidSizeRank } from "../src/util/asteroid.js";
 
 function runDeterministicScenario(engine) {
   engine.startGame();
@@ -170,12 +170,9 @@ test("burst launch force scales up with ship tier", () => {
   assert.ok(largeLaunch > mediumLaunch, "expected large tier burst speed > medium tier");
 });
 
-test("launched small can fracture co-moving medium target", () => {
+test("ambient collision can fracture medium targets", () => {
   const engine = createEngine({ width: 1280, height: 720 });
   engine.startGame();
-  engine.state.settings.tierOverrideEnabled = true;
-  engine.state.settings.tierOverrideIndex = 2;
-  engine.refreshProgression({ animateZoom: false });
   engine.state.ship.pos = { x: -1000, y: 0 };
   engine.state.ship.vel = { x: 0, y: 0 };
   const p = engine.state.params;
@@ -200,94 +197,65 @@ test("launched small can fracture co-moving medium target", () => {
     };
   };
 
-  // Co-moving overlap: low relative speed but high launched projectile speed.
-  const projectile = mk("proj-small", "small", 0, 0, 520, 0, true);
-  const target = mk("target-med", "med", 26, 0, 490, 0, false);
-  engine.state.asteroids = [projectile, target];
-
-  engine.update(1 / 60);
-  const mediumCount = engine.state.asteroids.filter((a) => a.size === "med").length;
-  assert.equal(mediumCount, 0, "expected medium target to fracture under co-moving launched impact");
-});
-
-test("launched medium fractures medium target at moderate speed", () => {
-  const engine = createEngine({ width: 1280, height: 720 });
-  engine.startGame();
-  engine.state.settings.tierOverrideEnabled = true;
-  engine.state.settings.tierOverrideIndex = 2;
-  engine.refreshProgression({ animateZoom: false });
-  engine.state.ship.pos = { x: -1000, y: 0 };
-  engine.state.ship.vel = { x: 0, y: 0 };
-  const p = engine.state.params;
-  const mk = (id, size, x, y, vx, vy, launched) => {
-    const radius = asteroidRadiusForSize(p, size);
-    return {
-      id,
-      size,
-      pos: { x, y },
-      vel: { x: vx, y: vy },
-      radius,
-      mass: asteroidMassForRadius(radius),
-      rot: 0,
-      rotVel: 0,
-      shape: [{ a: 0, r: radius }],
-      attached: false,
-      shipLaunched: launched,
-      orbitA: 0,
-      fractureCooldownT: 0,
-      hitFxT: 0,
-      pullFx: 0,
-    };
-  };
-
-  const projectile = mk("proj-med", "med", 0, 0, 300, 0, true);
+  const projectile = mk("proj-med", "med", 0, 0, 320, 0, false);
   const target = mk("target-med", "med", 52, 0, 0, 0, false);
   engine.state.asteroids = [projectile, target];
 
   engine.update(1 / 60);
   const mediumCount = engine.state.asteroids.filter((a) => a.size === "med").length;
-  assert.equal(mediumCount, 1, "expected one medium (projectile) remaining after target fractures into smalls");
-  const smallCount = engine.state.asteroids.filter((a) => a.size === "small").length;
-  assert.ok(smallCount >= 2, "expected medium target to fracture into small asteroids");
+  assert.equal(mediumCount, 1, "expected one medium to fracture under high-energy ambient impact");
+  assert.ok(engine.state.gems.length >= 2, "expected fractured medium to spawn gems");
 });
 
-test("launched medium fractures large target at moderate speed", () => {
+test("ship-launched impact boost enables fractures below ambient threshold", () => {
   const engine = createEngine({ width: 1280, height: 720 });
   engine.startGame();
-  engine.state.settings.tierOverrideEnabled = true;
-  engine.state.settings.tierOverrideIndex = 2;
-  engine.refreshProgression({ animateZoom: false });
-  engine.state.ship.pos = { x: -1000, y: 0 };
-  engine.state.ship.vel = { x: 0, y: 0 };
   const p = engine.state.params;
-  const mk = (id, size, x, y, vx, vy, launched) => {
-    const radius = asteroidRadiusForSize(p, size);
-    return {
-      id,
-      size,
-      pos: { x, y },
-      vel: { x: vx, y: vy },
-      radius,
-      mass: asteroidMassForRadius(radius),
-      rot: 0,
-      rotVel: 0,
-      shape: [{ a: 0, r: radius }],
-      attached: false,
-      shipLaunched: launched,
-      orbitA: 0,
-      fractureCooldownT: 0,
-      hitFxT: 0,
-      pullFx: 0,
+  const projRadius = asteroidRadiusForSize(p, "small");
+  const targetRadius = asteroidRadiusForSize(p, "med");
+  const projMass = asteroidMassForRadius(projRadius);
+  const targetMass = asteroidMassForRadius(targetRadius);
+  const sizeBias = 1 + asteroidSizeRank("med") * 0.12;
+  const thresholdEnergy = 0.25 * targetMass * (p.fractureImpactSpeed * sizeBias) ** 2;
+  const mu = (projMass * targetMass) / (projMass + targetMass);
+  const relSpeed = Math.sqrt((2 * thresholdEnergy) / (mu * p.projectileImpactScale)) * 1.02;
+
+  const runScenario = (shipLaunched) => {
+    const sim = createEngine({ width: 1280, height: 720 });
+    sim.startGame();
+    sim.state.ship.pos = { x: -1000, y: 0 };
+    sim.state.ship.vel = { x: 0, y: 0 };
+    const mk = (id, size, x, y, vx, vy, launched) => {
+      const radius = asteroidRadiusForSize(sim.state.params, size);
+      return {
+        id,
+        size,
+        pos: { x, y },
+        vel: { x: vx, y: vy },
+        radius,
+        mass: asteroidMassForRadius(radius),
+        rot: 0,
+        rotVel: 0,
+        shape: [{ a: 0, r: radius }],
+        attached: false,
+        shipLaunched: launched,
+        orbitA: 0,
+        fractureCooldownT: 0,
+        hitFxT: 0,
+        pullFx: 0,
+      };
     };
+
+    const projectile = mk("proj-small", "small", 0, 0, relSpeed, 0, shipLaunched);
+    const target = mk("target-med", "med", 40, 0, 0, 0, false);
+    sim.state.asteroids = [projectile, target];
+
+    sim.update(1 / 60);
+    return sim.state.asteroids.filter((a) => a.size === "med").length;
   };
 
-  const projectile = mk("proj-med", "med", 0, 0, 420, 0, true);
-  const target = mk("target-large", "large", 80, 0, 0, 0, false);
-  engine.state.asteroids = [projectile, target];
-
-  engine.update(1 / 60);
-  const largeCount = engine.state.asteroids.filter((a) => a.size === "large").length;
-  assert.equal(largeCount, 0, "expected large target to fracture under moderate launched-medium impact");
-  const mediumCount = engine.state.asteroids.filter((a) => a.size === "med").length;
-  assert.ok(mediumCount >= 2, "expected large target to fracture into medium asteroids");
+  const medLeftLaunched = runScenario(true);
+  const medLeftAmbient = runScenario(false);
+  assert.equal(medLeftLaunched, 0, "expected launched small to fracture medium target");
+  assert.equal(medLeftAmbient, 1, "expected ambient small to fail at the same relative speed");
 });

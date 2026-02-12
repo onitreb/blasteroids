@@ -115,13 +115,6 @@
   function sizeSetHas(sizeSet, size) {
     return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
   }
-  function asteroidCanBreakTarget(projectileSize, targetSize) {
-    const projectileRank = ASTEROID_SIZE_INDEX[projectileSize];
-    const targetRank = ASTEROID_SIZE_INDEX[targetSize];
-    if (!Number.isFinite(projectileRank) || !Number.isFinite(targetRank))
-      return false;
-    return targetRank <= projectileRank + 1;
-  }
   function asteroidRadiusForSize(params, size) {
     if (size === "xxlarge")
       return params.xxlargeRadius;
@@ -147,17 +140,6 @@
       return Math.max(0, params.medCount);
     return Math.max(0, params.smallCount);
   }
-  function asteroidDamageSpeedForSize(params, size) {
-    if (size === "xxlarge")
-      return params.xxlargeDamageSpeedMin;
-    if (size === "xlarge")
-      return params.xlargeDamageSpeedMin;
-    if (size === "large")
-      return params.largeDamageSpeedMin;
-    if (size === "med")
-      return params.medDamageSpeedMin;
-    return params.smallDamageSpeedMin;
-  }
 
   // src/util/ship.js
   function polygonHullRadius(points) {
@@ -171,6 +153,45 @@
     }
     return Math.sqrt(max2);
   }
+
+  // src/engine/shipPresetDefaults.js
+  var DEFAULT_SHIP_SVGS = {
+    "small": {
+      "id": "fighter_needle",
+      "path": "M 19 0 L 7 -5 L -10 -4 L -16 0 L -10 4 L 7 5 Z M -9 -2 L -12 0 L -9 2",
+      "hullRadius": 19,
+      "svgScale": 1,
+      "mirrorX": false,
+      "engines": null
+    },
+    "medium": {
+      "id": "gunship_hammer",
+      "path": "M 19.066 28.876 C 16.265 29.186 13.507 29.497 10.747 29.793 C 10.521 29.817 10.273 29.768 10.053 29.695 C 2.238 27.095 -5.575 24.486 -13.392 21.891 C -13.762 21.769 -14.169 21.705 -14.559 21.704 C -22.344 21.693 -30.129 21.698 -37.914 21.687 C -38.166 21.687 -38.456 21.611 -38.663 21.473 C -43.876 18.011 -49.081 14.538 -54.281 11.056 C -54.493 10.915 -54.692 10.700 -54.806 10.474 C -56.493 7.129 -58.162 3.775 -59.848 0.431 C -60 0.129 -59.991 -0.098 -59.841 -0.397 C -58.150 -3.761 -56.477 -7.134 -54.787 -10.498 C -54.679 -10.712 -54.492 -10.915 -54.292 -11.048 C -49.104 -14.519 -43.911 -17.982 -38.710 -21.433 C -38.489 -21.579 -38.183 -21.665 -37.917 -21.665 C -30.116 -21.677 -22.315 -21.673 -14.514 -21.682 C -14.189 -21.682 -13.851 -21.742 -13.542 -21.844 C -5.683 -24.454 2.171 -27.075 10.029 -29.686 C 10.277 -29.768 10.561 -29.817 10.818 -29.789 C 18.667 -28.925 26.516 -28.046 34.365 -27.182 C 34.730 -27.142 34.964 -27.009 35.171 -26.711 C 37.061 -23.992 38.960 -21.280 40.869 -18.575 C 40.980 -18.418 41.201 -18.237 41.371 -18.238 C 43.256 -18.239 45.140 -18.283 47.024 -18.300 C 51.242 -18.337 55.460 -18.366 59.677 -18.397 C 59.770 -18.398 59.862 -18.398 60 -18.398 C 60 -14.925 60 -11.478 60 -7.972 C 56.913 -6.904 53.780 -5.820 50.571 -4.709 C 51.030 -4.046 51.465 -3.410 51.907 -2.778 C 52.490 -1.943 53.072 -1.108 53.666 -0.280 C 53.816 -0.070 53.819 0.063 53.653 0.296 C 52.279 2.227 50.929 4.177 49.529 6.182 C 52.961 7.370 56.353 8.544 59.748 9.719 C 59.748 13.195 59.748 16.657 59.748 20.145 C 58.626 20.145 57.528 20.154 56.430 20.143 C 54.482 20.124 52.534 20.087 50.586 20.067 C 47.184 20.031 43.781 20.004 40.379 19.966 C 40.062 19.963 39.843 20.006 39.630 20.315 C 38.132 22.494 36.604 24.652 35.068 26.804 C 34.951 26.969 34.714 27.122 34.517 27.145 C 30.588 27.601 26.657 28.038 22.725 28.477 C 21.520 28.612 20.315 28.742 19.066 28.876 M -45.799 8.602 C -47.308 7.531 -48.275 6.098 -48.908 4.423 C -49.971 1.612 -50.048 -1.243 -49.165 -4.105 C -48.536 -6.145 -47.470 -7.909 -45.638 -9.118 C -43.491 -10.534 -40.743 -10.244 -38.881 -8.469 C -36.669 -6.361 -35.779 -3.707 -35.642 -0.753 C -35.511 2.046 -36.150 4.664 -37.856 6.931 C -39.098 8.582 -40.702 9.653 -42.873 9.610 C -43.943 9.589 -44.889 9.194 -45.799 8.602 z M 21.310 1.930 C 21.310 0.369 21.310 -1.146 21.310 -2.688 C 26.746 -2.688 32.140 -2.688 37.560 -2.688 C 37.560 -0.902 37.560 0.877 37.560 2.681 C 32.154 2.681 26.760 2.681 21.310 2.681 C 21.310 2.444 21.310 2.211 21.310 1.930 z",
+      "hullRadius": 60,
+      "svgScale": 1,
+      "mirrorX": true,
+      "engines": [
+        {
+          "x": 60.3,
+          "y": -13.25,
+          "len": 18
+        },
+        {
+          "x": 60.3,
+          "y": 14.95,
+          "len": 18
+        }
+      ]
+    },
+    "large": {
+      "id": "carrier_bulwark",
+      "path": "M 46 0 L 32 -20 L 14 -22 L -4 -16 L -22 -16 L -34 -8 L -38 0 L -34 8 L -22 16 L -4 16 L 14 22 L 32 20 Z M 22 -2 L 34 -2 L 34 2 L 22 2",
+      "hullRadius": 46,
+      "svgScale": 1,
+      "mirrorX": false,
+      "engines": null
+    }
+  };
 
   // src/engine/createEngine.js
   function makeAsteroidShape(rng, radius, verts = 10) {
@@ -205,6 +226,7 @@
     xlarge: 0.38,
     xxlarge: 0.25
   };
+  var FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
   var DEFAULT_SHIP_RENDERERS = {
     small: {
       type: "polygon",
@@ -259,20 +281,39 @@
       engines: Array.isArray(renderer.engines) ? renderer.engines.map((e) => ({ x: e.x, y: e.y, len: e.len })) : void 0
     };
   }
+  function makeSvgShipRenderer({ path, hullRadius, svgScale = 1, mirrorX = false, engines = [] }) {
+    const hullR = Number(hullRadius);
+    const scale = Number(svgScale);
+    const mx = mirrorX === true;
+    return {
+      type: "svg",
+      path,
+      svgScale: Number.isFinite(scale) ? scale : 1,
+      hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : void 0,
+      mirrorX: mx ? true : void 0,
+      engines: Array.isArray(engines) ? engines.map((e) => ({ x: e.x, y: e.y, len: e.len })) : []
+    };
+  }
   var SHIP_TIERS = {
     small: {
       key: "small",
       label: "Small",
       scale: 1,
-      radius: 14,
-      mass: 260,
+      radius: 28,
+      mass: 1040,
       burstForceScale: 1,
       forcefieldScale: 1,
       attractScale: 1,
       ringRgb: [255, 221, 88],
       ringColor: "rgba(255,221,88,0.40)",
       attractSizes: ["small"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.small)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.small.path,
+        hullRadius: DEFAULT_SHIP_SVGS.small.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.small.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.small.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.small.engines) ? DEFAULT_SHIP_SVGS.small.engines : DEFAULT_SHIP_RENDERERS.small.engines
+      })
     },
     medium: {
       key: "medium",
@@ -286,7 +327,13 @@
       ringRgb: [92, 235, 255],
       ringColor: "rgba(92,235,255,0.42)",
       attractSizes: ["small", "med"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.medium)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.medium.path,
+        hullRadius: DEFAULT_SHIP_SVGS.medium.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.medium.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.medium.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.medium.engines) ? DEFAULT_SHIP_SVGS.medium.engines : DEFAULT_SHIP_RENDERERS.medium.engines
+      })
     },
     large: {
       key: "large",
@@ -300,7 +347,13 @@
       ringRgb: [255, 112, 127],
       ringColor: "rgba(255,112,127,0.42)",
       attractSizes: ["small", "med", "large"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.large)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.large.path,
+        hullRadius: DEFAULT_SHIP_SVGS.large.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.large.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.large.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.large.engines) ? DEFAULT_SHIP_SVGS.large.engines : DEFAULT_SHIP_RENDERERS.large.engines
+      })
     }
   };
   var SHIP_TIER_ORDER = ["small", "medium", "large"];
@@ -319,10 +372,10 @@
     const tier = shipTierByKey(tierKey);
     const renderer = tier.renderer || {};
     if (renderer.type === "svg") {
-      const hullR = Number(renderer.hullRadius);
       const svgScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+      const hullR = Number(renderer.hullRadius);
       if (Number.isFinite(hullR) && hullR > 0)
-        return Math.max(tier.radius, hullR * svgScale);
+        return Math.max(tier.radius, tier.radius * svgScale);
     }
     const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
     const baseR = polygonHullRadius(points);
@@ -481,6 +534,7 @@
         smallCount: 22,
         restitution: 0.92,
         fractureImpactSpeed: 260,
+        projectileImpactScale: 1.35,
         maxAsteroids: 4e3,
         asteroidWorldDensityScale: 0.32,
         asteroidSpawnRateScale: 1,
@@ -488,12 +542,6 @@
         asteroidSpawnMaxSec: 0.45,
         asteroidSpawnUrgentMinSec: 0.05,
         asteroidSpawnUrgentMaxSec: 0.12,
-        // Damage model for fast smalls (velocity-based; no time limit).
-        smallDamageSpeedMin: 420,
-        medDamageSpeedMin: 160,
-        largeDamageSpeedMin: 190,
-        xlargeDamageSpeedMin: 280,
-        xxlargeDamageSpeedMin: 250,
         tier2UnlockGemScore: 500,
         tier3UnlockGemScore: 1e3,
         tier1Zoom: 1,
@@ -1040,37 +1088,37 @@
         state.ship.vel = add(state.ship.vel, mul(pushDir, 170));
       }
     }
-    function isDamagingProjectile(a, impactSpeed) {
-      if (!a?.shipLaunched)
-        return false;
-      const spd = len(a.vel);
-      const v = Math.max(spd, impactSpeed);
-      return v >= asteroidDamageSpeedForSize(state.params, a.size);
+    function reducedMass(aMass, bMass) {
+      const a = Math.max(1, Number(aMass) || 1);
+      const b = Math.max(1, Number(bMass) || 1);
+      return a * b / (a + b);
     }
-    function fractureSizeMultiplier(targetSize) {
-      if (targetSize === "xxlarge")
-        return 0.88;
-      if (targetSize === "xlarge")
-        return 0.82;
-      if (targetSize === "large")
-        return 0.58;
-      if (targetSize === "med")
-        return 0.18;
-      return 1;
+    function fractureSizeBias(targetSize) {
+      const rank = asteroidSizeRank(targetSize);
+      return 1 + rank * FRACTURE_SIZE_BIAS_PER_RANK;
     }
-    function fractureSpeedRequired(projectile, target) {
-      const projMass = Math.max(1, Number(projectile?.mass) || 1);
+    function fractureEnergyThreshold(target) {
       const targetMass = Math.max(1, Number(target?.mass) || 1);
-      const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
-      const massRatio = Math.sqrt(targetMass / projMass);
-      const sizeMult = fractureSizeMultiplier(target?.size);
-      return base * massRatio * sizeMult;
+      const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
+      const sizeBias = fractureSizeBias(target?.size);
+      const speed = baseSpeed * sizeBias;
+      return 0.25 * targetMass * speed * speed;
     }
-    function fractureImpactSpeed(projectile, relativeSpeed) {
+    function impactEnergy(projectile, target, relativeSpeed) {
       const rel = Math.max(0, Number(relativeSpeed) || 0);
-      const projSpeed = Math.max(0, len(projectile?.vel || vec(0, 0)));
-      const carried = projSpeed * 0.75;
-      return Math.max(rel, carried);
+      const mu = reducedMass(projectile?.mass, target?.mass);
+      const base = 0.5 * mu * rel * rel;
+      const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+      const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+      return base * boost;
+    }
+    function impactEnergyAgainstFixed(projectile, impactSpeed) {
+      const speed = Math.max(0, Number(impactSpeed) || 0);
+      const mass = Math.max(1, Number(projectile?.mass) || 1);
+      const base = 0.5 * mass * speed * speed;
+      const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+      const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+      return base * boost;
     }
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       state.effects.push({
@@ -1601,6 +1649,24 @@
     function fractureAsteroid(target, impactDir, impactSpeed) {
       if (target.fractureCooldownT > 0)
         return null;
+      if (target.size === "med") {
+        const baseR2 = Math.max(1, target.radius || asteroidRadiusForSize(state.params, "med"));
+        spawnExplosion(target.pos, {
+          kind: "pop",
+          rgb: [255, 255, 255],
+          r0: 10,
+          r1: Math.max(26, baseR2 * 1.45),
+          ttl: 0.22
+        });
+        const dir = len2(impactDir) > 1e-6 ? norm(impactDir) : vec(1, 0);
+        const axis2 = rot(dir, Math.PI / 2);
+        const sep2 = gemRadius("emerald") * 1.6;
+        spawnGem(add(target.pos, mul(axis2, sep2)), vec(0, 0), { jitterMag: 0 });
+        spawnGem(add(target.pos, mul(axis2, -sep2)), vec(0, 0), { jitterMag: 0 });
+        const rankGain2 = Math.max(1, asteroidSizeRank(target.size));
+        state.score += 4 + rankGain2 * 3;
+        return [];
+      }
       const next = asteroidNextSize(target.size);
       if (!next)
         return null;
@@ -1707,33 +1773,40 @@
         return;
       const shipRemovals = /* @__PURE__ */ new Set();
       const shipAdds = [];
-      const smallBreakSpeed = asteroidDamageSpeedForSize(state.params, "small");
       for (const a of state.asteroids) {
         if (a.attached)
           continue;
         const impactSpeed = len(a.vel);
-        if (!a.shipLaunched && a.size === "small" && impactSpeed >= smallBreakSpeed && circleHit(state.ship, a)) {
-          breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          continue;
-        }
-        if (isDamagingProjectile(a, impactSpeed) && circleHit(state.ship, a)) {
+        if (a.shipLaunched && circleHit(state.ship, a)) {
           if (a.size === "small") {
             breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          } else if (impactSpeed >= fractureSpeedRequired(a, a)) {
-            const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
-            if (frags) {
-              shipRemovals.add(a.id);
-              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
-              shipAdds.push(...frags.slice(0, room));
-            }
           } else {
-            shipRemovals.add(a.id);
-            spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+            const energy = impactEnergyAgainstFixed(a, impactSpeed);
+            const threshold = fractureEnergyThreshold(a);
+            if (energy >= threshold) {
+              const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
+              if (frags) {
+                shipRemovals.add(a.id);
+                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
+                shipAdds.push(...frags.slice(0, room));
+              }
+            } else {
+              shipRemovals.add(a.id);
+              spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+            }
           }
           continue;
         }
-        if (a.size === "small")
+        if (a.size === "small") {
+          if (circleHit(state.ship, a)) {
+            const energy = impactEnergyAgainstFixed(a, impactSpeed);
+            const threshold = fractureEnergyThreshold(a);
+            if (energy >= threshold) {
+              breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+            }
+          }
           continue;
+        }
         const hit = circleCollide(state.ship, a);
         if (!hit)
           continue;
@@ -1763,26 +1836,20 @@
         if (!hit)
           return;
         const rv = sub(b.vel, a.vel);
-        const velAlongNormal = dot(rv, hit.n);
-        const impactSpeed = -velAlongNormal;
         const relSpeed = len(rv);
-        const aFastAmbientSmall = !a.shipLaunched && a.size === "small" && relSpeed >= smallBreakSpeed;
-        const bFastAmbientSmall = !b.shipLaunched && b.size === "small" && relSpeed >= smallBreakSpeed;
-        if (aFastAmbientSmall || bFastAmbientSmall) {
-          if (aFastAmbientSmall)
-            breakSmallAsteroid(a, { velHint: a.vel, removeSet: toRemove });
-          if (bFastAmbientSmall)
-            breakSmallAsteroid(b, { velHint: b.vel, removeSet: toRemove });
-          return;
-        }
-        const aDamaging = isDamagingProjectile(a, relSpeed);
-        const bDamaging = isDamagingProjectile(b, relSpeed);
-        if (aDamaging || bDamaging) {
+        const aEnergy = impactEnergy(a, b, relSpeed);
+        const bEnergy = impactEnergy(b, a, relSpeed);
+        const aThreshold = fractureEnergyThreshold(b);
+        const bThreshold = fractureEnergyThreshold(a);
+        const aCanFracture = aEnergy >= aThreshold;
+        const bCanFracture = bEnergy >= bThreshold;
+        if (aCanFracture || bCanFracture) {
+          resolveElasticCollision(a, b, hit.n, hit.penetration);
           const interactions = [];
-          if (aDamaging)
-            interactions.push({ projectile: a, target: b, impactDir: hit.n });
-          if (bDamaging)
-            interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1) });
+          if (aCanFracture)
+            interactions.push({ projectile: a, target: b, impactDir: hit.n, energy: aEnergy });
+          if (bCanFracture)
+            interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1), energy: bEnergy });
           for (const it of interactions) {
             const projectile = it.projectile;
             const target = it.target;
@@ -1801,16 +1868,12 @@
               state.score += 1;
               continue;
             }
-            const requiredSpeed = fractureSpeedRequired(projectile, target);
-            const impactEvalSpeed = fractureImpactSpeed(projectile, relSpeed);
-            if (asteroidCanBreakTarget(projectile.size, target.size) && impactEvalSpeed >= requiredSpeed) {
-              const frags = fractureAsteroid(target, it.impactDir, relSpeed);
-              if (frags) {
-                toRemove.add(target.id);
-                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
-                toAdd.push(...frags.slice(0, room));
-                continue;
-              }
+            const frags = fractureAsteroid(target, it.impactDir, relSpeed);
+            if (frags) {
+              toRemove.add(target.id);
+              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
+              toAdd.push(...frags.slice(0, room));
+              continue;
             }
             spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
             const massRatio = projectile.mass > 0 && target.mass > 0 ? projectile.mass / target.mass : 1;
@@ -1961,17 +2024,21 @@
         sample_asteroids: sample
       });
     }
-    function setShipSvgRenderer(tierKey, pathData, svgScale = 1) {
+    function setShipSvgRenderer(tierKey, pathData, svgScale = 1, hullRadius = null) {
       const key = tierKey === "medium" || tierKey === "large" ? tierKey : "small";
       const tier = shipTierByKey(key);
       if (!pathData || typeof pathData !== "string") {
         tier.renderer = cloneRenderer(DEFAULT_SHIP_RENDERERS[key]);
         return false;
       }
+      const hullR = Number(hullRadius);
       tier.renderer = {
         type: "svg",
         path: pathData,
-        svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1
+        svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1,
+        hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : void 0,
+        mirrorX: void 0,
+        engines: cloneRenderer(DEFAULT_SHIP_RENDERERS[key]).engines || []
       };
       return true;
     }
@@ -2016,6 +2083,103 @@
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     ctx.stroke();
+    ctx.restore();
+  }
+  function drawThrusterJets(ctx, engines, { tierKey = "small", exhaustSign = -1, t = 0 } = {}) {
+    if (!Array.isArray(engines) || engines.length === 0)
+      return;
+    const size = tierKey === "large" ? 1.6 : tierKey === "medium" ? 1.25 : 1;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "butt";
+    for (const e of engines) {
+      const sx = Number(e.x) || 0;
+      const sy = Number(e.y) || 0;
+      const baseLen = Math.max(6, Number(e.len) || 14);
+      const flicker = 0.78 + 0.22 * Math.sin(t * 28 + sy * 0.35) + 0.12 * Math.sin(t * 61 + sx * 0.09) + 0.06 * Math.sin(t * 97);
+      const len3 = baseLen * (1.05 + flicker * 0.75) * size;
+      const nozzle = 1.8 * size;
+      const nx = sx + exhaustSign * nozzle;
+      const ex = nx + exhaustSign * len3;
+      const jetSign = sy >= 0 ? 1 : -1;
+      const aim = (1 + 0.55 * Math.sin(t * 13 + sy * 0.2) + 0.25 * Math.sin(t * 7.5 + sx * 0.08)) * size;
+      const ey = sy + jetSign * aim;
+      const g0 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g0.addColorStop(0, "rgba(255,248,220,0.08)");
+      g0.addColorStop(0.12, "rgba(255,210,145,0.12)");
+      g0.addColorStop(0.3, "rgba(255,135,70,0.15)");
+      g0.addColorStop(0.6, "rgba(255,75,35,0.11)");
+      g0.addColorStop(1, "rgba(160,30,15,0)");
+      ctx.strokeStyle = g0;
+      ctx.lineWidth = 7.4 * size;
+      ctx.shadowColor = "rgba(255,120,70,0.96)";
+      ctx.shadowBlur = 22 * size;
+      for (let i = 0; i < 4; i++) {
+        const wobSign = i % 2 === 0 ? 1 : -1;
+        const wobPhase = t * (15 + i * 2.8) + sy * 0.7 + i * 0.9;
+        const wob = wobSign * (0.7 + 0.95 * Math.sin(wobPhase)) * size;
+        const bend = (0.2 + 0.25 * Math.sin(t * 9.5 + i * 1.7 + sx * 0.04)) * size;
+        ctx.beginPath();
+        ctx.moveTo(nx, sy);
+        ctx.quadraticCurveTo(nx + exhaustSign * len3 * 0.42, sy + wob * 0.25, ex, ey + wob + bend);
+        ctx.stroke();
+      }
+      const g1 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g1.addColorStop(0, "rgba(255,255,245,0.24)");
+      g1.addColorStop(0.14, "rgba(255,235,185,0.28)");
+      g1.addColorStop(0.3, "rgba(255,170,95,0.25)");
+      g1.addColorStop(0.62, "rgba(255,105,55,0.18)");
+      g1.addColorStop(1, "rgba(255,70,30,0)");
+      ctx.strokeStyle = g1;
+      ctx.lineWidth = 4.1 * size;
+      ctx.shadowBlur = 14 * size;
+      ctx.beginPath();
+      ctx.moveTo(nx, sy);
+      ctx.quadraticCurveTo(
+        nx + exhaustSign * len3 * 0.5,
+        sy,
+        ex,
+        ey + Math.sin(t * 22 + sy * 0.5) * 0.8 * size
+      );
+      ctx.stroke();
+      const g2 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g2.addColorStop(0, "rgba(210,245,255,0.20)");
+      g2.addColorStop(0.1, "rgba(255,255,255,0.52)");
+      g2.addColorStop(0.26, "rgba(255,250,225,0.30)");
+      g2.addColorStop(1, "rgba(255,205,130,0)");
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = 1.7 * size;
+      ctx.beginPath();
+      ctx.moveTo(nx, sy);
+      ctx.lineTo(nx + exhaustSign * len3 * 0.78, sy);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,240,205,0.24)";
+      const diamonds = tierKey === "large" ? 4 : 3;
+      for (let i = 0; i < diamonds; i++) {
+        const u = (0.18 + i * 0.16) * len3;
+        const wob = Math.sin(t * (18 + i * 6) + sy * 0.4) * 0.5 * size;
+        const px = nx + exhaustSign * u;
+        const py = sy + wob;
+        const ww = (3.8 - i * 0.55) * size;
+        const hh = (1.8 - i * 0.25) * size;
+        ctx.fillRect(px - ww * 0.5, py - hh * 0.5, ww, hh);
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(255,230,180,0.30)";
+      ctx.lineWidth = 1.1 * size;
+      for (let i = 0; i < 5; i++) {
+        const tt = (0.52 + 0.42 * Math.sin(t * (26 + i * 7) + sx * 0.02 + sy * 0.17 + i * 0.7)) * len3;
+        const px = nx + exhaustSign * tt;
+        const side = i % 2 === 0 ? 1 : -1;
+        const py = sy + side * (0.8 + 1.9 * Math.sin(t * 10 + sy * 0.3 + i * 0.3)) * size;
+        const streak = (2.4 + 2.8 * Math.sin(t * 16 + i * 0.9 + sy * 0.2)) * size;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + exhaustSign * streak, py);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
   function rgbToRgba(rgb, a) {
@@ -2311,18 +2475,15 @@
         const explicitHullRadius = Number(renderer.hullRadius);
         const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
         drawScale = baseScale * autoScale;
+        const mirrorX = renderer.mirrorX === true;
+        const exhaustSign = mirrorX ? 1 : -1;
         ctx.save();
         ctx.scale(drawScale, drawScale);
+        if (mirrorX)
+          ctx.scale(-1, 1);
         ctx.stroke(path);
         if (thrusting) {
-          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-          for (const e of engines) {
-            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y);
-            ctx.lineTo(e.x - flameLen, e.y);
-            ctx.stroke();
-          }
+          drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign, t: state.time });
         }
         ctx.restore();
       } else {
@@ -2343,14 +2504,7 @@
         ctx.closePath();
         ctx.stroke();
         if (thrusting) {
-          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-          for (const e of engines) {
-            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y);
-            ctx.lineTo(e.x - flameLen, e.y);
-            ctx.stroke();
-          }
+          drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
         }
         ctx.restore();
       }
@@ -2958,11 +3112,12 @@
         suffix: " px/s^2"
       },
       {
-        key: "smallDamageSpeedMin",
+        key: "projectileImpactScale",
         input: tuneDmg,
         saveBtn: tuneDmgSave,
         savedOut: tuneDmgDefault,
-        suffix: " px/s"
+        suffix: "x",
+        format: (v) => `${Number(v).toFixed(2)}x`
       },
       {
         key: "xlargeRadius",
@@ -3241,7 +3396,7 @@
       if (tuneThrust)
         tuneThrust.value = String(Math.round(p.shipThrust));
       if (tuneDmg)
-        tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
+        tuneDmg.value = String(p.projectileImpactScale ?? 1);
       if (tuneXlRadius)
         tuneXlRadius.value = String(Math.round(p.xlargeRadius));
       if (tuneXxlRadius)
@@ -3310,7 +3465,10 @@
       setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
       setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
       setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
-      setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
+      if (tuneDmgOut) {
+        const val = readNum(tuneDmg, p.projectileImpactScale);
+        tuneDmgOut.textContent = `${Number(val).toFixed(2)}x`;
+      }
       setOut(tuneXlRadiusOut, readNum(tuneXlRadius, p.xlargeRadius), " px");
       setOut(tuneXxlRadiusOut, readNum(tuneXxlRadius, p.xxlargeRadius), " px");
       setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
@@ -3370,7 +3528,7 @@
       p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
       p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
       p.shipThrust = readNum(tuneThrust, p.shipThrust);
-      p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
+      p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
       p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
       p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);
@@ -3747,8 +3905,8 @@
     function renderGameToText() {
       return game.renderGameToText();
     }
-    function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1) {
-      game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
+    function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1, hullRadius = null) {
+      game.setShipSvgRenderer(tierKey, svgPathData, svgScale, hullRadius);
     }
     function advanceTime(ms) {
       externalStepping = true;

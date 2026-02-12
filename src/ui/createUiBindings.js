@@ -358,11 +358,12 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
       suffix: " px/s^2",
     },
     {
-      key: "smallDamageSpeedMin",
+      key: "projectileImpactScale",
       input: tuneDmg,
       saveBtn: tuneDmgSave,
       savedOut: tuneDmgDefault,
-      suffix: " px/s",
+      suffix: "x",
+      format: (v) => `${Number(v).toFixed(2)}x`,
     },
     {
       key: "xlargeRadius",
@@ -627,7 +628,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
-    if (tuneDmg) tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
+    if (tuneDmg) tuneDmg.value = String(p.projectileImpactScale ?? 1);
     if (tuneXlRadius) tuneXlRadius.value = String(Math.round(p.xlargeRadius));
     if (tuneXxlRadius) tuneXxlRadius.value = String(Math.round(p.xxlargeRadius));
     if (tuneXlCount) tuneXlCount.value = String(Math.round(p.xlargeCount));
@@ -669,7 +670,10 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
-    setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
+    if (tuneDmgOut) {
+      const val = readNum(tuneDmg, p.projectileImpactScale);
+      tuneDmgOut.textContent = `${Number(val).toFixed(2)}x`;
+    }
     setOut(tuneXlRadiusOut, readNum(tuneXlRadius, p.xlargeRadius), " px");
     setOut(tuneXxlRadiusOut, readNum(tuneXxlRadius, p.xxlargeRadius), " px");
     setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
@@ -724,7 +728,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
-    p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
+    p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
     p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
     p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);

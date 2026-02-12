@@ -148,8 +148,8 @@ import { createUiBindings } from "./ui/createUiBindings.js";
     return game.renderGameToText();
   }
 
-  function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1) {
-    game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
+  function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1, hullRadius = null) {
+    game.setShipSvgRenderer(tierKey, svgPathData, svgScale, hullRadius);
   }
 
   function advanceTime(ms) {

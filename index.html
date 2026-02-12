@@ -403,15 +403,15 @@
                 <div class="k">Asteroids</div>
                 <div class="v">
                   <div class="tune-row">
-                    <span>Damage speed (small)</span>
+                    <span>Ship-launched impact boost</span>
                     <span class="tune-actions">
                       <output id="tune-dmg-out">—</output>
                       <button id="tune-dmg-save" class="btn-mini" type="button">Set default</button>
                     </span>
                   </div>
-                  <input id="tune-dmg" type="range" min="200" max="900" step="10" />
+                  <input id="tune-dmg" type="range" min="0.8" max="2.5" step="0.05" />
                   <div class="tune-note">
-                    Speed where launched small asteroids become damaging.
+                    Multiplies impact energy for ship-launched asteroids.
                     <div class="tune-saved">Saved default: <span id="tune-dmg-default">—</span></div>
                   </div>
 
@@ -424,7 +424,7 @@
                   </div>
                   <input id="tune-fracture" type="range" min="150" max="700" step="10" />
                   <div class="tune-note">
-                    Impact speed needed to split to the next asteroid size.
+                    Base impact speed for equal-size fractures (larger targets need a bit more).
                     <div class="tune-saved">Saved default: <span id="tune-fracture-default">—</span></div>
                   </div>
 

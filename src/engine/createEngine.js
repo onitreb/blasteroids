@@ -3,8 +3,6 @@ import { angleOf, angleToVec, wrapAngle } from "../util/angle.js";
 import { seededRng } from "../util/rng.js";
 import { circleCollide, circleHit } from "../util/collision.js";
 import {
-  asteroidCanBreakTarget,
-  asteroidDamageSpeedForSize,
   asteroidMassForRadius,
   asteroidNextSize,
   asteroidRadiusForSize,
@@ -14,6 +12,7 @@ import {
 } from "../util/asteroid.js";
 import { polygonHullRadius } from "../util/ship.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../util/vec2.js";
+import { DEFAULT_SHIP_SVGS } from "./shipPresetDefaults.js";
 
 function makeAsteroidShape(rng, radius, verts = 10) {
   const pts = [];
@@ -49,6 +48,7 @@ const ASTEROID_ROT_VEL_MAX = {
   xlarge: 0.38,
   xxlarge: 0.25,
 };
+const FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
 
 const DEFAULT_SHIP_RENDERERS = {
   small: {
@@ -108,20 +108,40 @@ function cloneRenderer(renderer) {
   };
 }
 
+function makeSvgShipRenderer({ path, hullRadius, svgScale = 1, mirrorX = false, engines = [] }) {
+  const hullR = Number(hullRadius);
+  const scale = Number(svgScale);
+  const mx = mirrorX === true;
+  return {
+    type: "svg",
+    path,
+    svgScale: Number.isFinite(scale) ? scale : 1,
+    hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : undefined,
+    mirrorX: mx ? true : undefined,
+    engines: Array.isArray(engines) ? engines.map((e) => ({ x: e.x, y: e.y, len: e.len })) : [],
+  };
+}
+
 export const SHIP_TIERS = {
   small: {
     key: "small",
     label: "Small",
     scale: 1,
-    radius: 14,
-    mass: 260,
+    radius: 28,
+    mass: 1040,
     burstForceScale: 1,
     forcefieldScale: 1,
     attractScale: 1,
     ringRgb: [255, 221, 88],
     ringColor: "rgba(255,221,88,0.40)",
     attractSizes: ["small"],
-    renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.small),
+    renderer: makeSvgShipRenderer({
+      path: DEFAULT_SHIP_SVGS.small.path,
+      hullRadius: DEFAULT_SHIP_SVGS.small.hullRadius,
+      svgScale: DEFAULT_SHIP_SVGS.small.svgScale,
+      mirrorX: DEFAULT_SHIP_SVGS.small.mirrorX,
+      engines: Array.isArray(DEFAULT_SHIP_SVGS.small.engines) ? DEFAULT_SHIP_SVGS.small.engines : DEFAULT_SHIP_RENDERERS.small.engines,
+    }),
   },
   medium: {
     key: "medium",
@@ -135,7 +155,15 @@ export const SHIP_TIERS = {
     ringRgb: [92, 235, 255],
     ringColor: "rgba(92,235,255,0.42)",
     attractSizes: ["small", "med"],
-    renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.medium),
+    renderer: makeSvgShipRenderer({
+      path: DEFAULT_SHIP_SVGS.medium.path,
+      hullRadius: DEFAULT_SHIP_SVGS.medium.hullRadius,
+      svgScale: DEFAULT_SHIP_SVGS.medium.svgScale,
+      mirrorX: DEFAULT_SHIP_SVGS.medium.mirrorX,
+      engines: Array.isArray(DEFAULT_SHIP_SVGS.medium.engines)
+        ? DEFAULT_SHIP_SVGS.medium.engines
+        : DEFAULT_SHIP_RENDERERS.medium.engines,
+    }),
   },
   large: {
     key: "large",
@@ -149,7 +177,13 @@ export const SHIP_TIERS = {
     ringRgb: [255, 112, 127],
     ringColor: "rgba(255,112,127,0.42)",
     attractSizes: ["small", "med", "large"],
-    renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.large),
+    renderer: makeSvgShipRenderer({
+      path: DEFAULT_SHIP_SVGS.large.path,
+      hullRadius: DEFAULT_SHIP_SVGS.large.hullRadius,
+      svgScale: DEFAULT_SHIP_SVGS.large.svgScale,
+      mirrorX: DEFAULT_SHIP_SVGS.large.mirrorX,
+      engines: Array.isArray(DEFAULT_SHIP_SVGS.large.engines) ? DEFAULT_SHIP_SVGS.large.engines : DEFAULT_SHIP_RENDERERS.large.engines,
+    }),
   },
 };
 const SHIP_TIER_ORDER = ["small", "medium", "large"];
@@ -169,9 +203,10 @@ function shipHullRadiusForTierKey(tierKey) {
   const tier = shipTierByKey(tierKey);
   const renderer = tier.renderer || {};
   if (renderer.type === "svg") {
-    const hullR = Number(renderer.hullRadius);
     const svgScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
-    if (Number.isFinite(hullR) && hullR > 0) return Math.max(tier.radius, hullR * svgScale);
+    const hullR = Number(renderer.hullRadius);
+    // If hullRadius is provided, render auto-scales the SVG to `tier.radius` and then applies `svgScale`.
+    if (Number.isFinite(hullR) && hullR > 0) return Math.max(tier.radius, tier.radius * svgScale);
     // Fallback: approximate from the tier's polygon hull.
   }
   const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
@@ -327,6 +362,7 @@ export function createEngine({ width, height }) {
 
       restitution: 0.92,
       fractureImpactSpeed: 260,
+      projectileImpactScale: 1.35,
       maxAsteroids: 4000,
       asteroidWorldDensityScale: 0.32,
       asteroidSpawnRateScale: 1,
@@ -334,13 +370,6 @@ export function createEngine({ width, height }) {
       asteroidSpawnMaxSec: 0.45,
       asteroidSpawnUrgentMinSec: 0.05,
       asteroidSpawnUrgentMaxSec: 0.12,
-
-      // Damage model for fast smalls (velocity-based; no time limit).
-      smallDamageSpeedMin: 420,
-      medDamageSpeedMin: 160,
-      largeDamageSpeedMin: 190,
-      xlargeDamageSpeedMin: 280,
-      xxlargeDamageSpeedMin: 250,
 
       tier2UnlockGemScore: 500,
       tier3UnlockGemScore: 1000,
@@ -924,36 +953,42 @@ export function createEngine({ width, height }) {
     }
   }
 
-  function isDamagingProjectile(a, impactSpeed) {
-    if (!a?.shipLaunched) return false;
-    const spd = len(a.vel);
-    const v = Math.max(spd, impactSpeed);
-    return v >= asteroidDamageSpeedForSize(state.params, a.size);
+  function reducedMass(aMass, bMass) {
+    const a = Math.max(1, Number(aMass) || 1);
+    const b = Math.max(1, Number(bMass) || 1);
+    return (a * b) / (a + b);
   }
 
-  function fractureSizeMultiplier(targetSize) {
-    if (targetSize === "xxlarge") return 0.88;
-    if (targetSize === "xlarge") return 0.82;
-    if (targetSize === "large") return 0.58;
-    if (targetSize === "med") return 0.18;
-    return 1;
+  function fractureSizeBias(targetSize) {
+    const rank = asteroidSizeRank(targetSize);
+    return 1 + rank * FRACTURE_SIZE_BIAS_PER_RANK;
   }
 
-  function fractureSpeedRequired(projectile, target) {
-    const projMass = Math.max(1, Number(projectile?.mass) || 1);
+  function fractureEnergyThreshold(target) {
     const targetMass = Math.max(1, Number(target?.mass) || 1);
-    const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
-    const massRatio = Math.sqrt(targetMass / projMass);
-    const sizeMult = fractureSizeMultiplier(target?.size);
-    return base * massRatio * sizeMult;
+    const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
+    const sizeBias = fractureSizeBias(target?.size);
+    const speed = baseSpeed * sizeBias;
+    // Interpret fractureImpactSpeed as the equal-mass break speed (physics-ish).
+    return 0.25 * targetMass * speed * speed;
   }
 
-  function fractureImpactSpeed(projectile, relativeSpeed) {
+  function impactEnergy(projectile, target, relativeSpeed) {
     const rel = Math.max(0, Number(relativeSpeed) || 0);
-    const projSpeed = Math.max(0, len(projectile?.vel || vec(0, 0)));
-    // Launched rocks should retain destructive momentum even against co-moving targets.
-    const carried = projSpeed * 0.75;
-    return Math.max(rel, carried);
+    const mu = reducedMass(projectile?.mass, target?.mass);
+    const base = 0.5 * mu * rel * rel;
+    const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+    const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+    return base * boost;
+  }
+
+  function impactEnergyAgainstFixed(projectile, impactSpeed) {
+    const speed = Math.max(0, Number(impactSpeed) || 0);
+    const mass = Math.max(1, Number(projectile?.mass) || 1);
+    const base = 0.5 * mass * speed * speed;
+    const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+    const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+    return base * boost;
   }
 
   function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
@@ -1520,6 +1555,25 @@ export function createEngine({ width, height }) {
 
   function fractureAsteroid(target, impactDir, impactSpeed) {
     if (target.fractureCooldownT > 0) return null;
+    if (target.size === "med") {
+      const baseR = Math.max(1, target.radius || asteroidRadiusForSize(state.params, "med"));
+      spawnExplosion(target.pos, {
+        kind: "pop",
+        rgb: [255, 255, 255],
+        r0: 10,
+        r1: Math.max(26, baseR * 1.45),
+        ttl: 0.22,
+      });
+      // Medium breaks drop gems instead of spawning small asteroids.
+      const dir = len2(impactDir) > 1e-6 ? norm(impactDir) : vec(1, 0);
+      const axis = rot(dir, Math.PI / 2);
+      const sep = gemRadius("emerald") * 1.6;
+      spawnGem(add(target.pos, mul(axis, sep)), vec(0, 0), { jitterMag: 0 });
+      spawnGem(add(target.pos, mul(axis, -sep)), vec(0, 0), { jitterMag: 0 });
+      const rankGain = Math.max(1, asteroidSizeRank(target.size));
+      state.score += 4 + rankGain * 3;
+      return [];
+    }
     const next = asteroidNextSize(target.size);
     if (!next) return null;
 
@@ -1634,31 +1688,39 @@ export function createEngine({ width, height }) {
     // Ship vs asteroids.
     const shipRemovals = new Set();
     const shipAdds = [];
-    const smallBreakSpeed = asteroidDamageSpeedForSize(state.params, "small");
     for (const a of state.asteroids) {
       if (a.attached) continue;
       const impactSpeed = len(a.vel);
-      if (!a.shipLaunched && a.size === "small" && impactSpeed >= smallBreakSpeed && circleHit(state.ship, a)) {
-        breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-        continue;
-      }
-      if (isDamagingProjectile(a, impactSpeed) && circleHit(state.ship, a)) {
+      if (a.shipLaunched && circleHit(state.ship, a)) {
         if (a.size === "small") {
           breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-        } else if (impactSpeed >= fractureSpeedRequired(a, a)) {
-          const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
-          if (frags) {
-            shipRemovals.add(a.id);
-            const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
-            shipAdds.push(...frags.slice(0, room));
-          }
         } else {
-          shipRemovals.add(a.id);
-          spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+          const energy = impactEnergyAgainstFixed(a, impactSpeed);
+          const threshold = fractureEnergyThreshold(a);
+          if (energy >= threshold) {
+            const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
+            if (frags) {
+              shipRemovals.add(a.id);
+              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
+              shipAdds.push(...frags.slice(0, room));
+            }
+          } else {
+            shipRemovals.add(a.id);
+            spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+          }
         }
         continue;
       }
-      if (a.size === "small") continue;
+      if (a.size === "small") {
+        if (circleHit(state.ship, a)) {
+          const energy = impactEnergyAgainstFixed(a, impactSpeed);
+          const threshold = fractureEnergyThreshold(a);
+          if (energy >= threshold) {
+            breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+          }
+        }
+        continue;
+      }
       const hit = circleCollide(state.ship, a);
       if (!hit) continue;
       if (state.settings.shipExplodesOnImpact) {
@@ -1686,23 +1748,19 @@ export function createEngine({ width, height }) {
       if (!hit) return;
 
       const rv = sub(b.vel, a.vel);
-      const velAlongNormal = dot(rv, hit.n);
-      const impactSpeed = -velAlongNormal;
       const relSpeed = len(rv);
-      const aFastAmbientSmall = !a.shipLaunched && a.size === "small" && relSpeed >= smallBreakSpeed;
-      const bFastAmbientSmall = !b.shipLaunched && b.size === "small" && relSpeed >= smallBreakSpeed;
-      if (aFastAmbientSmall || bFastAmbientSmall) {
-        if (aFastAmbientSmall) breakSmallAsteroid(a, { velHint: a.vel, removeSet: toRemove });
-        if (bFastAmbientSmall) breakSmallAsteroid(b, { velHint: b.vel, removeSet: toRemove });
-        return;
-      }
-
-      const aDamaging = isDamagingProjectile(a, relSpeed);
-      const bDamaging = isDamagingProjectile(b, relSpeed);
-      if (aDamaging || bDamaging) {
+      const aEnergy = impactEnergy(a, b, relSpeed);
+      const bEnergy = impactEnergy(b, a, relSpeed);
+      const aThreshold = fractureEnergyThreshold(b);
+      const bThreshold = fractureEnergyThreshold(a);
+      const aCanFracture = aEnergy >= aThreshold;
+      const bCanFracture = bEnergy >= bThreshold;
+      if (aCanFracture || bCanFracture) {
+        // Transfer momentum even when a fracture occurs.
+        resolveElasticCollision(a, b, hit.n, hit.penetration);
         const interactions = [];
-        if (aDamaging) interactions.push({ projectile: a, target: b, impactDir: hit.n });
-        if (bDamaging) interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1) });
+        if (aCanFracture) interactions.push({ projectile: a, target: b, impactDir: hit.n, energy: aEnergy });
+        if (bCanFracture) interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1), energy: bEnergy });
 
         for (const it of interactions) {
           const projectile = it.projectile;
@@ -1724,16 +1782,12 @@ export function createEngine({ width, height }) {
             continue;
           }
 
-          const requiredSpeed = fractureSpeedRequired(projectile, target);
-          const impactEvalSpeed = fractureImpactSpeed(projectile, relSpeed);
-          if (asteroidCanBreakTarget(projectile.size, target.size) && impactEvalSpeed >= requiredSpeed) {
-            const frags = fractureAsteroid(target, it.impactDir, relSpeed);
-            if (frags) {
-              toRemove.add(target.id);
-              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
-              toAdd.push(...frags.slice(0, room));
-              continue;
-            }
+          const frags = fractureAsteroid(target, it.impactDir, relSpeed);
+          if (frags) {
+            toRemove.add(target.id);
+            const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
+            toAdd.push(...frags.slice(0, room));
+            continue;
           }
 
           spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
@@ -1891,17 +1945,21 @@ export function createEngine({ width, height }) {
     });
   }
 
-  function setShipSvgRenderer(tierKey, pathData, svgScale = 1) {
+  function setShipSvgRenderer(tierKey, pathData, svgScale = 1, hullRadius = null) {
     const key = tierKey === "medium" || tierKey === "large" ? tierKey : "small";
     const tier = shipTierByKey(key);
     if (!pathData || typeof pathData !== "string") {
       tier.renderer = cloneRenderer(DEFAULT_SHIP_RENDERERS[key]);
       return false;
     }
+    const hullR = Number(hullRadius);
     tier.renderer = {
       type: "svg",
       path: pathData,
       svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1,
+      hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : undefined,
+      mirrorX: undefined,
+      engines: cloneRenderer(DEFAULT_SHIP_RENDERERS[key]).engines || [],
     };
     return true;
   }
