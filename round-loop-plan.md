@@ -34,6 +34,15 @@ Scope: Implement the round-based loop described in `round-loop-prd.md`.
 - [ ] Decide gem drop rule (drop chance per size and/or tuning control).
 - [ ] Decide remaining PRD questions (part loss respawn timing, containment sizes, saucer interaction).
 
+### RL-FND — Foundations (Seed + Spawn Helpers) — `DONE`
+- [x] Add per-round seed to engine state and RNG.
+- [x] Export `round.seed` in `renderGameToText()` for deterministic telemetry.
+- [x] Add deterministic spawn helpers for multiplayer-style spawns:
+  - [x] `generateSpawnPoints(...)` with separation + seed option.
+  - [x] `spawnShipAt(...)` helper for explicit spawn placement.
+- [x] Add regression tests for seed + spawn helpers.
+- [x] Playwright smoke validation for `file://` runtime.
+
 ### RL-01 — Round State + End Conditions (Engine) — `NOT_STARTED`
 - [ ] Add round config to engine state (duration, elapsed, remaining).
 - [ ] Add end conditions: win (escape), lose (star contact), lose (star reaches far edge).
@@ -98,3 +107,4 @@ Scope: Implement the round-based loop described in `round-loop-prd.md`.
 | Date | Notes |
 | --- | --- |
 | 2026-02-13 | Created PRD + implementation tracker for the new round loop. No gameplay code changes yet. |
+| 2026-02-13 | Implemented seed + deterministic spawn helpers to prep for multiplayer and deterministic objective placement; added tests and Playwright smoke artifacts. |

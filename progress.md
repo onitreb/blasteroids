@@ -218,6 +218,19 @@ Updates
     - `exhaustLegacyJets` toggle (disables the old orange jet overlay so palette changes are unambiguous).
   - Files: `src/engine/createEngine.js`, `src/ui/createUiBindings.js`, `index.html`.
   - Validation:
+  - 2026-02-13 foundations pass (seed + multiplayer-ready spawn helpers):
+    - Engine now supports a per-round seed:
+      - `createEngine({ ..., seed })` stores `state.round.seed` and seeds gameplay RNG.
+      - `setRoundSeed(seed)` resets gameplay RNG to a known per-round seed.
+      - `renderGameToText()` exports `round.seed` for deterministic telemetry.
+    - Added deterministic spawn helpers to prep for multiplayer:
+      - `generateSpawnPoints(n, { margin, minSeparation, seed })` (stable results for a given seed and does not depend on gameplay RNG consumption).
+      - `spawnShipAt({x,y})` (clamps to world bounds; resets velocity).
+    - Added engine regression tests for seed/spawn helpers.
+    - Validation:
+      - `npm test`: `25 passed, 0 failed`.
+      - `npm run build`: success (`dist/blasteroids.js` regenerated).
+      - Playwright smoke (file://): screenshots + `render_game_to_text` captured under `output/web-game/seed-spawn-foundation/`; no console errors observed.
     - `npm test`: `22 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
 - 2026-02-12 touch-thrust exhaust fix:

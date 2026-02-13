@@ -339,10 +339,7 @@ async function main() {
 
     const freshErrors = consoleErrors.drain();
     if (freshErrors.length) {
-      fs.writeFileSync(
-        path.join(args.screenshotDir, `errors-${i}.json`),
-        JSON.stringify(freshErrors, null, 2)
-      );
+      fs.writeFileSync(path.join(args.screenshotDir, `errors-${i}.json`), JSON.stringify(freshErrors, null, 2));
       break;
     }
   }
@@ -354,3 +351,4 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+

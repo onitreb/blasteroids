@@ -253,14 +253,19 @@ function shipForward(ship) {
   return angleToVec(ship.angle);
 }
 
-export function createEngine({ width, height }) {
-  const rng = seededRng(0xdecafbad);
+export function createEngine({ width, height, seed } = {}) {
+  const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 0xdecafbad;
+  const baseSeed = (baseSeedRaw >>> 0) || 0xdecafbad;
+  let rng = seededRng(baseSeed);
   const starRng = seededRng(0x51a7f00d);
   let exhaustRng = seededRng(0x1ee7beef);
   const exhaustPool = [];
   const state = {
     mode: "menu", // menu | playing | gameover
     time: 0,
+    round: {
+      seed: baseSeed,
+    },
     ship: makeShip("small"),
     asteroids: [],
     gems: [],
@@ -418,6 +423,13 @@ export function createEngine({ width, height }) {
   const worldCellAsteroidCounts = new Map();
   const worldCellActiveKeys = new Set();
   ensureAttractRadiusCoversForcefield(state.params);
+
+  function setRoundSeed(nextSeed) {
+    const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 0xdecafbad;
+    const s = (raw >>> 0) || 0xdecafbad;
+    state.round.seed = s;
+    rng = seededRng(s);
+  }
 
   function shipTierForProgression() {
     if (state.settings.tierOverrideEnabled) {
@@ -603,6 +615,104 @@ export function createEngine({ width, height }) {
 
   function worldCellKey(cx, cy) {
     return `${cx},${cy}`;
+  }
+
+  function randomPointInWorld({ margin = 0, rngFn = null } = {}) {
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const m = clamp(Number(margin) || 0, 0, Math.min(halfW, halfH));
+    const rr = typeof rngFn === "function" ? rngFn : rng;
+    const x = lerp(-halfW + m, halfW - m, rr());
+    const y = lerp(-halfH + m, halfH - m, rr());
+    return vec(x, y);
+  }
+
+  function generateSpawnPoints(
+    count,
+    { margin = 120, minSeparation = 420, maxAttemptsPerPoint = 1200, relaxFactor = 0.82, seed = state.round.seed } = {},
+  ) {
+    const n = Math.max(0, Math.floor(count));
+    const points = [];
+    if (n === 0) return points;
+
+    const m = clamp(Number(margin) || 0, 0, Math.min(state.world.w, state.world.h) * 0.45);
+    const seedRaw = Number.isFinite(Number(seed)) ? Number(seed) : state.round.seed;
+    const seedU32 = (seedRaw >>> 0) || 0xdecafbad;
+    const pointRng = seededRng((seedU32 ^ 0x9e3779b9) >>> 0 || 0x12345678);
+    let sep = Math.max(0, Number(minSeparation) || 0);
+    const relax = clamp(Number(relaxFactor) || 0.82, 0.5, 0.99);
+    const maxAttempts = Math.max(10, Math.floor(maxAttemptsPerPoint));
+
+    const dist2 = (a, b) => {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return dx * dx + dy * dy;
+    };
+
+    for (let i = 0; i < n; i++) {
+      let picked = null;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+        const sep2 = sep * sep;
+        let ok = true;
+        for (let j = 0; j < points.length; j++) {
+          if (dist2(cand, points[j]) < sep2) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          picked = cand;
+          break;
+        }
+      }
+
+      if (!picked) {
+        // Extended search: try harder before we relax separation (spawns are low-frequency, so this is fine).
+        const extendedAttempts = Math.min(12000, maxAttempts * 6);
+        for (let attempt = 0; attempt < extendedAttempts; attempt++) {
+          const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+          const sep2 = sep * sep;
+          let ok = true;
+          for (let j = 0; j < points.length; j++) {
+            if (dist2(cand, points[j]) < sep2) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) {
+            picked = cand;
+            break;
+          }
+        }
+      }
+
+      if (!picked) {
+        // Fallback: pick a point that maximizes distance to existing spawns, then relax separation.
+        let best = null;
+        let bestMinD2 = -1;
+        const fallbackAttempts = Math.min(120, maxAttempts);
+        for (let attempt = 0; attempt < fallbackAttempts; attempt++) {
+          const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+          let minD2 = Infinity;
+          for (let j = 0; j < points.length; j++) {
+            const d2 = dist2(cand, points[j]);
+            if (d2 < minD2) minD2 = d2;
+          }
+          if (minD2 > bestMinD2) {
+            bestMinD2 = minD2;
+            best = cand;
+          }
+        }
+        picked = best || randomPointInWorld({ margin: m, rngFn: pointRng });
+        sep *= relax;
+      }
+
+      points.push(picked);
+    }
+
+    return points;
   }
 
   function rebuildWorldCellIndex() {
@@ -1092,6 +1202,21 @@ export function createEngine({ width, height }) {
     spawnGem(a.pos, vec(0, 0), { jitterMag: 0 });
   }
 
+  function spawnShipAt(pos) {
+    if (!pos || typeof pos !== "object") return false;
+    const ship = state.ship;
+    if (!ship) return false;
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const r = Math.max(1, Number(ship.radius) || 1);
+    ship.pos.x = clamp(Number(pos.x) || 0, -halfW + r, halfW - r);
+    ship.pos.y = clamp(Number(pos.y) || 0, -halfH + r, halfH - r);
+    ship.vel.x = 0;
+    ship.vel.y = 0;
+    syncCameraToShip();
+    return true;
+  }
+
   function resetWorld() {
     state.time = 0;
     state.score = 0;
@@ -1165,8 +1290,14 @@ export function createEngine({ width, height }) {
     rebuildWorldCellIndex();
   }
 
-  function startGame() {
+  function startGame(options = {}) {
+    if (options && Object.prototype.hasOwnProperty.call(options, "seed")) {
+      setRoundSeed(options.seed);
+    }
     resetWorld();
+    if (options && options.shipSpawn && typeof options.shipSpawn === "object") {
+      spawnShipAt(options.shipSpawn);
+    }
     state.mode = "playing";
   }
 
@@ -2037,6 +2168,7 @@ export function createEngine({ width, height }) {
     return JSON.stringify({
       coordinate_system:
         "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
+      round: { seed: state.round.seed >>> 0 },
       mode: state.mode,
       view: { w: state.view.w, h: state.view.h },
       world: { w: state.world.w, h: state.world.h },
@@ -2121,6 +2253,7 @@ export function createEngine({ width, height }) {
   }
 
   rebuildStarfield();
+  applyWorldScale(state.world.scale);
 
   return {
     state,
@@ -2136,5 +2269,8 @@ export function createEngine({ width, height }) {
     getCurrentShipTier: () => currentShipTier(),
     getCurrentForceFieldRadius: () => currentForceFieldRadius(),
     getCurrentAttractRadius: () => currentAttractRadius(),
+    setRoundSeed,
+    generateSpawnPoints,
+    spawnShipAt,
   };
 }

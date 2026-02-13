@@ -75,6 +75,49 @@ test("renderGameToText payload stays parseable and includes core fields", () => 
   assert.ok(Array.isArray(payload.sample_asteroids));
 });
 
+test("engine accepts a seed and reports it in renderGameToText", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 123 });
+  engine.startGame();
+  const payload = JSON.parse(engine.renderGameToText());
+  assert.equal(payload.round.seed, 123);
+});
+
+test("setRoundSeed resets spawn point generation deterministically", () => {
+  const engine = createEngine({ width: 1000, height: 700, seed: 999 });
+  engine.startGame();
+
+  const canon = (pts) => pts.map((p) => ({ x: +p.x.toFixed(6), y: +p.y.toFixed(6) }));
+  const a = canon(engine.generateSpawnPoints(4, { margin: 200, minSeparation: 600 }));
+
+  // Advance simulation to consume gameplay RNG; spawn generation should still be stable for the same round seed.
+  for (let i = 0; i < 120; i++) engine.update(1 / 60);
+  const b = canon(engine.generateSpawnPoints(4, { margin: 200, minSeparation: 600 }));
+  assert.deepEqual(a, b);
+
+  for (let i = 0; i < b.length; i++) {
+    for (let j = i + 1; j < b.length; j++) {
+      const dx = b[i].x - b[j].x;
+      const dy = b[i].y - b[j].y;
+      const d = Math.hypot(dx, dy);
+      assert.ok(d >= 600, `expected spawn separation >= 600, got ${d.toFixed(2)}`);
+    }
+  }
+});
+
+test("spawnShipAt clamps to world bounds", () => {
+  const engine = createEngine({ width: 800, height: 600, seed: 42 });
+  engine.startGame();
+  const halfW = engine.state.world.w / 2;
+  const halfH = engine.state.world.h / 2;
+  const r = engine.state.ship.radius;
+
+  engine.spawnShipAt({ x: 1e9, y: -1e9 });
+  assert.ok(engine.state.ship.pos.x <= halfW - r);
+  assert.ok(engine.state.ship.pos.x >= -halfW + r);
+  assert.ok(engine.state.ship.pos.y <= halfH - r);
+  assert.ok(engine.state.ship.pos.y >= -halfH + r);
+});
+
 test("setShipSvgRenderer accepts custom path and can restore defaults", () => {
   const engine = createEngine({ width: 800, height: 600 });
   const setOk = engine.setShipSvgRenderer("small", "M 0 0 L 1 0 L 0 1 Z", 2);

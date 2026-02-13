@@ -30,6 +30,12 @@ The “map” is not a discrete tile grid. It’s a bounded rectangular world in
 - A “world cells” grid exists, but it’s for spawning distribution / bookkeeping, not terrain.  
   (See `/Users/paul/Documents/GameDev/Blasteroids/src/engine/createEngine.js:308` and `/Users/paul/Documents/GameDev/Blasteroids/src/engine/createEngine.js:689`.)
 
+Foundations added (2026-02-13) to support multiplayer-style spawns and deterministic “random” placements:
+- Engine supports a per-round seed (`state.round.seed`) and exports it in `renderGameToText()`.
+- Engine exposes deterministic spawn helpers:
+  - `generateSpawnPoints(n, { margin, minSeparation, seed })`
+  - `spawnShipAt({ x, y })`
+
 ## High-Level Round Loop
 1. Round starts; player spawns as normal.
 2. A **red giant** spawns on a random world edge and begins moving across the world, steadily consuming space.
@@ -125,6 +131,10 @@ Exact drop rates are a tuning decision; capture the goal as “reduce gem spam; 
 - Avoid “search locally, spawn locally” logic that would diverge across clients.
 - Prefer an explicit **per-round seed** (server-provided later) so “random edge/placements” are reproducible and debuggable.
 - Treat camera as client-only: gameplay spawning/authority should not depend on a single client’s camera position in multiplayer.
+
+Implementation note:
+- Use `round.seed` (or server-provided seed later) to drive star-edge selection, gate placement, and part seeding so clients can reproduce identical “random” layouts.
+- Use `generateSpawnPoints(...)` for player spawns to guarantee minimum separation and deterministic outcomes under the same seed.
 
 ## Acceptance Criteria / Definition of Done (Feature-Level)
 - A round starts and ends with a clear outcome:

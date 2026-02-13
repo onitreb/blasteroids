@@ -418,8 +418,10 @@
   function shipForward(ship) {
     return angleToVec(ship.angle);
   }
-  function createEngine({ width, height }) {
-    const rng = seededRng(3737844653);
+  function createEngine({ width, height, seed } = {}) {
+    const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 3737844653;
+    const baseSeed = baseSeedRaw >>> 0 || 3737844653;
+    let rng = seededRng(baseSeed);
     const starRng = seededRng(1369960461);
     let exhaustRng = seededRng(518504175);
     const exhaustPool = [];
@@ -427,6 +429,9 @@
       mode: "menu",
       // menu | playing | gameover
       time: 0,
+      round: {
+        seed: baseSeed
+      },
       ship: makeShip("small"),
       asteroids: [],
       gems: [],
@@ -595,6 +600,12 @@
     const worldCellAsteroidCounts = /* @__PURE__ */ new Map();
     const worldCellActiveKeys = /* @__PURE__ */ new Set();
     ensureAttractRadiusCoversForcefield(state.params);
+    function setRoundSeed(nextSeed) {
+      const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 3737844653;
+      const s = raw >>> 0 || 3737844653;
+      state.round.seed = s;
+      rng = seededRng(s);
+    }
     function shipTierForProgression() {
       if (state.settings.tierOverrideEnabled) {
         const idx = clamp(Math.round(state.settings.tierOverrideIndex || 1), 1, SHIP_BASE_BY_TIER_INDEX.length);
@@ -774,6 +785,91 @@
     function worldCellKey(cx, cy) {
       return `${cx},${cy}`;
     }
+    function randomPointInWorld({ margin = 0, rngFn = null } = {}) {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const m = clamp(Number(margin) || 0, 0, Math.min(halfW, halfH));
+      const rr = typeof rngFn === "function" ? rngFn : rng;
+      const x = lerp(-halfW + m, halfW - m, rr());
+      const y = lerp(-halfH + m, halfH - m, rr());
+      return vec(x, y);
+    }
+    function generateSpawnPoints(count, { margin = 120, minSeparation = 420, maxAttemptsPerPoint = 1200, relaxFactor = 0.82, seed: seed2 = state.round.seed } = {}) {
+      const n = Math.max(0, Math.floor(count));
+      const points = [];
+      if (n === 0)
+        return points;
+      const m = clamp(Number(margin) || 0, 0, Math.min(state.world.w, state.world.h) * 0.45);
+      const seedRaw = Number.isFinite(Number(seed2)) ? Number(seed2) : state.round.seed;
+      const seedU32 = seedRaw >>> 0 || 3737844653;
+      const pointRng = seededRng((seedU32 ^ 2654435769) >>> 0 || 305419896);
+      let sep = Math.max(0, Number(minSeparation) || 0);
+      const relax = clamp(Number(relaxFactor) || 0.82, 0.5, 0.99);
+      const maxAttempts = Math.max(10, Math.floor(maxAttemptsPerPoint));
+      const dist2 = (a, b) => {
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        return dx * dx + dy * dy;
+      };
+      for (let i = 0; i < n; i++) {
+        let picked = null;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+          const sep2 = sep * sep;
+          let ok = true;
+          for (let j = 0; j < points.length; j++) {
+            if (dist2(cand, points[j]) < sep2) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) {
+            picked = cand;
+            break;
+          }
+        }
+        if (!picked) {
+          const extendedAttempts = Math.min(12e3, maxAttempts * 6);
+          for (let attempt = 0; attempt < extendedAttempts; attempt++) {
+            const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+            const sep2 = sep * sep;
+            let ok = true;
+            for (let j = 0; j < points.length; j++) {
+              if (dist2(cand, points[j]) < sep2) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) {
+              picked = cand;
+              break;
+            }
+          }
+        }
+        if (!picked) {
+          let best = null;
+          let bestMinD2 = -1;
+          const fallbackAttempts = Math.min(120, maxAttempts);
+          for (let attempt = 0; attempt < fallbackAttempts; attempt++) {
+            const cand = randomPointInWorld({ margin: m, rngFn: pointRng });
+            let minD2 = Infinity;
+            for (let j = 0; j < points.length; j++) {
+              const d2 = dist2(cand, points[j]);
+              if (d2 < minD2)
+                minD2 = d2;
+            }
+            if (minD2 > bestMinD2) {
+              bestMinD2 = minD2;
+              best = cand;
+            }
+          }
+          picked = best || randomPointInWorld({ margin: m, rngFn: pointRng });
+          sep *= relax;
+        }
+        points.push(picked);
+      }
+      return points;
+    }
     function rebuildWorldCellIndex() {
       const counts = worldCellAsteroidCounts;
       counts.clear();
@@ -797,14 +893,14 @@
       state.worldCells.activeCount = worldCellActiveKeys.size;
     }
     function asteroidPopulationBudget() {
-      const seed = asteroidSeedCount();
+      const seed2 = asteroidSeedCount();
       const viewArea = Math.max(1, state.view.w * state.view.h);
       const worldArea = Math.max(1, state.world.w * state.world.h);
       const densityScale = clamp(state.params.asteroidWorldDensityScale || 0.32, 0.08, 2.5);
       const worldFactor = Math.min(worldArea / viewArea, 25);
-      const scaledTarget = Math.round(seed * worldFactor * densityScale);
+      const scaledTarget = Math.round(seed2 * worldFactor * densityScale);
       const max = Math.max(1, Math.floor(state.params.maxAsteroids));
-      const target = clamp(scaledTarget, Math.min(seed, max), max);
+      const target = clamp(scaledTarget, Math.min(seed2, max), max);
       const min = clamp(Math.floor(target * 0.8), 8, target);
       return { min, target, max };
     }
@@ -1233,6 +1329,22 @@
       spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 18, ttl: 0.16 });
       spawnGem(a.pos, vec(0, 0), { jitterMag: 0 });
     }
+    function spawnShipAt(pos) {
+      if (!pos || typeof pos !== "object")
+        return false;
+      const ship = state.ship;
+      if (!ship)
+        return false;
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const r = Math.max(1, Number(ship.radius) || 1);
+      ship.pos.x = clamp(Number(pos.x) || 0, -halfW + r, halfW - r);
+      ship.pos.y = clamp(Number(pos.y) || 0, -halfH + r, halfH - r);
+      ship.vel.x = 0;
+      ship.vel.y = 0;
+      syncCameraToShip();
+      return true;
+    }
     function resetWorld() {
       state.time = 0;
       state.score = 0;
@@ -1302,8 +1414,14 @@
       }
       rebuildWorldCellIndex();
     }
-    function startGame() {
+    function startGame(options = {}) {
+      if (options && Object.prototype.hasOwnProperty.call(options, "seed")) {
+        setRoundSeed(options.seed);
+      }
       resetWorld();
+      if (options && options.shipSpawn && typeof options.shipSpawn === "object") {
+        spawnShipAt(options.shipSpawn);
+      }
       state.mode = "playing";
     }
     function orbitRadiusForAsteroid(a) {
@@ -1524,7 +1642,7 @@
       const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
       return { scale: drawScale, mirrorX: false };
     }
-    function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed }) {
+    function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed: seed2 }) {
       const p = exhaustPool.length ? exhaustPool.pop() : { kind: "flame", pos: vec(0, 0), vel: vec(0, 0), age: 0, ttl: 0, r: 1, seed: 0 };
       p.kind = kind;
       p.pos.x = x;
@@ -1534,7 +1652,7 @@
       p.age = 0;
       p.ttl = ttl;
       p.r = r;
-      p.seed = seed;
+      p.seed = seed2;
       state.exhaust.push(p);
     }
     function updateExhaust(dt) {
@@ -1604,7 +1722,7 @@
         const flameFrac = flameCountF - flameWhole;
         const flameCount = flameWhole + (exhaustRng() < flameFrac ? 1 : 0);
         for (let j = 0; j < flameCount; j++) {
-          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const seed2 = Math.floor(exhaustRng() * 4294967295) >>> 0;
           const sideJitter = (exhaustRng() * 2 - 1) * 52 * tierScale;
           const backJitter = (exhaustRng() * 2 - 1) * 22 * tierScale;
           const speed = (180 + exhaustRng() * 150) * tierScale;
@@ -1614,18 +1732,18 @@
           const r = (2 + exhaustRng() * 2.2) * tierScale * (0.85 + 0.25 * intensity);
           const posX = nozzleX + sideX * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backX * (exhaustRng() * 2.8);
           const posY = nozzleY + sideY * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backY * (exhaustRng() * 2.8);
-          spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed });
+          spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed: seed2 });
         }
         const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
         if (sparkChance > 1e-6 && exhaustRng() < sparkChance) {
-          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const seed2 = Math.floor(exhaustRng() * 4294967295) >>> 0;
           const sideJitter = (exhaustRng() * 2 - 1) * 120 * tierScale;
           const speed = (300 + exhaustRng() * 220) * tierScale;
           const vx = baseVelX + backX * speed + sideX * sideJitter;
           const vy = baseVelY + backY * speed + sideY * sideJitter;
           const ttl = 0.12 + exhaustRng() * 0.2;
           const r = (1 + exhaustRng() * 1.4) * tierScale;
-          spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed });
+          spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed: seed2 });
         }
       }
       if (particles.length > maxParticles) {
@@ -2115,6 +2233,7 @@
       }, 0);
       return JSON.stringify({
         coordinate_system: "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
+        round: { seed: state.round.seed >>> 0 },
         mode: state.mode,
         view: { w: state.view.w, h: state.view.h },
         world: { w: state.world.w, h: state.world.h },
@@ -2195,6 +2314,7 @@
       return true;
     }
     rebuildStarfield();
+    applyWorldScale(state.world.scale);
     return {
       state,
       startGame,
@@ -2208,7 +2328,10 @@
       renderGameToText,
       getCurrentShipTier: () => currentShipTier(),
       getCurrentForceFieldRadius: () => currentForceFieldRadius(),
-      getCurrentAttractRadius: () => currentAttractRadius()
+      getCurrentAttractRadius: () => currentAttractRadius(),
+      setRoundSeed,
+      generateSpawnPoints,
+      spawnShipAt
     };
   }
 
