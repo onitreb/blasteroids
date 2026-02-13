@@ -400,6 +400,98 @@
               </div>
 
               <div class="card debug-group">
+                <div class="k">Thrusters (VFX)</div>
+                <div class="v">
+                  <div class="tune-row">
+                    <span>Exhaust intensity</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-intensity-out">—</output>
+                      <button id="tune-exhaust-intensity-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-exhaust-intensity" type="range" min="0" max="2" step="0.05" />
+                  <div class="tune-note">
+                    Scales thruster exhaust emission (higher values can impact performance).
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-intensity-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Spark rate</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-sparks-out">—</output>
+                      <button id="tune-exhaust-sparks-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-exhaust-sparks" type="range" min="0" max="2" step="0.05" />
+                  <div class="tune-note">
+                    Scales thruster spark emission.
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-sparks-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Palette</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-palette-out">—</output>
+                      <button id="tune-exhaust-palette-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <select id="tune-exhaust-palette" class="select-block">
+                    <option value="0" selected>Rocket (warm)</option>
+                    <option value="1">Ion (blue)</option>
+                    <option value="2">Plasma (purple)</option>
+                    <option value="3">Toxic (green)</option>
+                    <option value="4">Ember (red)</option>
+                  </select>
+                  <div class="tune-note">
+                    Adjusts exhaust inner/outer colors and gradient.
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-palette-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Core brightness</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-core-out">—</output>
+                      <button id="tune-exhaust-core-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-exhaust-core" type="range" min="0" max="2" step="0.05" />
+                  <div class="tune-note">
+                    Scales the inner “white hot” core.
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-core-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Glow strength</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-glow-out">—</output>
+                      <button id="tune-exhaust-glow-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-exhaust-glow" type="range" min="0" max="2" step="0.05" />
+                  <div class="tune-note">
+                    Scales the outer glow falloff.
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-glow-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Legacy jet overlay</span>
+                    <span class="tune-actions">
+                      <output id="tune-exhaust-jets-out">—</output>
+                      <button id="tune-exhaust-jets-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <select id="tune-exhaust-jets" class="select-block">
+                    <option value="0" selected>Off</option>
+                    <option value="1">On</option>
+                  </select>
+                  <div class="tune-note">
+                    Shows the older orange “jet flame” drawing on top of the particle exhaust.
+                    <div class="tune-saved">Saved default: <span id="tune-exhaust-jets-default">—</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card debug-group">
                 <div class="k">Asteroids</div>
                 <div class="v">
                   <div class="tune-row">

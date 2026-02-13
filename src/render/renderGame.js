@@ -141,6 +141,57 @@ function drawThrusterJets(ctx, engines, { tierKey = "small", exhaustSign = -1, t
   ctx.restore();
 }
 
+function drawExhaustParticles(ctx, particles, sprites, timeSec = 0) {
+  if (!Array.isArray(particles) || particles.length === 0) return;
+  const flameSprite = sprites?.flame || null;
+  const sparkSprite = sprites?.spark || null;
+  if (!flameSprite && !sparkSprite) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  for (const p of particles) {
+    const age = Number(p?.age) || 0;
+    const ttl = Math.max(1e-6, Number(p?.ttl) || 0.001);
+    const t = clamp(age / ttl, 0, 1);
+    const life = 1 - t;
+    if (life <= 0.001) continue;
+
+    const seed = Number(p?.seed) || 0;
+    const flicker = 0.85 + 0.15 * Math.sin(timeSec * 38 + (seed % 997) * 0.07);
+    const r = clamp(Number(p?.r) || 2, 0.25, 12);
+    const x = Number(p?.pos?.x) || 0;
+    const y = Number(p?.pos?.y) || 0;
+
+    if (p.kind !== "spark") {
+      if (!flameSprite) continue;
+      const alpha = clamp(life * (0.55 + 0.45 * flicker), 0, 1);
+      // Sprite is authored ~unit radius; scale by particle radius.
+      const sizePx = r * 7.5;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(flameSprite, x - sizePx * 0.5, y - sizePx * 0.5, sizePx, sizePx);
+      continue;
+    }
+
+    if (!sparkSprite) continue;
+    const alpha = clamp(life * (0.75 + 0.25 * flicker), 0, 1);
+    const sizePx = Math.max(2, r * 6.0);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sparkSprite, x - sizePx * 0.5, y - sizePx * 0.5, sizePx, sizePx);
+
+    // Tiny “puff” behind the spark to hint at motion without drawing expensive streaks.
+    const vx = Number(p?.vel?.x) || 0;
+    const vy = Number(p?.vel?.y) || 0;
+    const offX = -vx * 0.010;
+    const offY = -vy * 0.010;
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.drawImage(sparkSprite, x + offX - sizePx * 0.5, y + offY - sizePx * 0.5, sizePx, sizePx);
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 function rgbToRgba(rgb, a) {
   const r = rgb?.[0] ?? 255;
   const g = rgb?.[1] ?? 255;
@@ -348,6 +399,96 @@ export function createRenderer(engine) {
   const currentForceFieldRadius = () => engine.getCurrentForceFieldRadius();
   const currentAttractRadius = () => engine.getCurrentAttractRadius();
   const svgPathCache = new Map();
+  let exhaustSpritesCacheKey = "";
+  let exhaustSpritesCache = null;
+  function getExhaustSprites() {
+    try {
+      if (typeof document === "undefined") return null;
+      const p = state.params || {};
+      const palette = Math.max(0, Math.min(4, Math.round(Number(p.exhaustPalette ?? 0))));
+      const core = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+      const glow = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+      const key = `${palette}:${core.toFixed(2)}:${glow.toFixed(2)}`;
+      if (key === exhaustSpritesCacheKey && exhaustSpritesCache) return exhaustSpritesCache;
+
+      const makeRadialSprite = (sizePx, stops) => {
+        const c = document.createElement("canvas");
+        c.width = sizePx;
+        c.height = sizePx;
+        const g = c.getContext("2d");
+        if (!g) return null;
+        const cx = sizePx * 0.5;
+        const cy = sizePx * 0.5;
+        const r = sizePx * 0.5;
+        const grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+        for (const s of stops) grad.addColorStop(s[0], s[1]);
+        g.fillStyle = grad;
+        g.fillRect(0, 0, sizePx, sizePx);
+        return c;
+      };
+
+      const pal = (() => {
+        if (palette === 1) {
+          return {
+            flameMid: [140, 200, 255],
+            flameOuter: [70, 140, 255],
+            sparkMid: [190, 235, 255],
+            sparkOuter: [120, 200, 255],
+          };
+        }
+        if (palette === 2) {
+          return {
+            flameMid: [215, 150, 255],
+            flameOuter: [165, 85, 255],
+            sparkMid: [240, 210, 255],
+            sparkOuter: [210, 160, 255],
+          };
+        }
+        if (palette === 3) {
+          return {
+            flameMid: [170, 255, 190],
+            flameOuter: [70, 255, 150],
+            sparkMid: [215, 255, 230],
+            sparkOuter: [140, 255, 200],
+          };
+        }
+        if (palette === 4) {
+          return {
+            flameMid: [255, 165, 140],
+            flameOuter: [255, 85, 70],
+            sparkMid: [255, 230, 220],
+            sparkOuter: [255, 170, 150],
+          };
+        }
+        return {
+          flameMid: [255, 190, 125],
+          flameOuter: [255, 120, 70],
+          sparkMid: [255, 230, 200],
+          sparkOuter: [255, 200, 125],
+        };
+      })();
+
+      const flame = makeRadialSprite(64, [
+        [0.0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+        [0.12, `rgba(255,245,220,${clamp(0.90 * core, 0, 1).toFixed(3)})`],
+        [0.30, `rgba(${pal.flameMid[0]},${pal.flameMid[1]},${pal.flameMid[2]},${clamp(0.55 * glow, 0, 1).toFixed(3)})`],
+        [0.58, `rgba(${pal.flameOuter[0]},${pal.flameOuter[1]},${pal.flameOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+        [1.0, "rgba(0,0,0,0.00)"],
+      ]);
+      const spark = makeRadialSprite(48, [
+        [0.0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+        [0.22, `rgba(${pal.sparkMid[0]},${pal.sparkMid[1]},${pal.sparkMid[2]},${clamp(0.85 * core, 0, 1).toFixed(3)})`],
+        [0.60, `rgba(${pal.sparkOuter[0]},${pal.sparkOuter[1]},${pal.sparkOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+        [1.0, "rgba(0,0,0,0.00)"],
+      ]);
+
+      exhaustSpritesCacheKey = key;
+      exhaustSpritesCache = { flame, spark };
+      return exhaustSpritesCache;
+    } catch {
+      return null;
+    }
+  }
 
   function drawForcefieldRings(ctx) {
     if (state.mode !== "playing") return;
@@ -498,7 +639,9 @@ export function createRenderer(engine) {
       ctx.scale(drawScale, drawScale);
       if (mirrorX) ctx.scale(-1, 1);
       ctx.stroke(path);
-      if (thrusting) {
+      const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+      const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+      if (thrusting && (legacyJets || !particlesOn)) {
         drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign, t: state.time });
       }
       ctx.restore();
@@ -516,7 +659,9 @@ export function createRenderer(engine) {
       }
       ctx.closePath();
       ctx.stroke();
-      if (thrusting) {
+      const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+      const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+      if (thrusting && (legacyJets || !particlesOn)) {
         drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
       }
       ctx.restore();
@@ -760,6 +905,7 @@ export function createRenderer(engine) {
       ctx.restore();
     }
 
+    drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
     drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
 
     ctx.restore();

@@ -198,6 +198,28 @@ Updates
   - Validation:
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-12 exhaust particles MVP (deterministic ship thrusters):
+  - Added deterministic `state.exhaust` particle system in `src/engine/createEngine.js`:
+    - Spawns flame + occasional spark particles from per-ship engine nozzles while thrusting.
+    - Particles persist in world space with TTL + velocity damping, creating visible trails + natural “flame lag” on turns.
+  - Optimized exhaust sim to avoid per-frame allocations:
+    - Added a small particle pool + in-place compaction to reduce GC thrash while thrusting.
+    - Reduced spawn rate slightly for small tier and lengthened flame TTL a bit.
+  - Switched exhaust rendering to cached radial-gradient sprite blits (round particles) to avoid per-particle path/shadow work.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright screenshot: `output/exhaust-particles-v3/shot-1.png`.
+- 2026-02-12 debug tuning knobs for exhaust VFX:
+  - Added params + debug menu sliders:
+    - `exhaustIntensity` (scales emission + max particles).
+    - `exhaustSparkScale` (scales spark emission).
+    - `exhaustPalette`, `exhaustCoreScale`, `exhaustGlowScale` (controls inner/outer color/gradient via cached sprite regen).
+    - `exhaustLegacyJets` toggle (disables the old orange jet overlay so palette changes are unambiguous).
+  - Files: `src/engine/createEngine.js`, `src/ui/createUiBindings.js`, `index.html`.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
       - Start flow; movement (W/A/D/S); burst (Space + click); restart (R); fullscreen (F).
       - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open).

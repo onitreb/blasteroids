@@ -256,6 +256,8 @@ function shipForward(ship) {
 export function createEngine({ width, height }) {
   const rng = seededRng(0xdecafbad);
   const starRng = seededRng(0x51a7f00d);
+  let exhaustRng = seededRng(0x1ee7beef);
+  const exhaustPool = [];
   const state = {
     mode: "menu", // menu | playing | gameover
     time: 0,
@@ -263,6 +265,7 @@ export function createEngine({ width, height }) {
     asteroids: [],
     gems: [],
     effects: [],
+    exhaust: [],
     saucer: null,
     saucerLasers: [],
     saucerSpawnT: 0,
@@ -328,6 +331,12 @@ export function createEngine({ width, height }) {
       shipBrake: 220,
       shipMaxSpeed: 420,
       shipLinearDamp: 0.15,
+      exhaustIntensity: 1, // VFX only: scales thruster particle emission
+      exhaustSparkScale: 1, // VFX only: scales spark emission chance
+      exhaustPalette: 0, // VFX only: 0..N palette id
+      exhaustCoreScale: 1, // VFX only: core brightness scale
+      exhaustGlowScale: 1, // VFX only: glow strength scale
+      exhaustLegacyJets: 0, // VFX only: show old gradient jet overlay
 
       attractRadius: 252, // +5%
       forceFieldRadius: 75,
@@ -1090,6 +1099,9 @@ export function createEngine({ width, height }) {
     state.burstCooldown = 0;
     state.blastPulseT = 0;
     state.effects = [];
+    state.exhaust = [];
+    exhaustRng = seededRng(0x1ee7beef);
+    exhaustPool.length = 0;
     state.gems = [];
     state.saucer = null;
     state.saucerLasers = [];
@@ -1371,6 +1383,140 @@ export function createEngine({ width, height }) {
 
     ship.pos = add(ship.pos, mul(ship.vel, dt));
     confineShipToWorld();
+  }
+
+  function exhaustShipScaleAndMirror(tier, ship) {
+    const renderer = tier?.renderer || {};
+    const shipRadius = Math.max(1, Number(ship?.radius) || Number(tier?.radius) || 1);
+    if (renderer.type === "svg") {
+      const baseScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+      const explicitHullRadius = Number(renderer.hullRadius);
+      const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+      return { scale: baseScale * autoScale, mirrorX: renderer.mirrorX === true };
+    }
+    const points = Array.isArray(renderer.points) ? renderer.points : null;
+    const hullRadius = points ? polygonHullRadius(points) : 0;
+    const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
+    return { scale: drawScale, mirrorX: false };
+  }
+
+  function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed }) {
+    const p = exhaustPool.length
+      ? exhaustPool.pop()
+      : { kind: "flame", pos: vec(0, 0), vel: vec(0, 0), age: 0, ttl: 0, r: 1, seed: 0 };
+    p.kind = kind;
+    p.pos.x = x;
+    p.pos.y = y;
+    p.vel.x = vx;
+    p.vel.y = vy;
+    p.age = 0;
+    p.ttl = ttl;
+    p.r = r;
+    p.seed = seed;
+    state.exhaust.push(p);
+  }
+
+  function updateExhaust(dt) {
+    const particles = state.exhaust;
+    let w = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.age += dt;
+      if (p.age >= p.ttl) {
+        exhaustPool.push(p);
+        continue;
+      }
+      const drag = p.kind === "spark" ? 3.8 : 2.4;
+      const damp = Math.exp(-drag * dt);
+      p.vel.x *= damp;
+      p.vel.y *= damp;
+      p.pos.x += p.vel.x * dt;
+      p.pos.y += p.vel.y * dt;
+      particles[w++] = p;
+    }
+    particles.length = w;
+
+    const ship = state.ship;
+    if (!state.input.up || !ship) return;
+    const tier = currentShipTier();
+    const renderer = tier?.renderer || {};
+    const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
+    if (engines.length === 0) return;
+
+    const { scale, mirrorX } = exhaustShipScaleAndMirror(tier, ship);
+    const ang = ship.angle || 0;
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const backX = -c;
+    const backY = -s;
+    const sideX = -s;
+    const sideY = c;
+    const baseVelX = Number(ship.vel?.x) || 0;
+    const baseVelY = Number(ship.vel?.y) || 0;
+    const shipX = Number(ship.pos?.x) || 0;
+    const shipY = Number(ship.pos?.y) || 0;
+
+    const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5);
+    const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3);
+    if (intensity <= 1e-6 && sparkScale <= 1e-6) return;
+    const dtScale = clamp(dt * 60, 0.1, 4);
+
+    const tierScale = tier.key === "large" ? 1.35 : tier.key === "medium" ? 1.15 : 1;
+    const flamesPerEngineBase = tier.key === "large" ? 3 : tier.key === "medium" ? 2 : 1;
+    const sparkChanceBase = tier.key === "large" ? 0.16 : tier.key === "medium" ? 0.14 : 0.12;
+    const maxParticles = clamp(Math.round(650 + 550 * intensity), 220, 1400);
+
+    for (let ei = 0; ei < engines.length; ei++) {
+      const e = engines[ei];
+      let lx = (Number(e?.x) || 0) * scale;
+      const ly = (Number(e?.y) || 0) * scale;
+      if (mirrorX) lx = -lx;
+
+      // Slight offset backward so we don't spawn bright particles on the hull stroke.
+      const nozzleOffset = 1.6 * scale;
+      const localX = lx - nozzleOffset;
+      const localY = ly;
+      const nozzleX = shipX + localX * c - localY * s;
+      const nozzleY = shipY + localX * s + localY * c;
+
+      const flameCountF = flamesPerEngineBase * intensity * dtScale;
+      const flameWhole = Math.floor(flameCountF);
+      const flameFrac = flameCountF - flameWhole;
+      const flameCount = flameWhole + (exhaustRng() < flameFrac ? 1 : 0);
+      for (let j = 0; j < flameCount; j++) {
+        const seed = Math.floor(exhaustRng() * 0xffffffff) >>> 0;
+        const sideJitter = (exhaustRng() * 2 - 1) * 52 * tierScale;
+        const backJitter = (exhaustRng() * 2 - 1) * 22 * tierScale;
+        const speed = (180 + exhaustRng() * 150) * tierScale;
+        const vx = baseVelX + backX * (speed + backJitter) + sideX * sideJitter;
+        const vy = baseVelY + backY * (speed + backJitter) + sideY * sideJitter;
+        const ttl = 0.28 + exhaustRng() * 0.26;
+        const r = (2.0 + exhaustRng() * 2.2) * tierScale * (0.85 + 0.25 * intensity);
+        const posX =
+          nozzleX + sideX * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backX * (exhaustRng() * 2.8);
+        const posY =
+          nozzleY + sideY * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backY * (exhaustRng() * 2.8);
+        spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed });
+      }
+
+      const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
+      if (sparkChance > 1e-6 && exhaustRng() < sparkChance) {
+        const seed = Math.floor(exhaustRng() * 0xffffffff) >>> 0;
+        const sideJitter = (exhaustRng() * 2 - 1) * 120 * tierScale;
+        const speed = (300 + exhaustRng() * 220) * tierScale;
+        const vx = baseVelX + backX * speed + sideX * sideJitter;
+        const vy = baseVelY + backY * speed + sideY * sideJitter;
+        const ttl = 0.12 + exhaustRng() * 0.20;
+        const r = (1.0 + exhaustRng() * 1.4) * tierScale;
+        spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed });
+      }
+    }
+
+    if (particles.length > maxParticles) {
+      while (particles.length > maxParticles) {
+        exhaustPool.push(particles.pop());
+      }
+    }
   }
 
   function updateAsteroids(dt) {
@@ -1832,6 +1978,7 @@ export function createEngine({ width, height }) {
       burstAttached();
     }
     updateShip(dt);
+    updateExhaust(dt);
     syncCameraToShip();
     updateAsteroids(dt);
     updateGems(dt);

@@ -421,6 +421,8 @@
   function createEngine({ width, height }) {
     const rng = seededRng(3737844653);
     const starRng = seededRng(1369960461);
+    let exhaustRng = seededRng(518504175);
+    const exhaustPool = [];
     const state = {
       mode: "menu",
       // menu | playing | gameover
@@ -429,6 +431,7 @@
       asteroids: [],
       gems: [],
       effects: [],
+      exhaust: [],
       saucer: null,
       saucerLasers: [],
       saucerSpawnT: 0,
@@ -497,6 +500,18 @@
         shipBrake: 220,
         shipMaxSpeed: 420,
         shipLinearDamp: 0.15,
+        exhaustIntensity: 1,
+        // VFX only: scales thruster particle emission
+        exhaustSparkScale: 1,
+        // VFX only: scales spark emission chance
+        exhaustPalette: 0,
+        // VFX only: 0..N palette id
+        exhaustCoreScale: 1,
+        // VFX only: core brightness scale
+        exhaustGlowScale: 1,
+        // VFX only: glow strength scale
+        exhaustLegacyJets: 0,
+        // VFX only: show old gradient jet overlay
         attractRadius: 252,
         // +5%
         forceFieldRadius: 75,
@@ -1223,6 +1238,9 @@
       state.burstCooldown = 0;
       state.blastPulseT = 0;
       state.effects = [];
+      state.exhaust = [];
+      exhaustRng = seededRng(518504175);
+      exhaustPool.length = 0;
       state.gems = [];
       state.saucer = null;
       state.saucerLasers = [];
@@ -1482,6 +1500,127 @@
       }
       ship.pos = add(ship.pos, mul(ship.vel, dt));
       confineShipToWorld();
+    }
+    function exhaustShipScaleAndMirror(tier, ship) {
+      const renderer = tier?.renderer || {};
+      const shipRadius = Math.max(1, Number(ship?.radius) || Number(tier?.radius) || 1);
+      if (renderer.type === "svg") {
+        const baseScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+        const explicitHullRadius = Number(renderer.hullRadius);
+        const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+        return { scale: baseScale * autoScale, mirrorX: renderer.mirrorX === true };
+      }
+      const points = Array.isArray(renderer.points) ? renderer.points : null;
+      const hullRadius = points ? polygonHullRadius(points) : 0;
+      const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
+      return { scale: drawScale, mirrorX: false };
+    }
+    function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed }) {
+      const p = exhaustPool.length ? exhaustPool.pop() : { kind: "flame", pos: vec(0, 0), vel: vec(0, 0), age: 0, ttl: 0, r: 1, seed: 0 };
+      p.kind = kind;
+      p.pos.x = x;
+      p.pos.y = y;
+      p.vel.x = vx;
+      p.vel.y = vy;
+      p.age = 0;
+      p.ttl = ttl;
+      p.r = r;
+      p.seed = seed;
+      state.exhaust.push(p);
+    }
+    function updateExhaust(dt) {
+      const particles = state.exhaust;
+      let w = 0;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.age += dt;
+        if (p.age >= p.ttl) {
+          exhaustPool.push(p);
+          continue;
+        }
+        const drag = p.kind === "spark" ? 3.8 : 2.4;
+        const damp = Math.exp(-drag * dt);
+        p.vel.x *= damp;
+        p.vel.y *= damp;
+        p.pos.x += p.vel.x * dt;
+        p.pos.y += p.vel.y * dt;
+        particles[w++] = p;
+      }
+      particles.length = w;
+      const ship = state.ship;
+      if (!state.input.up || !ship)
+        return;
+      const tier = currentShipTier();
+      const renderer = tier?.renderer || {};
+      const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
+      if (engines.length === 0)
+        return;
+      const { scale, mirrorX } = exhaustShipScaleAndMirror(tier, ship);
+      const ang = ship.angle || 0;
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      const backX = -c;
+      const backY = -s;
+      const sideX = -s;
+      const sideY = c;
+      const baseVelX = Number(ship.vel?.x) || 0;
+      const baseVelY = Number(ship.vel?.y) || 0;
+      const shipX = Number(ship.pos?.x) || 0;
+      const shipY = Number(ship.pos?.y) || 0;
+      const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5);
+      const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3);
+      if (intensity <= 1e-6 && sparkScale <= 1e-6)
+        return;
+      const dtScale = clamp(dt * 60, 0.1, 4);
+      const tierScale = tier.key === "large" ? 1.35 : tier.key === "medium" ? 1.15 : 1;
+      const flamesPerEngineBase = tier.key === "large" ? 3 : tier.key === "medium" ? 2 : 1;
+      const sparkChanceBase = tier.key === "large" ? 0.16 : tier.key === "medium" ? 0.14 : 0.12;
+      const maxParticles = clamp(Math.round(650 + 550 * intensity), 220, 1400);
+      for (let ei = 0; ei < engines.length; ei++) {
+        const e = engines[ei];
+        let lx = (Number(e?.x) || 0) * scale;
+        const ly = (Number(e?.y) || 0) * scale;
+        if (mirrorX)
+          lx = -lx;
+        const nozzleOffset = 1.6 * scale;
+        const localX = lx - nozzleOffset;
+        const localY = ly;
+        const nozzleX = shipX + localX * c - localY * s;
+        const nozzleY = shipY + localX * s + localY * c;
+        const flameCountF = flamesPerEngineBase * intensity * dtScale;
+        const flameWhole = Math.floor(flameCountF);
+        const flameFrac = flameCountF - flameWhole;
+        const flameCount = flameWhole + (exhaustRng() < flameFrac ? 1 : 0);
+        for (let j = 0; j < flameCount; j++) {
+          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const sideJitter = (exhaustRng() * 2 - 1) * 52 * tierScale;
+          const backJitter = (exhaustRng() * 2 - 1) * 22 * tierScale;
+          const speed = (180 + exhaustRng() * 150) * tierScale;
+          const vx = baseVelX + backX * (speed + backJitter) + sideX * sideJitter;
+          const vy = baseVelY + backY * (speed + backJitter) + sideY * sideJitter;
+          const ttl = 0.28 + exhaustRng() * 0.26;
+          const r = (2 + exhaustRng() * 2.2) * tierScale * (0.85 + 0.25 * intensity);
+          const posX = nozzleX + sideX * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backX * (exhaustRng() * 2.8);
+          const posY = nozzleY + sideY * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backY * (exhaustRng() * 2.8);
+          spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed });
+        }
+        const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
+        if (sparkChance > 1e-6 && exhaustRng() < sparkChance) {
+          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const sideJitter = (exhaustRng() * 2 - 1) * 120 * tierScale;
+          const speed = (300 + exhaustRng() * 220) * tierScale;
+          const vx = baseVelX + backX * speed + sideX * sideJitter;
+          const vy = baseVelY + backY * speed + sideY * sideJitter;
+          const ttl = 0.12 + exhaustRng() * 0.2;
+          const r = (1 + exhaustRng() * 1.4) * tierScale;
+          spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed });
+        }
+      }
+      if (particles.length > maxParticles) {
+        while (particles.length > maxParticles) {
+          exhaustPool.push(particles.pop());
+        }
+      }
     }
     function updateAsteroids(dt) {
       const ship = state.ship;
@@ -1917,6 +2056,7 @@
         burstAttached();
       }
       updateShip(dt);
+      updateExhaust(dt);
       syncCameraToShip();
       updateAsteroids(dt);
       updateGems(dt);
@@ -2182,6 +2322,52 @@
     }
     ctx.restore();
   }
+  function drawExhaustParticles(ctx, particles, sprites, timeSec = 0) {
+    if (!Array.isArray(particles) || particles.length === 0)
+      return;
+    const flameSprite = sprites?.flame || null;
+    const sparkSprite = sprites?.spark || null;
+    if (!flameSprite && !sparkSprite)
+      return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of particles) {
+      const age = Number(p?.age) || 0;
+      const ttl = Math.max(1e-6, Number(p?.ttl) || 1e-3);
+      const t = clamp(age / ttl, 0, 1);
+      const life = 1 - t;
+      if (life <= 1e-3)
+        continue;
+      const seed = Number(p?.seed) || 0;
+      const flicker = 0.85 + 0.15 * Math.sin(timeSec * 38 + seed % 997 * 0.07);
+      const r = clamp(Number(p?.r) || 2, 0.25, 12);
+      const x = Number(p?.pos?.x) || 0;
+      const y = Number(p?.pos?.y) || 0;
+      if (p.kind !== "spark") {
+        if (!flameSprite)
+          continue;
+        const alpha2 = clamp(life * (0.55 + 0.45 * flicker), 0, 1);
+        const sizePx2 = r * 7.5;
+        ctx.globalAlpha = alpha2;
+        ctx.drawImage(flameSprite, x - sizePx2 * 0.5, y - sizePx2 * 0.5, sizePx2, sizePx2);
+        continue;
+      }
+      if (!sparkSprite)
+        continue;
+      const alpha = clamp(life * (0.75 + 0.25 * flicker), 0, 1);
+      const sizePx = Math.max(2, r * 6);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(sparkSprite, x - sizePx * 0.5, y - sizePx * 0.5, sizePx, sizePx);
+      const vx = Number(p?.vel?.x) || 0;
+      const vy = Number(p?.vel?.y) || 0;
+      const offX = -vx * 0.01;
+      const offY = -vy * 0.01;
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.drawImage(sparkSprite, x + offX - sizePx * 0.5, y + offY - sizePx * 0.5, sizePx, sizePx);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
   function rgbToRgba(rgb, a) {
     const r = rgb?.[0] ?? 255;
     const g = rgb?.[1] ?? 255;
@@ -2358,6 +2544,96 @@
     const currentForceFieldRadius = () => engine.getCurrentForceFieldRadius();
     const currentAttractRadius = () => engine.getCurrentAttractRadius();
     const svgPathCache = /* @__PURE__ */ new Map();
+    let exhaustSpritesCacheKey = "";
+    let exhaustSpritesCache = null;
+    function getExhaustSprites() {
+      try {
+        if (typeof document === "undefined")
+          return null;
+        const p = state.params || {};
+        const palette = Math.max(0, Math.min(4, Math.round(Number(p.exhaustPalette ?? 0))));
+        const core = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+        const glow = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+        const key = `${palette}:${core.toFixed(2)}:${glow.toFixed(2)}`;
+        if (key === exhaustSpritesCacheKey && exhaustSpritesCache)
+          return exhaustSpritesCache;
+        const makeRadialSprite = (sizePx, stops) => {
+          const c = document.createElement("canvas");
+          c.width = sizePx;
+          c.height = sizePx;
+          const g = c.getContext("2d");
+          if (!g)
+            return null;
+          const cx = sizePx * 0.5;
+          const cy = sizePx * 0.5;
+          const r = sizePx * 0.5;
+          const grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+          for (const s of stops)
+            grad.addColorStop(s[0], s[1]);
+          g.fillStyle = grad;
+          g.fillRect(0, 0, sizePx, sizePx);
+          return c;
+        };
+        const pal = (() => {
+          if (palette === 1) {
+            return {
+              flameMid: [140, 200, 255],
+              flameOuter: [70, 140, 255],
+              sparkMid: [190, 235, 255],
+              sparkOuter: [120, 200, 255]
+            };
+          }
+          if (palette === 2) {
+            return {
+              flameMid: [215, 150, 255],
+              flameOuter: [165, 85, 255],
+              sparkMid: [240, 210, 255],
+              sparkOuter: [210, 160, 255]
+            };
+          }
+          if (palette === 3) {
+            return {
+              flameMid: [170, 255, 190],
+              flameOuter: [70, 255, 150],
+              sparkMid: [215, 255, 230],
+              sparkOuter: [140, 255, 200]
+            };
+          }
+          if (palette === 4) {
+            return {
+              flameMid: [255, 165, 140],
+              flameOuter: [255, 85, 70],
+              sparkMid: [255, 230, 220],
+              sparkOuter: [255, 170, 150]
+            };
+          }
+          return {
+            flameMid: [255, 190, 125],
+            flameOuter: [255, 120, 70],
+            sparkMid: [255, 230, 200],
+            sparkOuter: [255, 200, 125]
+          };
+        })();
+        const flame = makeRadialSprite(64, [
+          [0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+          [0.12, `rgba(255,245,220,${clamp(0.9 * core, 0, 1).toFixed(3)})`],
+          [0.3, `rgba(${pal.flameMid[0]},${pal.flameMid[1]},${pal.flameMid[2]},${clamp(0.55 * glow, 0, 1).toFixed(3)})`],
+          [0.58, `rgba(${pal.flameOuter[0]},${pal.flameOuter[1]},${pal.flameOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+          [1, "rgba(0,0,0,0.00)"]
+        ]);
+        const spark = makeRadialSprite(48, [
+          [0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+          [0.22, `rgba(${pal.sparkMid[0]},${pal.sparkMid[1]},${pal.sparkMid[2]},${clamp(0.85 * core, 0, 1).toFixed(3)})`],
+          [0.6, `rgba(${pal.sparkOuter[0]},${pal.sparkOuter[1]},${pal.sparkOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+          [1, "rgba(0,0,0,0.00)"]
+        ]);
+        exhaustSpritesCacheKey = key;
+        exhaustSpritesCache = { flame, spark };
+        return exhaustSpritesCache;
+      } catch {
+        return null;
+      }
+    }
     function drawForcefieldRings(ctx) {
       if (state.mode !== "playing")
         return;
@@ -2482,7 +2758,9 @@
         if (mirrorX)
           ctx.scale(-1, 1);
         ctx.stroke(path);
-        if (thrusting) {
+        const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+        const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+        if (thrusting && (legacyJets || !particlesOn)) {
           drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign, t: state.time });
         }
         ctx.restore();
@@ -2503,7 +2781,9 @@
         }
         ctx.closePath();
         ctx.stroke();
-        if (thrusting) {
+        const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+        const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+        if (thrusting && (legacyJets || !particlesOn)) {
           drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
         }
         ctx.restore();
@@ -2717,6 +2997,7 @@
         }
         ctx.restore();
       }
+      drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
       drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
       ctx.restore();
       ctx.save();
@@ -2789,6 +3070,12 @@
     "tune-capture",
     "tune-burst",
     "tune-thrust",
+    "tune-exhaust-intensity",
+    "tune-exhaust-sparks",
+    "tune-exhaust-palette",
+    "tune-exhaust-core",
+    "tune-exhaust-glow",
+    "tune-exhaust-jets",
     "tune-dmg",
     "tune-fracture",
     "tune-world-density",
@@ -2891,6 +3178,30 @@
     const tuneThrustOut = documentRef.getElementById("tune-thrust-out");
     const tuneThrustSave = documentRef.getElementById("tune-thrust-save");
     const tuneThrustDefault = documentRef.getElementById("tune-thrust-default");
+    const tuneExhaustIntensity = documentRef.getElementById("tune-exhaust-intensity");
+    const tuneExhaustIntensityOut = documentRef.getElementById("tune-exhaust-intensity-out");
+    const tuneExhaustIntensitySave = documentRef.getElementById("tune-exhaust-intensity-save");
+    const tuneExhaustIntensityDefault = documentRef.getElementById("tune-exhaust-intensity-default");
+    const tuneExhaustSparks = documentRef.getElementById("tune-exhaust-sparks");
+    const tuneExhaustSparksOut = documentRef.getElementById("tune-exhaust-sparks-out");
+    const tuneExhaustSparksSave = documentRef.getElementById("tune-exhaust-sparks-save");
+    const tuneExhaustSparksDefault = documentRef.getElementById("tune-exhaust-sparks-default");
+    const tuneExhaustPalette = documentRef.getElementById("tune-exhaust-palette");
+    const tuneExhaustPaletteOut = documentRef.getElementById("tune-exhaust-palette-out");
+    const tuneExhaustPaletteSave = documentRef.getElementById("tune-exhaust-palette-save");
+    const tuneExhaustPaletteDefault = documentRef.getElementById("tune-exhaust-palette-default");
+    const tuneExhaustCore = documentRef.getElementById("tune-exhaust-core");
+    const tuneExhaustCoreOut = documentRef.getElementById("tune-exhaust-core-out");
+    const tuneExhaustCoreSave = documentRef.getElementById("tune-exhaust-core-save");
+    const tuneExhaustCoreDefault = documentRef.getElementById("tune-exhaust-core-default");
+    const tuneExhaustGlow = documentRef.getElementById("tune-exhaust-glow");
+    const tuneExhaustGlowOut = documentRef.getElementById("tune-exhaust-glow-out");
+    const tuneExhaustGlowSave = documentRef.getElementById("tune-exhaust-glow-save");
+    const tuneExhaustGlowDefault = documentRef.getElementById("tune-exhaust-glow-default");
+    const tuneExhaustJets = documentRef.getElementById("tune-exhaust-jets");
+    const tuneExhaustJetsOut = documentRef.getElementById("tune-exhaust-jets-out");
+    const tuneExhaustJetsSave = documentRef.getElementById("tune-exhaust-jets-save");
+    const tuneExhaustJetsDefault = documentRef.getElementById("tune-exhaust-jets-default");
     const tuneDmg = documentRef.getElementById("tune-dmg");
     const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
     const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
@@ -3112,6 +3423,65 @@
         suffix: " px/s^2"
       },
       {
+        key: "exhaustIntensity",
+        input: tuneExhaustIntensity,
+        saveBtn: tuneExhaustIntensitySave,
+        savedOut: tuneExhaustIntensityDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustSparkScale",
+        input: tuneExhaustSparks,
+        saveBtn: tuneExhaustSparksSave,
+        savedOut: tuneExhaustSparksDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustPalette",
+        input: tuneExhaustPalette,
+        saveBtn: tuneExhaustPaletteSave,
+        savedOut: tuneExhaustPaletteDefault,
+        suffix: "",
+        format: (v) => {
+          const i = Math.round(Number(v) || 0);
+          if (i === 1)
+            return "Ion (blue)";
+          if (i === 2)
+            return "Plasma (purple)";
+          if (i === 3)
+            return "Toxic (green)";
+          if (i === 4)
+            return "Ember (red)";
+          return "Rocket (warm)";
+        }
+      },
+      {
+        key: "exhaustCoreScale",
+        input: tuneExhaustCore,
+        saveBtn: tuneExhaustCoreSave,
+        savedOut: tuneExhaustCoreDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustGlowScale",
+        input: tuneExhaustGlow,
+        saveBtn: tuneExhaustGlowSave,
+        savedOut: tuneExhaustGlowDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustLegacyJets",
+        input: tuneExhaustJets,
+        saveBtn: tuneExhaustJetsSave,
+        savedOut: tuneExhaustJetsDefault,
+        suffix: "",
+        format: (v) => Number(v) >= 0.5 ? "On" : "Off"
+      },
+      {
         key: "projectileImpactScale",
         input: tuneDmg,
         saveBtn: tuneDmgSave,
@@ -3321,6 +3691,12 @@
       p.innerDrag = clamp(Number(p.innerDrag ?? 4), 0, 20);
       p.ringK = clamp(Number(p.ringK ?? 6.5), 0, 30);
       p.ringRadialDamp = clamp(Number(p.ringRadialDamp ?? 6.5), 0, 40);
+      p.exhaustIntensity = clamp(Number(p.exhaustIntensity ?? 1), 0, 2.5);
+      p.exhaustSparkScale = clamp(Number(p.exhaustSparkScale ?? 1), 0, 3);
+      p.exhaustPalette = clamp(Math.round(Number(p.exhaustPalette ?? 0)), 0, 4);
+      p.exhaustCoreScale = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+      p.exhaustGlowScale = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+      p.exhaustLegacyJets = clamp(Math.round(Number(p.exhaustLegacyJets ?? 0)), 0, 1);
       p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
       p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
@@ -3395,6 +3771,18 @@
         tuneBurst.value = String(Math.round(p.burstSpeed));
       if (tuneThrust)
         tuneThrust.value = String(Math.round(p.shipThrust));
+      if (tuneExhaustIntensity)
+        tuneExhaustIntensity.value = String(p.exhaustIntensity ?? 1);
+      if (tuneExhaustSparks)
+        tuneExhaustSparks.value = String(p.exhaustSparkScale ?? 1);
+      if (tuneExhaustPalette)
+        tuneExhaustPalette.value = String(Math.round(p.exhaustPalette ?? 0));
+      if (tuneExhaustCore)
+        tuneExhaustCore.value = String(p.exhaustCoreScale ?? 1);
+      if (tuneExhaustGlow)
+        tuneExhaustGlow.value = String(p.exhaustGlowScale ?? 1);
+      if (tuneExhaustJets)
+        tuneExhaustJets.value = String(Math.round(p.exhaustLegacyJets ?? 0));
       if (tuneDmg)
         tuneDmg.value = String(p.projectileImpactScale ?? 1);
       if (tuneXlRadius)
@@ -3465,6 +3853,20 @@
       setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
       setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
       setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
+      if (tuneExhaustIntensityOut)
+        tuneExhaustIntensityOut.textContent = `${readNum(tuneExhaustIntensity, p.exhaustIntensity).toFixed(2)}x`;
+      if (tuneExhaustSparksOut)
+        tuneExhaustSparksOut.textContent = `${readNum(tuneExhaustSparks, p.exhaustSparkScale).toFixed(2)}x`;
+      if (tuneExhaustPaletteOut) {
+        const i = Math.round(readNum(tuneExhaustPalette, p.exhaustPalette));
+        tuneExhaustPaletteOut.textContent = i === 1 ? "Ion (blue)" : i === 2 ? "Plasma (purple)" : i === 3 ? "Toxic (green)" : i === 4 ? "Ember (red)" : "Rocket (warm)";
+      }
+      if (tuneExhaustCoreOut)
+        tuneExhaustCoreOut.textContent = `${readNum(tuneExhaustCore, p.exhaustCoreScale).toFixed(2)}x`;
+      if (tuneExhaustGlowOut)
+        tuneExhaustGlowOut.textContent = `${readNum(tuneExhaustGlow, p.exhaustGlowScale).toFixed(2)}x`;
+      if (tuneExhaustJetsOut)
+        tuneExhaustJetsOut.textContent = readNum(tuneExhaustJets, p.exhaustLegacyJets) >= 0.5 ? "On" : "Off";
       if (tuneDmgOut) {
         const val = readNum(tuneDmg, p.projectileImpactScale);
         tuneDmgOut.textContent = `${Number(val).toFixed(2)}x`;
@@ -3528,6 +3930,12 @@
       p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
       p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
       p.shipThrust = readNum(tuneThrust, p.shipThrust);
+      p.exhaustIntensity = clamp(readNum(tuneExhaustIntensity, p.exhaustIntensity), 0, 2.5);
+      p.exhaustSparkScale = clamp(readNum(tuneExhaustSparks, p.exhaustSparkScale), 0, 3);
+      p.exhaustPalette = clamp(Math.round(readNum(tuneExhaustPalette, p.exhaustPalette)), 0, 4);
+      p.exhaustCoreScale = clamp(readNum(tuneExhaustCore, p.exhaustCoreScale), 0, 2.5);
+      p.exhaustGlowScale = clamp(readNum(tuneExhaustGlow, p.exhaustGlowScale), 0, 2.5);
+      p.exhaustLegacyJets = clamp(Math.round(readNum(tuneExhaustJets, p.exhaustLegacyJets)), 0, 1);
       p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
       p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
