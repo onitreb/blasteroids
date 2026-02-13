@@ -1557,7 +1557,10 @@
       }
       particles.length = w;
       const ship = state.ship;
-      if (!state.input.up || !ship)
+      if (!ship)
+        return;
+      const thrustAmt = Math.max(state.input.up ? 1 : 0, clamp(Number(state.input.thrustAnalog ?? 0), 0, 1));
+      if (thrustAmt <= 1e-6)
         return;
       const tier = currentShipTier();
       const renderer = tier?.renderer || {};
@@ -1576,8 +1579,8 @@
       const baseVelY = Number(ship.vel?.y) || 0;
       const shipX = Number(ship.pos?.x) || 0;
       const shipY = Number(ship.pos?.y) || 0;
-      const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5);
-      const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3);
+      const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5) * thrustAmt;
+      const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3) * thrustAmt;
       if (intensity <= 1e-6 && sparkScale <= 1e-6)
         return;
       const dtScale = clamp(dt * 60, 0.1, 4);
@@ -3007,7 +3010,8 @@
         ctx.restore();
       }
       drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
-      drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
+      const thrusting = state.mode === "playing" && (state.input.up || Number(state.input?.thrustAnalog ?? 0) > 0.02);
+      drawShipModel(ctx, state.ship, thrusting);
       ctx.restore();
       ctx.save();
       ctx.fillStyle = "rgba(231,240,255,0.85)";

@@ -220,6 +220,8 @@ Updates
   - Validation:
     - `npm test`: `22 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-12 touch-thrust exhaust fix:
+  - Exhaust/legacy jets now consider analog thrust (`input.thrustAnalog`) so particles appear on iPad joystick thrust.
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
       - Start flow; movement (W/A/D/S); burst (Space + click); restart (R); fullscreen (F).
       - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open).

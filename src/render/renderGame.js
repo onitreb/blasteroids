@@ -906,7 +906,9 @@ export function createRenderer(engine) {
     }
 
     drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
-    drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
+    const thrusting =
+      state.mode === "playing" && (state.input.up || (Number(state.input?.thrustAnalog ?? 0) > 0.02));
+    drawShipModel(ctx, state.ship, thrusting);
 
     ctx.restore();
 

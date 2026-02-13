@@ -1444,7 +1444,9 @@ export function createEngine({ width, height }) {
     particles.length = w;
 
     const ship = state.ship;
-    if (!state.input.up || !ship) return;
+    if (!ship) return;
+    const thrustAmt = Math.max(state.input.up ? 1 : 0, clamp(Number(state.input.thrustAnalog ?? 0), 0, 1));
+    if (thrustAmt <= 1e-6) return;
     const tier = currentShipTier();
     const renderer = tier?.renderer || {};
     const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
@@ -1463,8 +1465,8 @@ export function createEngine({ width, height }) {
     const shipX = Number(ship.pos?.x) || 0;
     const shipY = Number(ship.pos?.y) || 0;
 
-    const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5);
-    const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3);
+    const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5) * thrustAmt;
+    const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3) * thrustAmt;
     if (intensity <= 1e-6 && sparkScale <= 1e-6) return;
     const dtScale = clamp(dt * 60, 0.1, 4);
 
