@@ -198,6 +198,28 @@ Updates
   - Validation:
     - `npm test`: `12 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-12 exhaust particles MVP (deterministic ship thrusters):
+  - Added deterministic `state.exhaust` particle system in `src/engine/createEngine.js`:
+    - Spawns flame + occasional spark particles from per-ship engine nozzles while thrusting.
+    - Particles persist in world space with TTL + velocity damping, creating visible trails + natural “flame lag” on turns.
+  - Optimized exhaust sim to avoid per-frame allocations:
+    - Added a small particle pool + in-place compaction to reduce GC thrash while thrusting.
+    - Reduced spawn rate slightly for small tier and lengthened flame TTL a bit.
+  - Switched exhaust rendering to cached radial-gradient sprite blits (round particles) to avoid per-particle path/shadow work.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright screenshot: `output/exhaust-particles-v3/shot-1.png`.
+- 2026-02-12 debug tuning knobs for exhaust VFX:
+  - Added params + debug menu sliders:
+    - `exhaustIntensity` (scales emission + max particles).
+    - `exhaustSparkScale` (scales spark emission).
+    - `exhaustPalette`, `exhaustCoreScale`, `exhaustGlowScale` (controls inner/outer color/gradient via cached sprite regen).
+    - `exhaustLegacyJets` toggle (disables the old orange jet overlay so palette changes are unambiguous).
+  - Files: `src/engine/createEngine.js`, `src/ui/createUiBindings.js`, `index.html`.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - `file://` smoke (Chrome DevTools MCP): passed with no console errors:
       - Start flow; movement (W/A/D/S); burst (Space + click); restart (R); fullscreen (F).
       - Debug menu open/close (M + Escape) and pause-on-open verified (ship position stable while menu open).
@@ -353,6 +375,7 @@ Updates
   - Validation:
     - `npm test`: `22 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright run: blocked (missing `playwright` package; install attempt did not complete).
 - 2026-02-11 strong breakability tuning pass (medium + large targets):
   - Lowered projectile damage-speed gates:
     - `medDamageSpeedMin: 240 -> 160`
@@ -366,3 +389,44 @@ Updates
   - Validation:
     - `npm test`: `23 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 asteroid fracture refactor (energy-based + ambient):
+  - Replaced multi-gate fracture logic (shipLaunched + per-size damage-speed mins + size gate + mass-ratio speed) with a single impact-energy model:
+    - `impactEnergy = 0.5 * reducedMass * v_rel^2`, multiplied by `projectileImpactScale` when ship-launched.
+    - `fractureThreshold = 0.25 * targetMass * (fractureImpactSpeed * sizeBias)^2` with a small rank-based size bias (`+0.12` per size rank).
+  - Ambient collisions can now fracture medium/large targets if energy is high enough.
+  - Removed `asteroidCanBreakTarget` + `asteroidDamageSpeedForSize` helpers and all per-size damage-speed gates.
+  - Ship-hit handling updated to use the same energy threshold for breaking launched rocks.
+  - UI tuning: repurposed the “Damage speed (small)” slider to “Ship-launched impact boost” (now `projectileImpactScale`), updated helper text.
+  - Tests updated for ambient fracture + projectile boost behavior.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 analysis pass (asteroid break logic deep dive + refactor plan):
+  - Current break path has multiple gates: `shipLaunched` required for damaging impacts, per-size damage-speed mins, size-gate (`projectile can only break same size or one size larger`), and a separate fracture-speed requirement based on mass ratio + size multiplier.
+  - Ambient (non-ship-launched) collisions only auto-break fast smalls; larger sizes never fracture from ambient collisions.
+  - UI exposes only `smallDamageSpeedMin` + `fractureImpactSpeed`; medium/large damage-speed gates are code-only, which can make tuning feel ineffective.
+  - Proposed simplification: unify damage/fracture into a single impact-energy model (`0.5 * reducedMass * v_rel^2`) with a per-target fracture threshold (scaled by mass/toughness) and an optional ship-launched multiplier, removing redundant gates. Add optional debug telemetry for impact energy/thresholds and migrate logic into a focused module.
+- 2026-02-11 fracture impulse fix:
+  - Apply `resolveElasticCollision(...)` even when fractures occur so surviving rocks receive a physical shove (momentum transfer) when the other object breaks.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-11 medium-break drop change:
+  - Medium asteroid fractures now drop 2 stationary gems instead of spawning small asteroids (prevents immediate bounce-off chain).
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright run: blocked (missing `playwright` package).
+- 2026-02-11 medium-break gem spacing:
+  - Spawned the two medium-break gems on opposite sides of the impact axis so they don’t overlap.
+  - Validation:
+    - `npm test`: `22 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-12 ship silhouette presets:
+  - Added SVG-path ship presets + Playwright screenshot gallery under `assets/ships/` and `output/ship-gallery/`.
+  - Set default tier silhouettes to:
+    - small: needle
+    - medium: hammer
+    - large: bulwark
+- 2026-02-12 ship thruster markers:
+  - Replaced always-on red glow with neutral nozzle geometry markers so ship orientation is clear without implying thrust.

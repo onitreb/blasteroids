@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 
 import { angleOf, angleToVec, wrapAngle } from "../src/util/angle.js";
 import {
-  asteroidCanBreakTarget,
-  asteroidDamageSpeedForSize,
   asteroidMassForRadius,
   asteroidNextSize,
   asteroidRadiusForSize,
@@ -101,11 +99,6 @@ test("asteroid helpers", () => {
     largeCount: 6,
     medCount: 10,
     smallCount: 22,
-    xxlargeDamageSpeedMin: 250,
-    xlargeDamageSpeedMin: 280,
-    largeDamageSpeedMin: 310,
-    medDamageSpeedMin: 360,
-    smallDamageSpeedMin: 420,
   };
 
   assert.equal(asteroidSizeRank("small"), 0);
@@ -115,10 +108,6 @@ test("asteroid helpers", () => {
   assert.equal(sizeSetHas(["small", "med"], "med"), true);
   assert.equal(sizeSetHas(["small"], "large"), false);
 
-  assert.equal(asteroidCanBreakTarget("small", "med"), true);
-  assert.equal(asteroidCanBreakTarget("small", "large"), false);
-  assert.equal(asteroidCanBreakTarget("xlarge", "xxlarge"), true);
-
   assert.equal(asteroidRadiusForSize(params, "xxlarge"), 150);
   assert.equal(asteroidRadiusForSize(params, "med"), 30);
   assert.equal(asteroidMassForRadius(0), 1);
@@ -126,8 +115,6 @@ test("asteroid helpers", () => {
 
   assert.equal(asteroidSpawnWeightForSize(params, "xxlarge"), 1);
   assert.equal(asteroidSpawnWeightForSize(params, "small"), 22);
-  assert.equal(asteroidDamageSpeedForSize(params, "large"), 310);
-  assert.equal(asteroidDamageSpeedForSize(params, "small"), 420);
 });
 
 test("ship helpers", () => {

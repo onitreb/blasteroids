@@ -31,6 +31,12 @@ export const DEBUG_MENU_CONTROL_IDS = Object.freeze([
   "tune-capture",
   "tune-burst",
   "tune-thrust",
+  "tune-exhaust-intensity",
+  "tune-exhaust-sparks",
+  "tune-exhaust-palette",
+  "tune-exhaust-core",
+  "tune-exhaust-glow",
+  "tune-exhaust-jets",
   "tune-dmg",
   "tune-fracture",
   "tune-world-density",
@@ -134,6 +140,30 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneThrustOut = documentRef.getElementById("tune-thrust-out");
   const tuneThrustSave = documentRef.getElementById("tune-thrust-save");
   const tuneThrustDefault = documentRef.getElementById("tune-thrust-default");
+  const tuneExhaustIntensity = documentRef.getElementById("tune-exhaust-intensity");
+  const tuneExhaustIntensityOut = documentRef.getElementById("tune-exhaust-intensity-out");
+  const tuneExhaustIntensitySave = documentRef.getElementById("tune-exhaust-intensity-save");
+  const tuneExhaustIntensityDefault = documentRef.getElementById("tune-exhaust-intensity-default");
+  const tuneExhaustSparks = documentRef.getElementById("tune-exhaust-sparks");
+  const tuneExhaustSparksOut = documentRef.getElementById("tune-exhaust-sparks-out");
+  const tuneExhaustSparksSave = documentRef.getElementById("tune-exhaust-sparks-save");
+  const tuneExhaustSparksDefault = documentRef.getElementById("tune-exhaust-sparks-default");
+  const tuneExhaustPalette = documentRef.getElementById("tune-exhaust-palette");
+  const tuneExhaustPaletteOut = documentRef.getElementById("tune-exhaust-palette-out");
+  const tuneExhaustPaletteSave = documentRef.getElementById("tune-exhaust-palette-save");
+  const tuneExhaustPaletteDefault = documentRef.getElementById("tune-exhaust-palette-default");
+  const tuneExhaustCore = documentRef.getElementById("tune-exhaust-core");
+  const tuneExhaustCoreOut = documentRef.getElementById("tune-exhaust-core-out");
+  const tuneExhaustCoreSave = documentRef.getElementById("tune-exhaust-core-save");
+  const tuneExhaustCoreDefault = documentRef.getElementById("tune-exhaust-core-default");
+  const tuneExhaustGlow = documentRef.getElementById("tune-exhaust-glow");
+  const tuneExhaustGlowOut = documentRef.getElementById("tune-exhaust-glow-out");
+  const tuneExhaustGlowSave = documentRef.getElementById("tune-exhaust-glow-save");
+  const tuneExhaustGlowDefault = documentRef.getElementById("tune-exhaust-glow-default");
+  const tuneExhaustJets = documentRef.getElementById("tune-exhaust-jets");
+  const tuneExhaustJetsOut = documentRef.getElementById("tune-exhaust-jets-out");
+  const tuneExhaustJetsSave = documentRef.getElementById("tune-exhaust-jets-save");
+  const tuneExhaustJetsDefault = documentRef.getElementById("tune-exhaust-jets-default");
   const tuneDmg = documentRef.getElementById("tune-dmg");
   const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
   const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
@@ -358,11 +388,67 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
       suffix: " px/s^2",
     },
     {
-      key: "smallDamageSpeedMin",
+      key: "exhaustIntensity",
+      input: tuneExhaustIntensity,
+      saveBtn: tuneExhaustIntensitySave,
+      savedOut: tuneExhaustIntensityDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "exhaustSparkScale",
+      input: tuneExhaustSparks,
+      saveBtn: tuneExhaustSparksSave,
+      savedOut: tuneExhaustSparksDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "exhaustPalette",
+      input: tuneExhaustPalette,
+      saveBtn: tuneExhaustPaletteSave,
+      savedOut: tuneExhaustPaletteDefault,
+      suffix: "",
+      format: (v) => {
+        const i = Math.round(Number(v) || 0);
+        if (i === 1) return "Ion (blue)";
+        if (i === 2) return "Plasma (purple)";
+        if (i === 3) return "Toxic (green)";
+        if (i === 4) return "Ember (red)";
+        return "Rocket (warm)";
+      },
+    },
+    {
+      key: "exhaustCoreScale",
+      input: tuneExhaustCore,
+      saveBtn: tuneExhaustCoreSave,
+      savedOut: tuneExhaustCoreDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "exhaustGlowScale",
+      input: tuneExhaustGlow,
+      saveBtn: tuneExhaustGlowSave,
+      savedOut: tuneExhaustGlowDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "exhaustLegacyJets",
+      input: tuneExhaustJets,
+      saveBtn: tuneExhaustJetsSave,
+      savedOut: tuneExhaustJetsDefault,
+      suffix: "",
+      format: (v) => (Number(v) >= 0.5 ? "On" : "Off"),
+    },
+    {
+      key: "projectileImpactScale",
       input: tuneDmg,
       saveBtn: tuneDmgSave,
       savedOut: tuneDmgDefault,
-      suffix: " px/s",
+      suffix: "x",
+      format: (v) => `${Number(v).toFixed(2)}x`,
     },
     {
       key: "xlargeRadius",
@@ -567,6 +653,12 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.innerDrag = clamp(Number(p.innerDrag ?? 4.0), 0, 20);
     p.ringK = clamp(Number(p.ringK ?? 6.5), 0, 30);
     p.ringRadialDamp = clamp(Number(p.ringRadialDamp ?? 6.5), 0, 40);
+    p.exhaustIntensity = clamp(Number(p.exhaustIntensity ?? 1), 0, 2.5);
+    p.exhaustSparkScale = clamp(Number(p.exhaustSparkScale ?? 1), 0, 3);
+    p.exhaustPalette = clamp(Math.round(Number(p.exhaustPalette ?? 0)), 0, 4);
+    p.exhaustCoreScale = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+    p.exhaustGlowScale = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+    p.exhaustLegacyJets = clamp(Math.round(Number(p.exhaustLegacyJets ?? 0)), 0, 1);
     p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
     p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
@@ -627,7 +719,13 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (tuneCapture) tuneCapture.value = String(Math.round(p.captureSpeed));
     if (tuneBurst) tuneBurst.value = String(Math.round(p.burstSpeed));
     if (tuneThrust) tuneThrust.value = String(Math.round(p.shipThrust));
-    if (tuneDmg) tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
+    if (tuneExhaustIntensity) tuneExhaustIntensity.value = String(p.exhaustIntensity ?? 1);
+    if (tuneExhaustSparks) tuneExhaustSparks.value = String(p.exhaustSparkScale ?? 1);
+    if (tuneExhaustPalette) tuneExhaustPalette.value = String(Math.round(p.exhaustPalette ?? 0));
+    if (tuneExhaustCore) tuneExhaustCore.value = String(p.exhaustCoreScale ?? 1);
+    if (tuneExhaustGlow) tuneExhaustGlow.value = String(p.exhaustGlowScale ?? 1);
+    if (tuneExhaustJets) tuneExhaustJets.value = String(Math.round(p.exhaustLegacyJets ?? 0));
+    if (tuneDmg) tuneDmg.value = String(p.projectileImpactScale ?? 1);
     if (tuneXlRadius) tuneXlRadius.value = String(Math.round(p.xlargeRadius));
     if (tuneXxlRadius) tuneXxlRadius.value = String(Math.round(p.xxlargeRadius));
     if (tuneXlCount) tuneXlCount.value = String(Math.round(p.xlargeCount));
@@ -669,7 +767,20 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
     setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
     setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
-    setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
+    if (tuneExhaustIntensityOut) tuneExhaustIntensityOut.textContent = `${readNum(tuneExhaustIntensity, p.exhaustIntensity).toFixed(2)}x`;
+    if (tuneExhaustSparksOut) tuneExhaustSparksOut.textContent = `${readNum(tuneExhaustSparks, p.exhaustSparkScale).toFixed(2)}x`;
+    if (tuneExhaustPaletteOut) {
+      const i = Math.round(readNum(tuneExhaustPalette, p.exhaustPalette));
+      tuneExhaustPaletteOut.textContent =
+        i === 1 ? "Ion (blue)" : i === 2 ? "Plasma (purple)" : i === 3 ? "Toxic (green)" : i === 4 ? "Ember (red)" : "Rocket (warm)";
+    }
+    if (tuneExhaustCoreOut) tuneExhaustCoreOut.textContent = `${readNum(tuneExhaustCore, p.exhaustCoreScale).toFixed(2)}x`;
+    if (tuneExhaustGlowOut) tuneExhaustGlowOut.textContent = `${readNum(tuneExhaustGlow, p.exhaustGlowScale).toFixed(2)}x`;
+    if (tuneExhaustJetsOut) tuneExhaustJetsOut.textContent = readNum(tuneExhaustJets, p.exhaustLegacyJets) >= 0.5 ? "On" : "Off";
+    if (tuneDmgOut) {
+      const val = readNum(tuneDmg, p.projectileImpactScale);
+      tuneDmgOut.textContent = `${Number(val).toFixed(2)}x`;
+    }
     setOut(tuneXlRadiusOut, readNum(tuneXlRadius, p.xlargeRadius), " px");
     setOut(tuneXxlRadiusOut, readNum(tuneXxlRadius, p.xxlargeRadius), " px");
     setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
@@ -724,7 +835,13 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
     p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
     p.shipThrust = readNum(tuneThrust, p.shipThrust);
-    p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
+    p.exhaustIntensity = clamp(readNum(tuneExhaustIntensity, p.exhaustIntensity), 0, 2.5);
+    p.exhaustSparkScale = clamp(readNum(tuneExhaustSparks, p.exhaustSparkScale), 0, 3);
+    p.exhaustPalette = clamp(Math.round(readNum(tuneExhaustPalette, p.exhaustPalette)), 0, 4);
+    p.exhaustCoreScale = clamp(readNum(tuneExhaustCore, p.exhaustCoreScale), 0, 2.5);
+    p.exhaustGlowScale = clamp(readNum(tuneExhaustGlow, p.exhaustGlowScale), 0, 2.5);
+    p.exhaustLegacyJets = clamp(Math.round(readNum(tuneExhaustJets, p.exhaustLegacyJets)), 0, 1);
+    p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
     p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
     p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);

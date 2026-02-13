@@ -26,14 +26,6 @@ export function sizeSetHas(sizeSet, size) {
   return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
 }
 
-export function asteroidCanBreakTarget(projectileSize, targetSize) {
-  const projectileRank = ASTEROID_SIZE_INDEX[projectileSize];
-  const targetRank = ASTEROID_SIZE_INDEX[targetSize];
-  if (!Number.isFinite(projectileRank) || !Number.isFinite(targetRank)) return false;
-  // Rule: a launched asteroid can break same size, any smaller size, or one size larger.
-  return targetRank <= projectileRank + 1;
-}
-
 export function asteroidRadiusForSize(params, size) {
   if (size === "xxlarge") return params.xxlargeRadius;
   if (size === "xlarge") return params.xlargeRadius;
@@ -53,12 +45,4 @@ export function asteroidSpawnWeightForSize(params, size) {
   if (size === "large") return Math.max(0, params.largeCount);
   if (size === "med") return Math.max(0, params.medCount);
   return Math.max(0, params.smallCount);
-}
-
-export function asteroidDamageSpeedForSize(params, size) {
-  if (size === "xxlarge") return params.xxlargeDamageSpeedMin;
-  if (size === "xlarge") return params.xlargeDamageSpeedMin;
-  if (size === "large") return params.largeDamageSpeedMin;
-  if (size === "med") return params.medDamageSpeedMin;
-  return params.smallDamageSpeedMin;
 }

@@ -115,13 +115,6 @@
   function sizeSetHas(sizeSet, size) {
     return Array.isArray(sizeSet) ? sizeSet.includes(size) : false;
   }
-  function asteroidCanBreakTarget(projectileSize, targetSize) {
-    const projectileRank = ASTEROID_SIZE_INDEX[projectileSize];
-    const targetRank = ASTEROID_SIZE_INDEX[targetSize];
-    if (!Number.isFinite(projectileRank) || !Number.isFinite(targetRank))
-      return false;
-    return targetRank <= projectileRank + 1;
-  }
   function asteroidRadiusForSize(params, size) {
     if (size === "xxlarge")
       return params.xxlargeRadius;
@@ -147,17 +140,6 @@
       return Math.max(0, params.medCount);
     return Math.max(0, params.smallCount);
   }
-  function asteroidDamageSpeedForSize(params, size) {
-    if (size === "xxlarge")
-      return params.xxlargeDamageSpeedMin;
-    if (size === "xlarge")
-      return params.xlargeDamageSpeedMin;
-    if (size === "large")
-      return params.largeDamageSpeedMin;
-    if (size === "med")
-      return params.medDamageSpeedMin;
-    return params.smallDamageSpeedMin;
-  }
 
   // src/util/ship.js
   function polygonHullRadius(points) {
@@ -171,6 +153,45 @@
     }
     return Math.sqrt(max2);
   }
+
+  // src/engine/shipPresetDefaults.js
+  var DEFAULT_SHIP_SVGS = {
+    "small": {
+      "id": "fighter_needle",
+      "path": "M 19 0 L 7 -5 L -10 -4 L -16 0 L -10 4 L 7 5 Z M -9 -2 L -12 0 L -9 2",
+      "hullRadius": 19,
+      "svgScale": 1,
+      "mirrorX": false,
+      "engines": null
+    },
+    "medium": {
+      "id": "gunship_hammer",
+      "path": "M 19.066 28.876 C 16.265 29.186 13.507 29.497 10.747 29.793 C 10.521 29.817 10.273 29.768 10.053 29.695 C 2.238 27.095 -5.575 24.486 -13.392 21.891 C -13.762 21.769 -14.169 21.705 -14.559 21.704 C -22.344 21.693 -30.129 21.698 -37.914 21.687 C -38.166 21.687 -38.456 21.611 -38.663 21.473 C -43.876 18.011 -49.081 14.538 -54.281 11.056 C -54.493 10.915 -54.692 10.700 -54.806 10.474 C -56.493 7.129 -58.162 3.775 -59.848 0.431 C -60 0.129 -59.991 -0.098 -59.841 -0.397 C -58.150 -3.761 -56.477 -7.134 -54.787 -10.498 C -54.679 -10.712 -54.492 -10.915 -54.292 -11.048 C -49.104 -14.519 -43.911 -17.982 -38.710 -21.433 C -38.489 -21.579 -38.183 -21.665 -37.917 -21.665 C -30.116 -21.677 -22.315 -21.673 -14.514 -21.682 C -14.189 -21.682 -13.851 -21.742 -13.542 -21.844 C -5.683 -24.454 2.171 -27.075 10.029 -29.686 C 10.277 -29.768 10.561 -29.817 10.818 -29.789 C 18.667 -28.925 26.516 -28.046 34.365 -27.182 C 34.730 -27.142 34.964 -27.009 35.171 -26.711 C 37.061 -23.992 38.960 -21.280 40.869 -18.575 C 40.980 -18.418 41.201 -18.237 41.371 -18.238 C 43.256 -18.239 45.140 -18.283 47.024 -18.300 C 51.242 -18.337 55.460 -18.366 59.677 -18.397 C 59.770 -18.398 59.862 -18.398 60 -18.398 C 60 -14.925 60 -11.478 60 -7.972 C 56.913 -6.904 53.780 -5.820 50.571 -4.709 C 51.030 -4.046 51.465 -3.410 51.907 -2.778 C 52.490 -1.943 53.072 -1.108 53.666 -0.280 C 53.816 -0.070 53.819 0.063 53.653 0.296 C 52.279 2.227 50.929 4.177 49.529 6.182 C 52.961 7.370 56.353 8.544 59.748 9.719 C 59.748 13.195 59.748 16.657 59.748 20.145 C 58.626 20.145 57.528 20.154 56.430 20.143 C 54.482 20.124 52.534 20.087 50.586 20.067 C 47.184 20.031 43.781 20.004 40.379 19.966 C 40.062 19.963 39.843 20.006 39.630 20.315 C 38.132 22.494 36.604 24.652 35.068 26.804 C 34.951 26.969 34.714 27.122 34.517 27.145 C 30.588 27.601 26.657 28.038 22.725 28.477 C 21.520 28.612 20.315 28.742 19.066 28.876 M -45.799 8.602 C -47.308 7.531 -48.275 6.098 -48.908 4.423 C -49.971 1.612 -50.048 -1.243 -49.165 -4.105 C -48.536 -6.145 -47.470 -7.909 -45.638 -9.118 C -43.491 -10.534 -40.743 -10.244 -38.881 -8.469 C -36.669 -6.361 -35.779 -3.707 -35.642 -0.753 C -35.511 2.046 -36.150 4.664 -37.856 6.931 C -39.098 8.582 -40.702 9.653 -42.873 9.610 C -43.943 9.589 -44.889 9.194 -45.799 8.602 z M 21.310 1.930 C 21.310 0.369 21.310 -1.146 21.310 -2.688 C 26.746 -2.688 32.140 -2.688 37.560 -2.688 C 37.560 -0.902 37.560 0.877 37.560 2.681 C 32.154 2.681 26.760 2.681 21.310 2.681 C 21.310 2.444 21.310 2.211 21.310 1.930 z",
+      "hullRadius": 60,
+      "svgScale": 1,
+      "mirrorX": true,
+      "engines": [
+        {
+          "x": 60.3,
+          "y": -13.25,
+          "len": 18
+        },
+        {
+          "x": 60.3,
+          "y": 14.95,
+          "len": 18
+        }
+      ]
+    },
+    "large": {
+      "id": "carrier_bulwark",
+      "path": "M 46 0 L 32 -20 L 14 -22 L -4 -16 L -22 -16 L -34 -8 L -38 0 L -34 8 L -22 16 L -4 16 L 14 22 L 32 20 Z M 22 -2 L 34 -2 L 34 2 L 22 2",
+      "hullRadius": 46,
+      "svgScale": 1,
+      "mirrorX": false,
+      "engines": null
+    }
+  };
 
   // src/engine/createEngine.js
   function makeAsteroidShape(rng, radius, verts = 10) {
@@ -205,6 +226,7 @@
     xlarge: 0.38,
     xxlarge: 0.25
   };
+  var FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
   var DEFAULT_SHIP_RENDERERS = {
     small: {
       type: "polygon",
@@ -259,20 +281,39 @@
       engines: Array.isArray(renderer.engines) ? renderer.engines.map((e) => ({ x: e.x, y: e.y, len: e.len })) : void 0
     };
   }
+  function makeSvgShipRenderer({ path, hullRadius, svgScale = 1, mirrorX = false, engines = [] }) {
+    const hullR = Number(hullRadius);
+    const scale = Number(svgScale);
+    const mx = mirrorX === true;
+    return {
+      type: "svg",
+      path,
+      svgScale: Number.isFinite(scale) ? scale : 1,
+      hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : void 0,
+      mirrorX: mx ? true : void 0,
+      engines: Array.isArray(engines) ? engines.map((e) => ({ x: e.x, y: e.y, len: e.len })) : []
+    };
+  }
   var SHIP_TIERS = {
     small: {
       key: "small",
       label: "Small",
       scale: 1,
-      radius: 14,
-      mass: 260,
+      radius: 28,
+      mass: 1040,
       burstForceScale: 1,
       forcefieldScale: 1,
       attractScale: 1,
       ringRgb: [255, 221, 88],
       ringColor: "rgba(255,221,88,0.40)",
       attractSizes: ["small"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.small)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.small.path,
+        hullRadius: DEFAULT_SHIP_SVGS.small.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.small.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.small.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.small.engines) ? DEFAULT_SHIP_SVGS.small.engines : DEFAULT_SHIP_RENDERERS.small.engines
+      })
     },
     medium: {
       key: "medium",
@@ -286,7 +327,13 @@
       ringRgb: [92, 235, 255],
       ringColor: "rgba(92,235,255,0.42)",
       attractSizes: ["small", "med"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.medium)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.medium.path,
+        hullRadius: DEFAULT_SHIP_SVGS.medium.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.medium.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.medium.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.medium.engines) ? DEFAULT_SHIP_SVGS.medium.engines : DEFAULT_SHIP_RENDERERS.medium.engines
+      })
     },
     large: {
       key: "large",
@@ -300,7 +347,13 @@
       ringRgb: [255, 112, 127],
       ringColor: "rgba(255,112,127,0.42)",
       attractSizes: ["small", "med", "large"],
-      renderer: cloneRenderer(DEFAULT_SHIP_RENDERERS.large)
+      renderer: makeSvgShipRenderer({
+        path: DEFAULT_SHIP_SVGS.large.path,
+        hullRadius: DEFAULT_SHIP_SVGS.large.hullRadius,
+        svgScale: DEFAULT_SHIP_SVGS.large.svgScale,
+        mirrorX: DEFAULT_SHIP_SVGS.large.mirrorX,
+        engines: Array.isArray(DEFAULT_SHIP_SVGS.large.engines) ? DEFAULT_SHIP_SVGS.large.engines : DEFAULT_SHIP_RENDERERS.large.engines
+      })
     }
   };
   var SHIP_TIER_ORDER = ["small", "medium", "large"];
@@ -319,10 +372,10 @@
     const tier = shipTierByKey(tierKey);
     const renderer = tier.renderer || {};
     if (renderer.type === "svg") {
-      const hullR = Number(renderer.hullRadius);
       const svgScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+      const hullR = Number(renderer.hullRadius);
       if (Number.isFinite(hullR) && hullR > 0)
-        return Math.max(tier.radius, hullR * svgScale);
+        return Math.max(tier.radius, tier.radius * svgScale);
     }
     const points = Array.isArray(renderer.points) ? renderer.points : DEFAULT_SHIP_RENDERERS[tier.key]?.points;
     const baseR = polygonHullRadius(points);
@@ -368,6 +421,8 @@
   function createEngine({ width, height }) {
     const rng = seededRng(3737844653);
     const starRng = seededRng(1369960461);
+    let exhaustRng = seededRng(518504175);
+    const exhaustPool = [];
     const state = {
       mode: "menu",
       // menu | playing | gameover
@@ -376,6 +431,7 @@
       asteroids: [],
       gems: [],
       effects: [],
+      exhaust: [],
       saucer: null,
       saucerLasers: [],
       saucerSpawnT: 0,
@@ -444,6 +500,18 @@
         shipBrake: 220,
         shipMaxSpeed: 420,
         shipLinearDamp: 0.15,
+        exhaustIntensity: 1,
+        // VFX only: scales thruster particle emission
+        exhaustSparkScale: 1,
+        // VFX only: scales spark emission chance
+        exhaustPalette: 0,
+        // VFX only: 0..N palette id
+        exhaustCoreScale: 1,
+        // VFX only: core brightness scale
+        exhaustGlowScale: 1,
+        // VFX only: glow strength scale
+        exhaustLegacyJets: 0,
+        // VFX only: show old gradient jet overlay
         attractRadius: 252,
         // +5%
         forceFieldRadius: 75,
@@ -481,6 +549,7 @@
         smallCount: 22,
         restitution: 0.92,
         fractureImpactSpeed: 260,
+        projectileImpactScale: 1.35,
         maxAsteroids: 4e3,
         asteroidWorldDensityScale: 0.32,
         asteroidSpawnRateScale: 1,
@@ -488,12 +557,6 @@
         asteroidSpawnMaxSec: 0.45,
         asteroidSpawnUrgentMinSec: 0.05,
         asteroidSpawnUrgentMaxSec: 0.12,
-        // Damage model for fast smalls (velocity-based; no time limit).
-        smallDamageSpeedMin: 420,
-        medDamageSpeedMin: 160,
-        largeDamageSpeedMin: 190,
-        xlargeDamageSpeedMin: 280,
-        xxlargeDamageSpeedMin: 250,
         tier2UnlockGemScore: 500,
         tier3UnlockGemScore: 1e3,
         tier1Zoom: 1,
@@ -1040,37 +1103,37 @@
         state.ship.vel = add(state.ship.vel, mul(pushDir, 170));
       }
     }
-    function isDamagingProjectile(a, impactSpeed) {
-      if (!a?.shipLaunched)
-        return false;
-      const spd = len(a.vel);
-      const v = Math.max(spd, impactSpeed);
-      return v >= asteroidDamageSpeedForSize(state.params, a.size);
+    function reducedMass(aMass, bMass) {
+      const a = Math.max(1, Number(aMass) || 1);
+      const b = Math.max(1, Number(bMass) || 1);
+      return a * b / (a + b);
     }
-    function fractureSizeMultiplier(targetSize) {
-      if (targetSize === "xxlarge")
-        return 0.88;
-      if (targetSize === "xlarge")
-        return 0.82;
-      if (targetSize === "large")
-        return 0.58;
-      if (targetSize === "med")
-        return 0.18;
-      return 1;
+    function fractureSizeBias(targetSize) {
+      const rank = asteroidSizeRank(targetSize);
+      return 1 + rank * FRACTURE_SIZE_BIAS_PER_RANK;
     }
-    function fractureSpeedRequired(projectile, target) {
-      const projMass = Math.max(1, Number(projectile?.mass) || 1);
+    function fractureEnergyThreshold(target) {
       const targetMass = Math.max(1, Number(target?.mass) || 1);
-      const base = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
-      const massRatio = Math.sqrt(targetMass / projMass);
-      const sizeMult = fractureSizeMultiplier(target?.size);
-      return base * massRatio * sizeMult;
+      const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
+      const sizeBias = fractureSizeBias(target?.size);
+      const speed = baseSpeed * sizeBias;
+      return 0.25 * targetMass * speed * speed;
     }
-    function fractureImpactSpeed(projectile, relativeSpeed) {
+    function impactEnergy(projectile, target, relativeSpeed) {
       const rel = Math.max(0, Number(relativeSpeed) || 0);
-      const projSpeed = Math.max(0, len(projectile?.vel || vec(0, 0)));
-      const carried = projSpeed * 0.75;
-      return Math.max(rel, carried);
+      const mu = reducedMass(projectile?.mass, target?.mass);
+      const base = 0.5 * mu * rel * rel;
+      const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+      const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+      return base * boost;
+    }
+    function impactEnergyAgainstFixed(projectile, impactSpeed) {
+      const speed = Math.max(0, Number(impactSpeed) || 0);
+      const mass = Math.max(1, Number(projectile?.mass) || 1);
+      const base = 0.5 * mass * speed * speed;
+      const boostRaw = Number(state.params.projectileImpactScale ?? 1);
+      const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
+      return base * boost;
     }
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       state.effects.push({
@@ -1175,6 +1238,9 @@
       state.burstCooldown = 0;
       state.blastPulseT = 0;
       state.effects = [];
+      state.exhaust = [];
+      exhaustRng = seededRng(518504175);
+      exhaustPool.length = 0;
       state.gems = [];
       state.saucer = null;
       state.saucerLasers = [];
@@ -1435,6 +1501,127 @@
       ship.pos = add(ship.pos, mul(ship.vel, dt));
       confineShipToWorld();
     }
+    function exhaustShipScaleAndMirror(tier, ship) {
+      const renderer = tier?.renderer || {};
+      const shipRadius = Math.max(1, Number(ship?.radius) || Number(tier?.radius) || 1);
+      if (renderer.type === "svg") {
+        const baseScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+        const explicitHullRadius = Number(renderer.hullRadius);
+        const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+        return { scale: baseScale * autoScale, mirrorX: renderer.mirrorX === true };
+      }
+      const points = Array.isArray(renderer.points) ? renderer.points : null;
+      const hullRadius = points ? polygonHullRadius(points) : 0;
+      const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
+      return { scale: drawScale, mirrorX: false };
+    }
+    function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed }) {
+      const p = exhaustPool.length ? exhaustPool.pop() : { kind: "flame", pos: vec(0, 0), vel: vec(0, 0), age: 0, ttl: 0, r: 1, seed: 0 };
+      p.kind = kind;
+      p.pos.x = x;
+      p.pos.y = y;
+      p.vel.x = vx;
+      p.vel.y = vy;
+      p.age = 0;
+      p.ttl = ttl;
+      p.r = r;
+      p.seed = seed;
+      state.exhaust.push(p);
+    }
+    function updateExhaust(dt) {
+      const particles = state.exhaust;
+      let w = 0;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.age += dt;
+        if (p.age >= p.ttl) {
+          exhaustPool.push(p);
+          continue;
+        }
+        const drag = p.kind === "spark" ? 3.8 : 2.4;
+        const damp = Math.exp(-drag * dt);
+        p.vel.x *= damp;
+        p.vel.y *= damp;
+        p.pos.x += p.vel.x * dt;
+        p.pos.y += p.vel.y * dt;
+        particles[w++] = p;
+      }
+      particles.length = w;
+      const ship = state.ship;
+      if (!state.input.up || !ship)
+        return;
+      const tier = currentShipTier();
+      const renderer = tier?.renderer || {};
+      const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
+      if (engines.length === 0)
+        return;
+      const { scale, mirrorX } = exhaustShipScaleAndMirror(tier, ship);
+      const ang = ship.angle || 0;
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      const backX = -c;
+      const backY = -s;
+      const sideX = -s;
+      const sideY = c;
+      const baseVelX = Number(ship.vel?.x) || 0;
+      const baseVelY = Number(ship.vel?.y) || 0;
+      const shipX = Number(ship.pos?.x) || 0;
+      const shipY = Number(ship.pos?.y) || 0;
+      const intensity = clamp(Number(state.params.exhaustIntensity ?? 1), 0, 2.5);
+      const sparkScale = clamp(Number(state.params.exhaustSparkScale ?? 1), 0, 3);
+      if (intensity <= 1e-6 && sparkScale <= 1e-6)
+        return;
+      const dtScale = clamp(dt * 60, 0.1, 4);
+      const tierScale = tier.key === "large" ? 1.35 : tier.key === "medium" ? 1.15 : 1;
+      const flamesPerEngineBase = tier.key === "large" ? 3 : tier.key === "medium" ? 2 : 1;
+      const sparkChanceBase = tier.key === "large" ? 0.16 : tier.key === "medium" ? 0.14 : 0.12;
+      const maxParticles = clamp(Math.round(650 + 550 * intensity), 220, 1400);
+      for (let ei = 0; ei < engines.length; ei++) {
+        const e = engines[ei];
+        let lx = (Number(e?.x) || 0) * scale;
+        const ly = (Number(e?.y) || 0) * scale;
+        if (mirrorX)
+          lx = -lx;
+        const nozzleOffset = 1.6 * scale;
+        const localX = lx - nozzleOffset;
+        const localY = ly;
+        const nozzleX = shipX + localX * c - localY * s;
+        const nozzleY = shipY + localX * s + localY * c;
+        const flameCountF = flamesPerEngineBase * intensity * dtScale;
+        const flameWhole = Math.floor(flameCountF);
+        const flameFrac = flameCountF - flameWhole;
+        const flameCount = flameWhole + (exhaustRng() < flameFrac ? 1 : 0);
+        for (let j = 0; j < flameCount; j++) {
+          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const sideJitter = (exhaustRng() * 2 - 1) * 52 * tierScale;
+          const backJitter = (exhaustRng() * 2 - 1) * 22 * tierScale;
+          const speed = (180 + exhaustRng() * 150) * tierScale;
+          const vx = baseVelX + backX * (speed + backJitter) + sideX * sideJitter;
+          const vy = baseVelY + backY * (speed + backJitter) + sideY * sideJitter;
+          const ttl = 0.28 + exhaustRng() * 0.26;
+          const r = (2 + exhaustRng() * 2.2) * tierScale * (0.85 + 0.25 * intensity);
+          const posX = nozzleX + sideX * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backX * (exhaustRng() * 2.8);
+          const posY = nozzleY + sideY * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backY * (exhaustRng() * 2.8);
+          spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed });
+        }
+        const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
+        if (sparkChance > 1e-6 && exhaustRng() < sparkChance) {
+          const seed = Math.floor(exhaustRng() * 4294967295) >>> 0;
+          const sideJitter = (exhaustRng() * 2 - 1) * 120 * tierScale;
+          const speed = (300 + exhaustRng() * 220) * tierScale;
+          const vx = baseVelX + backX * speed + sideX * sideJitter;
+          const vy = baseVelY + backY * speed + sideY * sideJitter;
+          const ttl = 0.12 + exhaustRng() * 0.2;
+          const r = (1 + exhaustRng() * 1.4) * tierScale;
+          spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed });
+        }
+      }
+      if (particles.length > maxParticles) {
+        while (particles.length > maxParticles) {
+          exhaustPool.push(particles.pop());
+        }
+      }
+    }
     function updateAsteroids(dt) {
       const ship = state.ship;
       const attractRadius = currentAttractRadius();
@@ -1601,6 +1788,24 @@
     function fractureAsteroid(target, impactDir, impactSpeed) {
       if (target.fractureCooldownT > 0)
         return null;
+      if (target.size === "med") {
+        const baseR2 = Math.max(1, target.radius || asteroidRadiusForSize(state.params, "med"));
+        spawnExplosion(target.pos, {
+          kind: "pop",
+          rgb: [255, 255, 255],
+          r0: 10,
+          r1: Math.max(26, baseR2 * 1.45),
+          ttl: 0.22
+        });
+        const dir = len2(impactDir) > 1e-6 ? norm(impactDir) : vec(1, 0);
+        const axis2 = rot(dir, Math.PI / 2);
+        const sep2 = gemRadius("emerald") * 1.6;
+        spawnGem(add(target.pos, mul(axis2, sep2)), vec(0, 0), { jitterMag: 0 });
+        spawnGem(add(target.pos, mul(axis2, -sep2)), vec(0, 0), { jitterMag: 0 });
+        const rankGain2 = Math.max(1, asteroidSizeRank(target.size));
+        state.score += 4 + rankGain2 * 3;
+        return [];
+      }
       const next = asteroidNextSize(target.size);
       if (!next)
         return null;
@@ -1707,33 +1912,40 @@
         return;
       const shipRemovals = /* @__PURE__ */ new Set();
       const shipAdds = [];
-      const smallBreakSpeed = asteroidDamageSpeedForSize(state.params, "small");
       for (const a of state.asteroids) {
         if (a.attached)
           continue;
         const impactSpeed = len(a.vel);
-        if (!a.shipLaunched && a.size === "small" && impactSpeed >= smallBreakSpeed && circleHit(state.ship, a)) {
-          breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          continue;
-        }
-        if (isDamagingProjectile(a, impactSpeed) && circleHit(state.ship, a)) {
+        if (a.shipLaunched && circleHit(state.ship, a)) {
           if (a.size === "small") {
             breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          } else if (impactSpeed >= fractureSpeedRequired(a, a)) {
-            const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
-            if (frags) {
-              shipRemovals.add(a.id);
-              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
-              shipAdds.push(...frags.slice(0, room));
-            }
           } else {
-            shipRemovals.add(a.id);
-            spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+            const energy = impactEnergyAgainstFixed(a, impactSpeed);
+            const threshold = fractureEnergyThreshold(a);
+            if (energy >= threshold) {
+              const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
+              if (frags) {
+                shipRemovals.add(a.id);
+                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
+                shipAdds.push(...frags.slice(0, room));
+              }
+            } else {
+              shipRemovals.add(a.id);
+              spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+            }
           }
           continue;
         }
-        if (a.size === "small")
+        if (a.size === "small") {
+          if (circleHit(state.ship, a)) {
+            const energy = impactEnergyAgainstFixed(a, impactSpeed);
+            const threshold = fractureEnergyThreshold(a);
+            if (energy >= threshold) {
+              breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+            }
+          }
           continue;
+        }
         const hit = circleCollide(state.ship, a);
         if (!hit)
           continue;
@@ -1763,26 +1975,20 @@
         if (!hit)
           return;
         const rv = sub(b.vel, a.vel);
-        const velAlongNormal = dot(rv, hit.n);
-        const impactSpeed = -velAlongNormal;
         const relSpeed = len(rv);
-        const aFastAmbientSmall = !a.shipLaunched && a.size === "small" && relSpeed >= smallBreakSpeed;
-        const bFastAmbientSmall = !b.shipLaunched && b.size === "small" && relSpeed >= smallBreakSpeed;
-        if (aFastAmbientSmall || bFastAmbientSmall) {
-          if (aFastAmbientSmall)
-            breakSmallAsteroid(a, { velHint: a.vel, removeSet: toRemove });
-          if (bFastAmbientSmall)
-            breakSmallAsteroid(b, { velHint: b.vel, removeSet: toRemove });
-          return;
-        }
-        const aDamaging = isDamagingProjectile(a, relSpeed);
-        const bDamaging = isDamagingProjectile(b, relSpeed);
-        if (aDamaging || bDamaging) {
+        const aEnergy = impactEnergy(a, b, relSpeed);
+        const bEnergy = impactEnergy(b, a, relSpeed);
+        const aThreshold = fractureEnergyThreshold(b);
+        const bThreshold = fractureEnergyThreshold(a);
+        const aCanFracture = aEnergy >= aThreshold;
+        const bCanFracture = bEnergy >= bThreshold;
+        if (aCanFracture || bCanFracture) {
+          resolveElasticCollision(a, b, hit.n, hit.penetration);
           const interactions = [];
-          if (aDamaging)
-            interactions.push({ projectile: a, target: b, impactDir: hit.n });
-          if (bDamaging)
-            interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1) });
+          if (aCanFracture)
+            interactions.push({ projectile: a, target: b, impactDir: hit.n, energy: aEnergy });
+          if (bCanFracture)
+            interactions.push({ projectile: b, target: a, impactDir: mul(hit.n, -1), energy: bEnergy });
           for (const it of interactions) {
             const projectile = it.projectile;
             const target = it.target;
@@ -1801,16 +2007,12 @@
               state.score += 1;
               continue;
             }
-            const requiredSpeed = fractureSpeedRequired(projectile, target);
-            const impactEvalSpeed = fractureImpactSpeed(projectile, relSpeed);
-            if (asteroidCanBreakTarget(projectile.size, target.size) && impactEvalSpeed >= requiredSpeed) {
-              const frags = fractureAsteroid(target, it.impactDir, relSpeed);
-              if (frags) {
-                toRemove.add(target.id);
-                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
-                toAdd.push(...frags.slice(0, room));
-                continue;
-              }
+            const frags = fractureAsteroid(target, it.impactDir, relSpeed);
+            if (frags) {
+              toRemove.add(target.id);
+              const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
+              toAdd.push(...frags.slice(0, room));
+              continue;
             }
             spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
             const massRatio = projectile.mass > 0 && target.mass > 0 ? projectile.mass / target.mass : 1;
@@ -1854,6 +2056,7 @@
         burstAttached();
       }
       updateShip(dt);
+      updateExhaust(dt);
       syncCameraToShip();
       updateAsteroids(dt);
       updateGems(dt);
@@ -1961,17 +2164,21 @@
         sample_asteroids: sample
       });
     }
-    function setShipSvgRenderer(tierKey, pathData, svgScale = 1) {
+    function setShipSvgRenderer(tierKey, pathData, svgScale = 1, hullRadius = null) {
       const key = tierKey === "medium" || tierKey === "large" ? tierKey : "small";
       const tier = shipTierByKey(key);
       if (!pathData || typeof pathData !== "string") {
         tier.renderer = cloneRenderer(DEFAULT_SHIP_RENDERERS[key]);
         return false;
       }
+      const hullR = Number(hullRadius);
       tier.renderer = {
         type: "svg",
         path: pathData,
-        svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1
+        svgScale: Number.isFinite(Number(svgScale)) ? Number(svgScale) : 1,
+        hullRadius: Number.isFinite(hullR) && hullR > 0 ? hullR : void 0,
+        mirrorX: void 0,
+        engines: cloneRenderer(DEFAULT_SHIP_RENDERERS[key]).engines || []
       };
       return true;
     }
@@ -2016,6 +2223,149 @@
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     ctx.stroke();
+    ctx.restore();
+  }
+  function drawThrusterJets(ctx, engines, { tierKey = "small", exhaustSign = -1, t = 0 } = {}) {
+    if (!Array.isArray(engines) || engines.length === 0)
+      return;
+    const size = tierKey === "large" ? 1.6 : tierKey === "medium" ? 1.25 : 1;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "butt";
+    for (const e of engines) {
+      const sx = Number(e.x) || 0;
+      const sy = Number(e.y) || 0;
+      const baseLen = Math.max(6, Number(e.len) || 14);
+      const flicker = 0.78 + 0.22 * Math.sin(t * 28 + sy * 0.35) + 0.12 * Math.sin(t * 61 + sx * 0.09) + 0.06 * Math.sin(t * 97);
+      const len3 = baseLen * (1.05 + flicker * 0.75) * size;
+      const nozzle = 1.8 * size;
+      const nx = sx + exhaustSign * nozzle;
+      const ex = nx + exhaustSign * len3;
+      const jetSign = sy >= 0 ? 1 : -1;
+      const aim = (1 + 0.55 * Math.sin(t * 13 + sy * 0.2) + 0.25 * Math.sin(t * 7.5 + sx * 0.08)) * size;
+      const ey = sy + jetSign * aim;
+      const g0 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g0.addColorStop(0, "rgba(255,248,220,0.08)");
+      g0.addColorStop(0.12, "rgba(255,210,145,0.12)");
+      g0.addColorStop(0.3, "rgba(255,135,70,0.15)");
+      g0.addColorStop(0.6, "rgba(255,75,35,0.11)");
+      g0.addColorStop(1, "rgba(160,30,15,0)");
+      ctx.strokeStyle = g0;
+      ctx.lineWidth = 7.4 * size;
+      ctx.shadowColor = "rgba(255,120,70,0.96)";
+      ctx.shadowBlur = 22 * size;
+      for (let i = 0; i < 4; i++) {
+        const wobSign = i % 2 === 0 ? 1 : -1;
+        const wobPhase = t * (15 + i * 2.8) + sy * 0.7 + i * 0.9;
+        const wob = wobSign * (0.7 + 0.95 * Math.sin(wobPhase)) * size;
+        const bend = (0.2 + 0.25 * Math.sin(t * 9.5 + i * 1.7 + sx * 0.04)) * size;
+        ctx.beginPath();
+        ctx.moveTo(nx, sy);
+        ctx.quadraticCurveTo(nx + exhaustSign * len3 * 0.42, sy + wob * 0.25, ex, ey + wob + bend);
+        ctx.stroke();
+      }
+      const g1 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g1.addColorStop(0, "rgba(255,255,245,0.24)");
+      g1.addColorStop(0.14, "rgba(255,235,185,0.28)");
+      g1.addColorStop(0.3, "rgba(255,170,95,0.25)");
+      g1.addColorStop(0.62, "rgba(255,105,55,0.18)");
+      g1.addColorStop(1, "rgba(255,70,30,0)");
+      ctx.strokeStyle = g1;
+      ctx.lineWidth = 4.1 * size;
+      ctx.shadowBlur = 14 * size;
+      ctx.beginPath();
+      ctx.moveTo(nx, sy);
+      ctx.quadraticCurveTo(
+        nx + exhaustSign * len3 * 0.5,
+        sy,
+        ex,
+        ey + Math.sin(t * 22 + sy * 0.5) * 0.8 * size
+      );
+      ctx.stroke();
+      const g2 = ctx.createLinearGradient(nx, sy, ex, ey);
+      g2.addColorStop(0, "rgba(210,245,255,0.20)");
+      g2.addColorStop(0.1, "rgba(255,255,255,0.52)");
+      g2.addColorStop(0.26, "rgba(255,250,225,0.30)");
+      g2.addColorStop(1, "rgba(255,205,130,0)");
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = 1.7 * size;
+      ctx.beginPath();
+      ctx.moveTo(nx, sy);
+      ctx.lineTo(nx + exhaustSign * len3 * 0.78, sy);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,240,205,0.24)";
+      const diamonds = tierKey === "large" ? 4 : 3;
+      for (let i = 0; i < diamonds; i++) {
+        const u = (0.18 + i * 0.16) * len3;
+        const wob = Math.sin(t * (18 + i * 6) + sy * 0.4) * 0.5 * size;
+        const px = nx + exhaustSign * u;
+        const py = sy + wob;
+        const ww = (3.8 - i * 0.55) * size;
+        const hh = (1.8 - i * 0.25) * size;
+        ctx.fillRect(px - ww * 0.5, py - hh * 0.5, ww, hh);
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(255,230,180,0.30)";
+      ctx.lineWidth = 1.1 * size;
+      for (let i = 0; i < 5; i++) {
+        const tt = (0.52 + 0.42 * Math.sin(t * (26 + i * 7) + sx * 0.02 + sy * 0.17 + i * 0.7)) * len3;
+        const px = nx + exhaustSign * tt;
+        const side = i % 2 === 0 ? 1 : -1;
+        const py = sy + side * (0.8 + 1.9 * Math.sin(t * 10 + sy * 0.3 + i * 0.3)) * size;
+        const streak = (2.4 + 2.8 * Math.sin(t * 16 + i * 0.9 + sy * 0.2)) * size;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + exhaustSign * streak, py);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  function drawExhaustParticles(ctx, particles, sprites, timeSec = 0) {
+    if (!Array.isArray(particles) || particles.length === 0)
+      return;
+    const flameSprite = sprites?.flame || null;
+    const sparkSprite = sprites?.spark || null;
+    if (!flameSprite && !sparkSprite)
+      return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of particles) {
+      const age = Number(p?.age) || 0;
+      const ttl = Math.max(1e-6, Number(p?.ttl) || 1e-3);
+      const t = clamp(age / ttl, 0, 1);
+      const life = 1 - t;
+      if (life <= 1e-3)
+        continue;
+      const seed = Number(p?.seed) || 0;
+      const flicker = 0.85 + 0.15 * Math.sin(timeSec * 38 + seed % 997 * 0.07);
+      const r = clamp(Number(p?.r) || 2, 0.25, 12);
+      const x = Number(p?.pos?.x) || 0;
+      const y = Number(p?.pos?.y) || 0;
+      if (p.kind !== "spark") {
+        if (!flameSprite)
+          continue;
+        const alpha2 = clamp(life * (0.55 + 0.45 * flicker), 0, 1);
+        const sizePx2 = r * 7.5;
+        ctx.globalAlpha = alpha2;
+        ctx.drawImage(flameSprite, x - sizePx2 * 0.5, y - sizePx2 * 0.5, sizePx2, sizePx2);
+        continue;
+      }
+      if (!sparkSprite)
+        continue;
+      const alpha = clamp(life * (0.75 + 0.25 * flicker), 0, 1);
+      const sizePx = Math.max(2, r * 6);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(sparkSprite, x - sizePx * 0.5, y - sizePx * 0.5, sizePx, sizePx);
+      const vx = Number(p?.vel?.x) || 0;
+      const vy = Number(p?.vel?.y) || 0;
+      const offX = -vx * 0.01;
+      const offY = -vy * 0.01;
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.drawImage(sparkSprite, x + offX - sizePx * 0.5, y + offY - sizePx * 0.5, sizePx, sizePx);
+    }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
   function rgbToRgba(rgb, a) {
@@ -2194,6 +2544,96 @@
     const currentForceFieldRadius = () => engine.getCurrentForceFieldRadius();
     const currentAttractRadius = () => engine.getCurrentAttractRadius();
     const svgPathCache = /* @__PURE__ */ new Map();
+    let exhaustSpritesCacheKey = "";
+    let exhaustSpritesCache = null;
+    function getExhaustSprites() {
+      try {
+        if (typeof document === "undefined")
+          return null;
+        const p = state.params || {};
+        const palette = Math.max(0, Math.min(4, Math.round(Number(p.exhaustPalette ?? 0))));
+        const core = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+        const glow = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+        const key = `${palette}:${core.toFixed(2)}:${glow.toFixed(2)}`;
+        if (key === exhaustSpritesCacheKey && exhaustSpritesCache)
+          return exhaustSpritesCache;
+        const makeRadialSprite = (sizePx, stops) => {
+          const c = document.createElement("canvas");
+          c.width = sizePx;
+          c.height = sizePx;
+          const g = c.getContext("2d");
+          if (!g)
+            return null;
+          const cx = sizePx * 0.5;
+          const cy = sizePx * 0.5;
+          const r = sizePx * 0.5;
+          const grad = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+          for (const s of stops)
+            grad.addColorStop(s[0], s[1]);
+          g.fillStyle = grad;
+          g.fillRect(0, 0, sizePx, sizePx);
+          return c;
+        };
+        const pal = (() => {
+          if (palette === 1) {
+            return {
+              flameMid: [140, 200, 255],
+              flameOuter: [70, 140, 255],
+              sparkMid: [190, 235, 255],
+              sparkOuter: [120, 200, 255]
+            };
+          }
+          if (palette === 2) {
+            return {
+              flameMid: [215, 150, 255],
+              flameOuter: [165, 85, 255],
+              sparkMid: [240, 210, 255],
+              sparkOuter: [210, 160, 255]
+            };
+          }
+          if (palette === 3) {
+            return {
+              flameMid: [170, 255, 190],
+              flameOuter: [70, 255, 150],
+              sparkMid: [215, 255, 230],
+              sparkOuter: [140, 255, 200]
+            };
+          }
+          if (palette === 4) {
+            return {
+              flameMid: [255, 165, 140],
+              flameOuter: [255, 85, 70],
+              sparkMid: [255, 230, 220],
+              sparkOuter: [255, 170, 150]
+            };
+          }
+          return {
+            flameMid: [255, 190, 125],
+            flameOuter: [255, 120, 70],
+            sparkMid: [255, 230, 200],
+            sparkOuter: [255, 200, 125]
+          };
+        })();
+        const flame = makeRadialSprite(64, [
+          [0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+          [0.12, `rgba(255,245,220,${clamp(0.9 * core, 0, 1).toFixed(3)})`],
+          [0.3, `rgba(${pal.flameMid[0]},${pal.flameMid[1]},${pal.flameMid[2]},${clamp(0.55 * glow, 0, 1).toFixed(3)})`],
+          [0.58, `rgba(${pal.flameOuter[0]},${pal.flameOuter[1]},${pal.flameOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+          [1, "rgba(0,0,0,0.00)"]
+        ]);
+        const spark = makeRadialSprite(48, [
+          [0, `rgba(255,255,255,${clamp(0.95 * core, 0, 1).toFixed(3)})`],
+          [0.22, `rgba(${pal.sparkMid[0]},${pal.sparkMid[1]},${pal.sparkMid[2]},${clamp(0.85 * core, 0, 1).toFixed(3)})`],
+          [0.6, `rgba(${pal.sparkOuter[0]},${pal.sparkOuter[1]},${pal.sparkOuter[2]},${clamp(0.22 * glow, 0, 1).toFixed(3)})`],
+          [1, "rgba(0,0,0,0.00)"]
+        ]);
+        exhaustSpritesCacheKey = key;
+        exhaustSpritesCache = { flame, spark };
+        return exhaustSpritesCache;
+      } catch {
+        return null;
+      }
+    }
     function drawForcefieldRings(ctx) {
       if (state.mode !== "playing")
         return;
@@ -2311,18 +2751,17 @@
         const explicitHullRadius = Number(renderer.hullRadius);
         const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
         drawScale = baseScale * autoScale;
+        const mirrorX = renderer.mirrorX === true;
+        const exhaustSign = mirrorX ? 1 : -1;
         ctx.save();
         ctx.scale(drawScale, drawScale);
+        if (mirrorX)
+          ctx.scale(-1, 1);
         ctx.stroke(path);
-        if (thrusting) {
-          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-          for (const e of engines) {
-            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y);
-            ctx.lineTo(e.x - flameLen, e.y);
-            ctx.stroke();
-          }
+        const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+        const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+        if (thrusting && (legacyJets || !particlesOn)) {
+          drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign, t: state.time });
         }
         ctx.restore();
       } else {
@@ -2342,15 +2781,10 @@
         }
         ctx.closePath();
         ctx.stroke();
-        if (thrusting) {
-          ctx.strokeStyle = "rgba(255, 89, 100, 0.92)";
-          for (const e of engines) {
-            const flameLen = e.len + (Math.sin(state.time * 30 + e.y * 0.1) * 3 + 2);
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y);
-            ctx.lineTo(e.x - flameLen, e.y);
-            ctx.stroke();
-          }
+        const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
+        const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
+        if (thrusting && (legacyJets || !particlesOn)) {
+          drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
         }
         ctx.restore();
       }
@@ -2563,6 +2997,7 @@
         }
         ctx.restore();
       }
+      drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
       drawShipModel(ctx, state.ship, state.mode === "playing" && state.input.up);
       ctx.restore();
       ctx.save();
@@ -2635,6 +3070,12 @@
     "tune-capture",
     "tune-burst",
     "tune-thrust",
+    "tune-exhaust-intensity",
+    "tune-exhaust-sparks",
+    "tune-exhaust-palette",
+    "tune-exhaust-core",
+    "tune-exhaust-glow",
+    "tune-exhaust-jets",
     "tune-dmg",
     "tune-fracture",
     "tune-world-density",
@@ -2737,6 +3178,30 @@
     const tuneThrustOut = documentRef.getElementById("tune-thrust-out");
     const tuneThrustSave = documentRef.getElementById("tune-thrust-save");
     const tuneThrustDefault = documentRef.getElementById("tune-thrust-default");
+    const tuneExhaustIntensity = documentRef.getElementById("tune-exhaust-intensity");
+    const tuneExhaustIntensityOut = documentRef.getElementById("tune-exhaust-intensity-out");
+    const tuneExhaustIntensitySave = documentRef.getElementById("tune-exhaust-intensity-save");
+    const tuneExhaustIntensityDefault = documentRef.getElementById("tune-exhaust-intensity-default");
+    const tuneExhaustSparks = documentRef.getElementById("tune-exhaust-sparks");
+    const tuneExhaustSparksOut = documentRef.getElementById("tune-exhaust-sparks-out");
+    const tuneExhaustSparksSave = documentRef.getElementById("tune-exhaust-sparks-save");
+    const tuneExhaustSparksDefault = documentRef.getElementById("tune-exhaust-sparks-default");
+    const tuneExhaustPalette = documentRef.getElementById("tune-exhaust-palette");
+    const tuneExhaustPaletteOut = documentRef.getElementById("tune-exhaust-palette-out");
+    const tuneExhaustPaletteSave = documentRef.getElementById("tune-exhaust-palette-save");
+    const tuneExhaustPaletteDefault = documentRef.getElementById("tune-exhaust-palette-default");
+    const tuneExhaustCore = documentRef.getElementById("tune-exhaust-core");
+    const tuneExhaustCoreOut = documentRef.getElementById("tune-exhaust-core-out");
+    const tuneExhaustCoreSave = documentRef.getElementById("tune-exhaust-core-save");
+    const tuneExhaustCoreDefault = documentRef.getElementById("tune-exhaust-core-default");
+    const tuneExhaustGlow = documentRef.getElementById("tune-exhaust-glow");
+    const tuneExhaustGlowOut = documentRef.getElementById("tune-exhaust-glow-out");
+    const tuneExhaustGlowSave = documentRef.getElementById("tune-exhaust-glow-save");
+    const tuneExhaustGlowDefault = documentRef.getElementById("tune-exhaust-glow-default");
+    const tuneExhaustJets = documentRef.getElementById("tune-exhaust-jets");
+    const tuneExhaustJetsOut = documentRef.getElementById("tune-exhaust-jets-out");
+    const tuneExhaustJetsSave = documentRef.getElementById("tune-exhaust-jets-save");
+    const tuneExhaustJetsDefault = documentRef.getElementById("tune-exhaust-jets-default");
     const tuneDmg = documentRef.getElementById("tune-dmg");
     const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
     const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
@@ -2958,11 +3423,71 @@
         suffix: " px/s^2"
       },
       {
-        key: "smallDamageSpeedMin",
+        key: "exhaustIntensity",
+        input: tuneExhaustIntensity,
+        saveBtn: tuneExhaustIntensitySave,
+        savedOut: tuneExhaustIntensityDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustSparkScale",
+        input: tuneExhaustSparks,
+        saveBtn: tuneExhaustSparksSave,
+        savedOut: tuneExhaustSparksDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustPalette",
+        input: tuneExhaustPalette,
+        saveBtn: tuneExhaustPaletteSave,
+        savedOut: tuneExhaustPaletteDefault,
+        suffix: "",
+        format: (v) => {
+          const i = Math.round(Number(v) || 0);
+          if (i === 1)
+            return "Ion (blue)";
+          if (i === 2)
+            return "Plasma (purple)";
+          if (i === 3)
+            return "Toxic (green)";
+          if (i === 4)
+            return "Ember (red)";
+          return "Rocket (warm)";
+        }
+      },
+      {
+        key: "exhaustCoreScale",
+        input: tuneExhaustCore,
+        saveBtn: tuneExhaustCoreSave,
+        savedOut: tuneExhaustCoreDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustGlowScale",
+        input: tuneExhaustGlow,
+        saveBtn: tuneExhaustGlowSave,
+        savedOut: tuneExhaustGlowDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "exhaustLegacyJets",
+        input: tuneExhaustJets,
+        saveBtn: tuneExhaustJetsSave,
+        savedOut: tuneExhaustJetsDefault,
+        suffix: "",
+        format: (v) => Number(v) >= 0.5 ? "On" : "Off"
+      },
+      {
+        key: "projectileImpactScale",
         input: tuneDmg,
         saveBtn: tuneDmgSave,
         savedOut: tuneDmgDefault,
-        suffix: " px/s"
+        suffix: "x",
+        format: (v) => `${Number(v).toFixed(2)}x`
       },
       {
         key: "xlargeRadius",
@@ -3166,6 +3691,12 @@
       p.innerDrag = clamp(Number(p.innerDrag ?? 4), 0, 20);
       p.ringK = clamp(Number(p.ringK ?? 6.5), 0, 30);
       p.ringRadialDamp = clamp(Number(p.ringRadialDamp ?? 6.5), 0, 40);
+      p.exhaustIntensity = clamp(Number(p.exhaustIntensity ?? 1), 0, 2.5);
+      p.exhaustSparkScale = clamp(Number(p.exhaustSparkScale ?? 1), 0, 3);
+      p.exhaustPalette = clamp(Math.round(Number(p.exhaustPalette ?? 0)), 0, 4);
+      p.exhaustCoreScale = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
+      p.exhaustGlowScale = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
+      p.exhaustLegacyJets = clamp(Math.round(Number(p.exhaustLegacyJets ?? 0)), 0, 1);
       p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
       p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
@@ -3240,8 +3771,20 @@
         tuneBurst.value = String(Math.round(p.burstSpeed));
       if (tuneThrust)
         tuneThrust.value = String(Math.round(p.shipThrust));
+      if (tuneExhaustIntensity)
+        tuneExhaustIntensity.value = String(p.exhaustIntensity ?? 1);
+      if (tuneExhaustSparks)
+        tuneExhaustSparks.value = String(p.exhaustSparkScale ?? 1);
+      if (tuneExhaustPalette)
+        tuneExhaustPalette.value = String(Math.round(p.exhaustPalette ?? 0));
+      if (tuneExhaustCore)
+        tuneExhaustCore.value = String(p.exhaustCoreScale ?? 1);
+      if (tuneExhaustGlow)
+        tuneExhaustGlow.value = String(p.exhaustGlowScale ?? 1);
+      if (tuneExhaustJets)
+        tuneExhaustJets.value = String(Math.round(p.exhaustLegacyJets ?? 0));
       if (tuneDmg)
-        tuneDmg.value = String(Math.round(p.smallDamageSpeedMin));
+        tuneDmg.value = String(p.projectileImpactScale ?? 1);
       if (tuneXlRadius)
         tuneXlRadius.value = String(Math.round(p.xlargeRadius));
       if (tuneXxlRadius)
@@ -3310,7 +3853,24 @@
       setOut(tuneCaptureOut, readNum(tuneCapture, p.captureSpeed), " px/s");
       setOut(tuneBurstOut, readNum(tuneBurst, p.burstSpeed), " px/s");
       setOut(tuneThrustOut, readNum(tuneThrust, p.shipThrust), " px/s^2");
-      setOut(tuneDmgOut, readNum(tuneDmg, p.smallDamageSpeedMin), " px/s");
+      if (tuneExhaustIntensityOut)
+        tuneExhaustIntensityOut.textContent = `${readNum(tuneExhaustIntensity, p.exhaustIntensity).toFixed(2)}x`;
+      if (tuneExhaustSparksOut)
+        tuneExhaustSparksOut.textContent = `${readNum(tuneExhaustSparks, p.exhaustSparkScale).toFixed(2)}x`;
+      if (tuneExhaustPaletteOut) {
+        const i = Math.round(readNum(tuneExhaustPalette, p.exhaustPalette));
+        tuneExhaustPaletteOut.textContent = i === 1 ? "Ion (blue)" : i === 2 ? "Plasma (purple)" : i === 3 ? "Toxic (green)" : i === 4 ? "Ember (red)" : "Rocket (warm)";
+      }
+      if (tuneExhaustCoreOut)
+        tuneExhaustCoreOut.textContent = `${readNum(tuneExhaustCore, p.exhaustCoreScale).toFixed(2)}x`;
+      if (tuneExhaustGlowOut)
+        tuneExhaustGlowOut.textContent = `${readNum(tuneExhaustGlow, p.exhaustGlowScale).toFixed(2)}x`;
+      if (tuneExhaustJetsOut)
+        tuneExhaustJetsOut.textContent = readNum(tuneExhaustJets, p.exhaustLegacyJets) >= 0.5 ? "On" : "Off";
+      if (tuneDmgOut) {
+        const val = readNum(tuneDmg, p.projectileImpactScale);
+        tuneDmgOut.textContent = `${Number(val).toFixed(2)}x`;
+      }
       setOut(tuneXlRadiusOut, readNum(tuneXlRadius, p.xlargeRadius), " px");
       setOut(tuneXxlRadiusOut, readNum(tuneXxlRadius, p.xxlargeRadius), " px");
       setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
@@ -3370,7 +3930,13 @@
       p.captureSpeed = readNum(tuneCapture, p.captureSpeed);
       p.burstSpeed = readNum(tuneBurst, p.burstSpeed);
       p.shipThrust = readNum(tuneThrust, p.shipThrust);
-      p.smallDamageSpeedMin = readNum(tuneDmg, p.smallDamageSpeedMin);
+      p.exhaustIntensity = clamp(readNum(tuneExhaustIntensity, p.exhaustIntensity), 0, 2.5);
+      p.exhaustSparkScale = clamp(readNum(tuneExhaustSparks, p.exhaustSparkScale), 0, 3);
+      p.exhaustPalette = clamp(Math.round(readNum(tuneExhaustPalette, p.exhaustPalette)), 0, 4);
+      p.exhaustCoreScale = clamp(readNum(tuneExhaustCore, p.exhaustCoreScale), 0, 2.5);
+      p.exhaustGlowScale = clamp(readNum(tuneExhaustGlow, p.exhaustGlowScale), 0, 2.5);
+      p.exhaustLegacyJets = clamp(Math.round(readNum(tuneExhaustJets, p.exhaustLegacyJets)), 0, 1);
+      p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
       p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
       p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);
@@ -3747,8 +4313,8 @@
     function renderGameToText() {
       return game.renderGameToText();
     }
-    function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1) {
-      game.setShipSvgRenderer(tierKey, svgPathData, svgScale);
+    function setShipSvgRenderer(tierKey, svgPathData, svgScale = 1, hullRadius = null) {
+      game.setShipSvgRenderer(tierKey, svgPathData, svgScale, hullRadius);
     }
     function advanceTime(ms) {
       externalStepping = true;
