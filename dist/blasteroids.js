@@ -457,7 +457,11 @@
         right: false,
         up: false,
         down: false,
-        burst: false
+        burst: false,
+        turnAnalog: 0,
+        // [-1,1] optional analog turn input (UI/touch)
+        thrustAnalog: 0
+        // [0,1] optional analog thrust input (UI/touch)
       },
       view: {
         w: width,
@@ -1252,6 +1256,8 @@
       state.input.up = false;
       state.input.down = false;
       state.input.burst = false;
+      state.input.turnAnalog = 0;
+      state.input.thrustAnalog = 0;
       state.ship = makeShip("small");
       state.camera.zoom = cameraZoomForTier("small");
       state.camera.zoomFrom = state.camera.zoom;
@@ -1476,14 +1482,17 @@
     }
     function updateShip(dt) {
       const ship = state.ship;
-      if (state.input.left)
-        ship.angle -= state.params.shipTurnRate * dt;
-      if (state.input.right)
-        ship.angle += state.params.shipTurnRate * dt;
+      const turnDigital = (state.input.right ? 1 : 0) - (state.input.left ? 1 : 0);
+      const turnAnalog = clamp(Number(state.input.turnAnalog ?? 0), -1, 1);
+      const turn = clamp(turnDigital + turnAnalog, -1, 1);
+      if (Math.abs(turn) > 1e-6)
+        ship.angle += turn * state.params.shipTurnRate * dt;
       const fwd = shipForward(ship);
-      if (state.input.up) {
-        ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * dt));
-      }
+      const thrustDigital = state.input.up ? 1 : 0;
+      const thrustAnalog = clamp(Number(state.input.thrustAnalog ?? 0), 0, 1);
+      const thrust = Math.max(thrustDigital, thrustAnalog);
+      if (thrust > 1e-6)
+        ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * thrust * dt));
       if (state.input.down) {
         const v = ship.vel;
         const vLen = len(v);
@@ -3202,6 +3211,11 @@
     const tuneExhaustJetsOut = documentRef.getElementById("tune-exhaust-jets-out");
     const tuneExhaustJetsSave = documentRef.getElementById("tune-exhaust-jets-save");
     const tuneExhaustJetsDefault = documentRef.getElementById("tune-exhaust-jets-default");
+    const touchUi = documentRef.getElementById("touch-ui");
+    const touchJoystick = documentRef.getElementById("touch-joystick");
+    const touchJoystickBase = documentRef.getElementById("touch-joystick-base");
+    const touchJoystickKnob = documentRef.getElementById("touch-joystick-knob");
+    const touchBurstBtn = documentRef.getElementById("touch-burst");
     const tuneDmg = documentRef.getElementById("tune-dmg");
     const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
     const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
@@ -3283,6 +3297,64 @@
     const tuneTwinkleSpeedSave = documentRef.getElementById("tune-twinkle-speed-save");
     const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
     const nf = new Intl.NumberFormat();
+    const touch = {
+      active: false,
+      pointerId: null,
+      centerX: 0,
+      centerY: 0,
+      maxR: 60,
+      desiredAngle: 0,
+      thrust: 0
+    };
+    function setJoystickKnob(dx, dy, dragging) {
+      if (!touchJoystick || !touchJoystickKnob)
+        return;
+      if (dragging)
+        touchJoystick.classList.add("dragging");
+      else
+        touchJoystick.classList.remove("dragging");
+      touchJoystickKnob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+    }
+    function resetTouchControls() {
+      touch.active = false;
+      touch.pointerId = null;
+      touch.thrust = 0;
+      if (game?.state?.input) {
+        game.state.input.thrustAnalog = 0;
+        game.state.input.turnAnalog = 0;
+      }
+      setJoystickKnob(0, 0, false);
+    }
+    function updateJoystickFromPointer(clientX, clientY) {
+      const dx = clientX - touch.centerX;
+      const dy = clientY - touch.centerY;
+      const dist = Math.hypot(dx, dy);
+      const r = touch.maxR;
+      const clamped = dist > r && dist > 1e-6 ? r / dist : 1;
+      const jx = dx * clamped;
+      const jy = dy * clamped;
+      const deadZone = r * 0.12;
+      const mag = clamp((dist - deadZone) / Math.max(1, r - deadZone), 0, 1);
+      touch.thrust = mag;
+      touch.desiredAngle = Math.atan2(jy, jx);
+      setJoystickKnob(jx, jy, true);
+    }
+    function applyTouchControls() {
+      if (!game?.state?.input)
+        return;
+      if (!touch.active) {
+        game.state.input.thrustAnalog = 0;
+        game.state.input.turnAnalog = 0;
+        return;
+      }
+      const shipA = Number(game.state.ship?.angle) || 0;
+      const diff = wrapAngle(touch.desiredAngle - shipA);
+      const k = 0.95;
+      const dead = 0.04;
+      const turn = Math.abs(diff) < dead ? 0 : clamp(diff * k, -1, 1);
+      game.state.input.turnAnalog = turn;
+      game.state.input.thrustAnalog = clamp(touch.thrust, 0, 1);
+    }
     function setOut(outEl, value, suffix = "") {
       if (!outEl)
         return;
@@ -4158,6 +4230,81 @@
           startOrResume();
       });
     }
+    if (touchUi) {
+      touchUi.setAttribute("aria-hidden", "true");
+    }
+    if (touchJoystickBase) {
+      const updateCenterFromLayout = () => {
+        const rect = touchJoystickBase.getBoundingClientRect();
+        touch.centerX = rect.left + rect.width / 2;
+        touch.centerY = rect.top + rect.height / 2;
+        touch.maxR = Math.max(24, Math.min(90, rect.width * 0.35));
+      };
+      updateCenterFromLayout();
+      windowRef.addEventListener("resize", () => updateCenterFromLayout());
+      touchJoystickBase.addEventListener("pointerdown", (e) => {
+        if (typeof e?.preventDefault === "function")
+          e.preventDefault();
+        if (touch.pointerId !== null)
+          return;
+        updateCenterFromLayout();
+        touch.active = true;
+        touch.pointerId = e.pointerId;
+        try {
+          touchJoystickBase.setPointerCapture?.(e.pointerId);
+        } catch {
+        }
+        updateJoystickFromPointer(e.clientX, e.clientY);
+      });
+      touchJoystickBase.addEventListener("pointermove", (e) => {
+        if (!touch.active || touch.pointerId !== e.pointerId)
+          return;
+        if (typeof e?.preventDefault === "function")
+          e.preventDefault();
+        updateJoystickFromPointer(e.clientX, e.clientY);
+      });
+      const end = (e) => {
+        if (!touch.active || touch.pointerId !== e.pointerId)
+          return;
+        if (typeof e?.preventDefault === "function")
+          e.preventDefault();
+        try {
+          touchJoystickBase.releasePointerCapture?.(e.pointerId);
+        } catch {
+        }
+        resetTouchControls();
+      };
+      touchJoystickBase.addEventListener("pointerup", end);
+      touchJoystickBase.addEventListener("pointercancel", end);
+      touchJoystickBase.addEventListener("lostpointercapture", () => resetTouchControls());
+    }
+    if (touchBurstBtn) {
+      const press = (e) => {
+        if (typeof e?.preventDefault === "function")
+          e.preventDefault();
+        if (game.state.mode !== "playing")
+          return;
+        game.state.input.burst = true;
+        touchBurstBtn.classList.add("pressed");
+        try {
+          touchBurstBtn.setPointerCapture?.(e.pointerId);
+        } catch {
+        }
+      };
+      const release = (e) => {
+        if (typeof e?.preventDefault === "function")
+          e.preventDefault();
+        touchBurstBtn.classList.remove("pressed");
+        try {
+          touchBurstBtn.releasePointerCapture?.(e.pointerId);
+        } catch {
+        }
+      };
+      touchBurstBtn.addEventListener("pointerdown", press);
+      touchBurstBtn.addEventListener("pointerup", release);
+      touchBurstBtn.addEventListener("pointercancel", release);
+      touchBurstBtn.addEventListener("lostpointercapture", () => touchBurstBtn.classList.remove("pressed"));
+    }
     return {
       applyAllFromMenu,
       isMenuVisible,
@@ -4165,7 +4312,8 @@
       startOrResume,
       toggleDebugMenu,
       syncRuntimeDebugUi,
-      updateHudScore
+      updateHudScore,
+      applyTouchControls
     };
   }
 
@@ -4293,6 +4441,7 @@
       const dtMs = Math.min(50, ts - last);
       last = ts;
       accumulator += dtMs / 1e3;
+      ui.applyTouchControls?.();
       const pausedByMenu = ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (!externalStepping) {
         while (!pausedByMenu && accumulator >= fixedDt) {

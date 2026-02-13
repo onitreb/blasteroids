@@ -292,6 +292,8 @@ export function createEngine({ width, height }) {
       up: false,
       down: false,
       burst: false,
+      turnAnalog: 0, // [-1,1] optional analog turn input (UI/touch)
+      thrustAnalog: 0, // [0,1] optional analog thrust input (UI/touch)
     },
     view: {
       w: width,
@@ -1113,6 +1115,8 @@ export function createEngine({ width, height }) {
     state.input.up = false;
     state.input.down = false;
     state.input.burst = false;
+    state.input.turnAnalog = 0;
+    state.input.thrustAnalog = 0;
     state.ship = makeShip("small");
     state.camera.zoom = cameraZoomForTier("small");
     state.camera.zoomFrom = state.camera.zoom;
@@ -1357,13 +1361,16 @@ export function createEngine({ width, height }) {
 
   function updateShip(dt) {
     const ship = state.ship;
-    if (state.input.left) ship.angle -= state.params.shipTurnRate * dt;
-    if (state.input.right) ship.angle += state.params.shipTurnRate * dt;
+    const turnDigital = (state.input.right ? 1 : 0) - (state.input.left ? 1 : 0);
+    const turnAnalog = clamp(Number(state.input.turnAnalog ?? 0), -1, 1);
+    const turn = clamp(turnDigital + turnAnalog, -1, 1);
+    if (Math.abs(turn) > 1e-6) ship.angle += turn * state.params.shipTurnRate * dt;
 
     const fwd = shipForward(ship);
-    if (state.input.up) {
-      ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * dt));
-    }
+    const thrustDigital = state.input.up ? 1 : 0;
+    const thrustAnalog = clamp(Number(state.input.thrustAnalog ?? 0), 0, 1);
+    const thrust = Math.max(thrustDigital, thrustAnalog);
+    if (thrust > 1e-6) ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * thrust * dt));
     if (state.input.down) {
       const v = ship.vel;
       const vLen = len(v);

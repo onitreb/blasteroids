@@ -1,4 +1,5 @@
 import { clamp } from "../util/math.js";
+import { wrapAngle } from "../util/angle.js";
 import { SHIP_TIERS, ensureAttractRadiusCoversForcefield } from "../engine/createEngine.js";
 
 export const DEBUG_MENU_CONTROL_IDS = Object.freeze([
@@ -164,6 +165,11 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneExhaustJetsOut = documentRef.getElementById("tune-exhaust-jets-out");
   const tuneExhaustJetsSave = documentRef.getElementById("tune-exhaust-jets-save");
   const tuneExhaustJetsDefault = documentRef.getElementById("tune-exhaust-jets-default");
+  const touchUi = documentRef.getElementById("touch-ui");
+  const touchJoystick = documentRef.getElementById("touch-joystick");
+  const touchJoystickBase = documentRef.getElementById("touch-joystick-base");
+  const touchJoystickKnob = documentRef.getElementById("touch-joystick-knob");
+  const touchBurstBtn = documentRef.getElementById("touch-burst");
   const tuneDmg = documentRef.getElementById("tune-dmg");
   const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
   const tuneDmgSave = documentRef.getElementById("tune-dmg-save");
@@ -246,6 +252,66 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
 
   const nf = new Intl.NumberFormat();
+
+  const touch = {
+    active: false,
+    pointerId: null,
+    centerX: 0,
+    centerY: 0,
+    maxR: 60,
+    desiredAngle: 0,
+    thrust: 0,
+  };
+
+  function setJoystickKnob(dx, dy, dragging) {
+    if (!touchJoystick || !touchJoystickKnob) return;
+    if (dragging) touchJoystick.classList.add("dragging");
+    else touchJoystick.classList.remove("dragging");
+    touchJoystickKnob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  }
+
+  function resetTouchControls() {
+    touch.active = false;
+    touch.pointerId = null;
+    touch.thrust = 0;
+    if (game?.state?.input) {
+      game.state.input.thrustAnalog = 0;
+      game.state.input.turnAnalog = 0;
+    }
+    setJoystickKnob(0, 0, false);
+  }
+
+  function updateJoystickFromPointer(clientX, clientY) {
+    const dx = clientX - touch.centerX;
+    const dy = clientY - touch.centerY;
+    const dist = Math.hypot(dx, dy);
+    const r = touch.maxR;
+    const clamped = dist > r && dist > 1e-6 ? r / dist : 1;
+    const jx = dx * clamped;
+    const jy = dy * clamped;
+
+    const deadZone = r * 0.12;
+    const mag = clamp((dist - deadZone) / Math.max(1, r - deadZone), 0, 1);
+    touch.thrust = mag;
+    touch.desiredAngle = Math.atan2(jy, jx);
+    setJoystickKnob(jx, jy, true);
+  }
+
+  function applyTouchControls() {
+    if (!game?.state?.input) return;
+    if (!touch.active) {
+      game.state.input.thrustAnalog = 0;
+      game.state.input.turnAnalog = 0;
+      return;
+    }
+    const shipA = Number(game.state.ship?.angle) || 0;
+    const diff = wrapAngle(touch.desiredAngle - shipA);
+    const k = 0.95; // rad -> normalized turn rate
+    const dead = 0.04;
+    const turn = Math.abs(diff) < dead ? 0 : clamp(diff * k, -1, 1);
+    game.state.input.turnAnalog = turn;
+    game.state.input.thrustAnalog = clamp(touch.thrust, 0, 1);
+  }
 
   function setOut(outEl, value, suffix = "") {
     if (!outEl) return;
@@ -1056,6 +1122,84 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     });
   }
 
+  // Touch controls (iPad/mobile): virtual joystick + burst button.
+  // Uses Pointer Events so it works for both touch and pen, and stays file:// friendly.
+  if (touchUi) {
+    // Ensure screen-reader nav isn't cluttered on desktop.
+    touchUi.setAttribute("aria-hidden", "true");
+  }
+  if (touchJoystickBase) {
+    const updateCenterFromLayout = () => {
+      const rect = touchJoystickBase.getBoundingClientRect();
+      touch.centerX = rect.left + rect.width / 2;
+      touch.centerY = rect.top + rect.height / 2;
+      touch.maxR = Math.max(24, Math.min(90, rect.width * 0.35));
+    };
+    updateCenterFromLayout();
+    windowRef.addEventListener("resize", () => updateCenterFromLayout());
+
+    touchJoystickBase.addEventListener("pointerdown", (e) => {
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      if (touch.pointerId !== null) return;
+      updateCenterFromLayout();
+      touch.active = true;
+      touch.pointerId = e.pointerId;
+      try {
+        touchJoystickBase.setPointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+      updateJoystickFromPointer(e.clientX, e.clientY);
+    });
+
+    touchJoystickBase.addEventListener("pointermove", (e) => {
+      if (!touch.active || touch.pointerId !== e.pointerId) return;
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      updateJoystickFromPointer(e.clientX, e.clientY);
+    });
+
+    const end = (e) => {
+      if (!touch.active || touch.pointerId !== e.pointerId) return;
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      try {
+        touchJoystickBase.releasePointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+      resetTouchControls();
+    };
+    touchJoystickBase.addEventListener("pointerup", end);
+    touchJoystickBase.addEventListener("pointercancel", end);
+    touchJoystickBase.addEventListener("lostpointercapture", () => resetTouchControls());
+  }
+
+  if (touchBurstBtn) {
+    const press = (e) => {
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      if (game.state.mode !== "playing") return;
+      game.state.input.burst = true;
+      touchBurstBtn.classList.add("pressed");
+      try {
+        touchBurstBtn.setPointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    const release = (e) => {
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      touchBurstBtn.classList.remove("pressed");
+      try {
+        touchBurstBtn.releasePointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    touchBurstBtn.addEventListener("pointerdown", press);
+    touchBurstBtn.addEventListener("pointerup", release);
+    touchBurstBtn.addEventListener("pointercancel", release);
+    touchBurstBtn.addEventListener("lostpointercapture", () => touchBurstBtn.classList.remove("pressed"));
+  }
+
   return {
     applyAllFromMenu,
     isMenuVisible,
@@ -1064,5 +1208,6 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     toggleDebugMenu,
     syncRuntimeDebugUi,
     updateHudScore,
+    applyTouchControls,
   };
 }

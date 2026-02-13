@@ -9,6 +9,14 @@
   <body>
     <div id="wrap">
       <canvas id="game" width="960" height="720" aria-label="Game canvas"></canvas>
+      <div id="touch-ui" aria-hidden="true">
+        <div id="touch-joystick" aria-hidden="true">
+          <div id="touch-joystick-base">
+            <div id="touch-joystick-knob"></div>
+          </div>
+        </div>
+        <button id="touch-burst" type="button" aria-label="Burst">BURST</button>
+      </div>
       <div id="hud-score" aria-live="polite">Score: 0</div>
       <button id="debug-toggle" type="button">Open Debug (M)</button>
       <div id="menu">

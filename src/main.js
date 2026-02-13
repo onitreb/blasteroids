@@ -124,6 +124,7 @@ import { createUiBindings } from "./ui/createUiBindings.js";
     last = ts;
     accumulator += dtMs / 1000;
 
+    ui.applyTouchControls?.();
     const pausedByMenu =
       ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
 
