@@ -449,8 +449,8 @@ export function createEngine({ width, height, seed } = {}) {
       techPartRadius: 80,
       techPartPickupPad: 20,
       techPingSpeedPxPerSec: 2400,
-      techPingCooldownSec: 2.25,
-      techPingGlowSec: 5,
+      techPingCooldownSec: 3,
+      techPingGlowSec: 8,
       techPingThicknessPx: 22,
 
       starDensityScale: 1,
@@ -1000,7 +1000,7 @@ export function createEngine({ width, height, seed } = {}) {
       speed,
       maxRadius: techPingMaxRadius(),
     };
-    state.round.techPingCooldownSec = clamp(Number(state.params.techPingCooldownSec ?? 2.25), 0, 60);
+    state.round.techPingCooldownSec = clamp(Number(state.params.techPingCooldownSec ?? 3), 0, 60);
     return true;
   }
 
@@ -1010,7 +1010,7 @@ export function createEngine({ width, height, seed } = {}) {
 
     const ping = state.round.techPing;
     const thickness = clamp(Number(state.params.techPingThicknessPx ?? 22), 4, 240);
-    const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
+    const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
     const origin = ping?.origin || vec(0, 0);
 
     const prevR = ping ? Math.max(0, Number(ping.radius) || 0) : 0;

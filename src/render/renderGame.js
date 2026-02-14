@@ -505,6 +505,10 @@ export function createRenderer(engine) {
     const safeDir = star.dir === 1 ? 1 : -1;
     const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
     const segs = 34;
+    const seed = fnv1aSeed(`red-giant:${star.edge}`);
+    const shimmerPhase = (seed % 1000) * 0.001 * Math.PI * 2;
+    const shimmer = 0.5 + 0.5 * Math.sin(state.time * 2.2 + shimmerPhase);
+    const shimmerAmp = lerp(2, 10, shimmer);
 
     function boundaryPoints(offsetPx = 0) {
       const pts = [];
@@ -512,7 +516,8 @@ export function createRenderer(engine) {
         for (let i = 0; i <= segs; i++) {
           const t = i / segs;
           const u = lerp(-1, 1, t);
-          const bulge = safeDir * arcAmp * (1 - u * u);
+          const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+          const bulge = safeDir * arcAmp * (1 - u * u) + fire;
           const y = lerp(-halfH, halfH, t);
           const x = b + bulge + safeDir * offsetPx;
           pts.push({ x, y });
@@ -521,7 +526,8 @@ export function createRenderer(engine) {
         for (let i = 0; i <= segs; i++) {
           const t = i / segs;
           const u = lerp(-1, 1, t);
-          const bulge = safeDir * arcAmp * (1 - u * u);
+          const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+          const bulge = safeDir * arcAmp * (1 - u * u) + fire;
           const x = lerp(-halfW, halfW, t);
           const y = b + bulge + safeDir * offsetPx;
           pts.push({ x, y });
@@ -535,9 +541,9 @@ export function createRenderer(engine) {
     if (star.axis === "x") {
       const edgeX = safeDir === 1 ? -halfW : halfW;
       const grad = ctx.createLinearGradient(b, 0, edgeX, 0);
-      grad.addColorStop(0, "rgba(255,110,75,0.22)");
-      grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
-      grad.addColorStop(1, "rgba(210,35,15,0.46)");
+      grad.addColorStop(0, "rgba(255,140,95,0.45)");
+      grad.addColorStop(0.25, "rgba(255,85,45,0.72)");
+      grad.addColorStop(1, "rgba(180,18,8,0.88)");
       ctx.fillStyle = grad;
 
       const curve = boundaryPoints(0);
@@ -550,9 +556,9 @@ export function createRenderer(engine) {
     } else {
       const edgeY = safeDir === 1 ? -halfH : halfH;
       const grad = ctx.createLinearGradient(0, b, 0, edgeY);
-      grad.addColorStop(0, "rgba(255,110,75,0.22)");
-      grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
-      grad.addColorStop(1, "rgba(210,35,15,0.46)");
+      grad.addColorStop(0, "rgba(255,140,95,0.45)");
+      grad.addColorStop(0.25, "rgba(255,85,45,0.72)");
+      grad.addColorStop(1, "rgba(180,18,8,0.88)");
       ctx.fillStyle = grad;
 
       const curve = boundaryPoints(0);
@@ -608,6 +614,10 @@ export function createRenderer(engine) {
     const safeDir = star.dir === 1 ? 1 : -1;
     const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
     const segs = 34;
+    const seed = fnv1aSeed(`red-giant:${star.edge}`);
+    const shimmerPhase = (seed % 1000) * 0.001 * Math.PI * 2;
+    const shimmer = 0.5 + 0.5 * Math.sin(state.time * 2.2 + shimmerPhase);
+    const shimmerAmp = lerp(2, 10, shimmer);
 
     function boundaryPoints(offsetPx = 0) {
       const pts = [];
@@ -615,7 +625,8 @@ export function createRenderer(engine) {
         for (let i = 0; i <= segs; i++) {
           const t = i / segs;
           const u = lerp(-1, 1, t);
-          const bulge = safeDir * arcAmp * (1 - u * u);
+          const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+          const bulge = safeDir * arcAmp * (1 - u * u) + fire;
           const y = lerp(-halfH, halfH, t);
           const x = b + bulge + safeDir * offsetPx;
           pts.push({ x, y });
@@ -624,7 +635,8 @@ export function createRenderer(engine) {
         for (let i = 0; i <= segs; i++) {
           const t = i / segs;
           const u = lerp(-1, 1, t);
-          const bulge = safeDir * arcAmp * (1 - u * u);
+          const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+          const bulge = safeDir * arcAmp * (1 - u * u) + fire;
           const x = lerp(-halfW, halfW, t);
           const y = b + bulge + safeDir * offsetPx;
           pts.push({ x, y });
@@ -662,19 +674,21 @@ export function createRenderer(engine) {
     ctx.closePath();
     ctx.fill();
 
-    // Boundary line (bright + warm).
+    // Boundary line (bright + warm). Multi-stroke so it reads less "solid".
     ctx.globalCompositeOperation = "lighter";
-    ctx.shadowColor = "rgba(255,120,70,0.85)";
-    ctx.shadowBlur = 18;
-    ctx.strokeStyle = "rgba(255,170,150,0.70)";
-    ctx.lineWidth = 10;
+    const flicker = 0.5 + 0.5 * Math.sin(state.time * 5.1 + shimmerPhase * 1.7);
+    ctx.shadowColor = "rgba(255,120,70,0.95)";
+    ctx.shadowBlur = lerp(16, 26, flicker);
+
+    ctx.strokeStyle = `rgba(255,170,150,${(0.50 + flicker * 0.18).toFixed(3)})`;
+    ctx.lineWidth = lerp(12, 16, flicker);
     ctx.beginPath();
     ctx.moveTo(curve0[0].x, curve0[0].y);
     for (let i = 1; i < curve0.length; i++) ctx.lineTo(curve0[i].x, curve0[i].y);
     ctx.stroke();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = "rgba(255,240,220,0.35)";
+    ctx.strokeStyle = `rgba(255,245,230,${(0.18 + flicker * 0.12).toFixed(3)})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(curve0[0].x, curve0[0].y);
@@ -735,7 +749,8 @@ export function createRenderer(engine) {
 
       ctx.save();
       ctx.translate(px, py);
-      ctx.rotate(i * segSpan);
+      // Orient the wedge so its center points outward along the slot angle.
+      ctx.rotate(ang - segSpan * 0.5);
 
       ctx.globalCompositeOperation = "lighter";
       if (filled) {
@@ -975,17 +990,15 @@ export function createRenderer(engine) {
 
     const pingFxT = Math.max(0, Number(a.techPingFxT) || 0);
     if (pingFxT > 1e-3) {
-      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
-      const t = clamp(pingFxT / glowSec, 0, 1);
+      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
+      const fadeOutSec = clamp(Math.min(2, glowSec), 0.1, 10);
+      const intensity = pingFxT > fadeOutSec ? 1 : clamp(pingFxT / fadeOutSec, 0, 1);
+      const alpha = 0.06 + 0.28 * intensity;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = `rgba(215,150,255,${(0.06 + 0.26 * t).toFixed(3)})`;
-      ctx.lineWidth = lerp(2, 7, t);
       ctx.shadowColor = "rgba(215,150,255,0.95)";
-      ctx.shadowBlur = lerp(6, 18, t);
-      ctx.beginPath();
-      ctx.arc(a.pos.x, a.pos.y, a.radius * lerp(1.05, 1.55, t), 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.shadowBlur = lerp(8, 22, intensity);
+      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, `rgba(215,150,255,${alpha.toFixed(3)})`, lerp(4, 9, intensity));
       ctx.restore();
     }
 

@@ -54,6 +54,7 @@ export const DEBUG_MENU_CONTROL_IDS = Object.freeze([
   "tune-twinkle-chance",
   "tune-twinkle-strength",
   "tune-twinkle-speed",
+  "tune-tech-ping-cooldown",
 ]);
 
 export function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
@@ -250,6 +251,10 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneTwinkleSpeedOut = documentRef.getElementById("tune-twinkle-speed-out");
   const tuneTwinkleSpeedSave = documentRef.getElementById("tune-twinkle-speed-save");
   const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
+  const tuneTechPingCooldown = documentRef.getElementById("tune-tech-ping-cooldown");
+  const tuneTechPingCooldownOut = documentRef.getElementById("tune-tech-ping-cooldown-out");
+  const tuneTechPingCooldownSave = documentRef.getElementById("tune-tech-ping-cooldown-save");
+  const tuneTechPingCooldownDefault = documentRef.getElementById("tune-tech-ping-cooldown-default");
 
   const nf = new Intl.NumberFormat();
 
@@ -661,6 +666,14 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
       suffix: "",
       format: (v) => `${Number(v).toFixed(2)}x`,
     },
+    {
+      key: "techPingCooldownSec",
+      input: tuneTechPingCooldown,
+      saveBtn: tuneTechPingCooldownSave,
+      savedOut: tuneTechPingCooldownDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)} s`,
+    },
   ];
 
   function readTuningDefaultsFromStorage() {
@@ -736,6 +749,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.tier2Zoom = clamp(p.tier2Zoom, 0.35, 1.2);
     p.tier3Zoom = clamp(p.tier3Zoom, 0.35, 1.2);
     p.tierZoomTweenSec = clamp(p.tierZoomTweenSec, 0.05, 1.2);
+    p.techPingCooldownSec = clamp(Number(p.techPingCooldownSec ?? 3), 0, 60);
     if (
       Object.prototype.hasOwnProperty.call(defaults, "forceFieldRadius") &&
       before.forceFieldRadius !== p.forceFieldRadius
@@ -811,6 +825,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (tuneTwinkleChance) tuneTwinkleChance.value = String(p.starTwinkleChance);
     if (tuneTwinkleStrength) tuneTwinkleStrength.value = String(p.starTwinkleStrength);
     if (tuneTwinkleSpeed) tuneTwinkleSpeed.value = String(p.starTwinkleSpeed);
+    if (tuneTechPingCooldown) tuneTechPingCooldown.value = String(p.techPingCooldownSec ?? 3);
     syncTuningUiLabels();
   }
 
@@ -878,6 +893,9 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (tuneTwinkleSpeedOut) {
       tuneTwinkleSpeedOut.textContent = `${readNum(tuneTwinkleSpeed, p.starTwinkleSpeed).toFixed(2)}x`;
     }
+    if (tuneTechPingCooldownOut) {
+      tuneTechPingCooldownOut.textContent = `${readNum(tuneTechPingCooldown, p.techPingCooldownSec ?? 3).toFixed(2)} s`;
+    }
   }
 
   function applyTuningFromMenu() {
@@ -928,6 +946,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.starTwinkleChance = clamp(readNum(tuneTwinkleChance, p.starTwinkleChance), 0, 1);
     p.starTwinkleStrength = clamp(readNum(tuneTwinkleStrength, p.starTwinkleStrength), 0, 0.8);
     p.starTwinkleSpeed = clamp(readNum(tuneTwinkleSpeed, p.starTwinkleSpeed), 0.2, 3);
+    p.techPingCooldownSec = clamp(readNum(tuneTechPingCooldown, p.techPingCooldownSec ?? 3), 0, 60);
     game.state.settings.tierOverrideEnabled = !!dbgTierOverride?.checked;
     game.state.settings.tierOverrideIndex = clamp(Math.round(readNum(dbgTierOverrideLevel, 1)), 1, 3);
     game.state.settings.pauseOnMenuOpen = !!dbgPauseOnOpen?.checked;

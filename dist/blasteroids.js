@@ -625,8 +625,8 @@
         techPartRadius: 80,
         techPartPickupPad: 20,
         techPingSpeedPxPerSec: 2400,
-        techPingCooldownSec: 2.25,
-        techPingGlowSec: 5,
+        techPingCooldownSec: 3,
+        techPingGlowSec: 8,
         techPingThicknessPx: 22,
         starDensityScale: 1,
         starParallaxStrength: 1,
@@ -1139,7 +1139,7 @@
         speed,
         maxRadius: techPingMaxRadius()
       };
-      state.round.techPingCooldownSec = clamp(Number(state.params.techPingCooldownSec ?? 2.25), 0, 60);
+      state.round.techPingCooldownSec = clamp(Number(state.params.techPingCooldownSec ?? 3), 0, 60);
       return true;
     }
     function updateTechPing(dt) {
@@ -1148,7 +1148,7 @@
       state.round.techPingCooldownSec = Math.max(0, (Number(state.round.techPingCooldownSec) || 0) - dt);
       const ping = state.round.techPing;
       const thickness = clamp(Number(state.params.techPingThicknessPx ?? 22), 4, 240);
-      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
+      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
       const origin = ping?.origin || vec(0, 0);
       const prevR = ping ? Math.max(0, Number(ping.radius) || 0) : 0;
       const nextR = ping ? prevR + Math.max(0, Number(ping.speed) || 0) * dt : 0;
@@ -3433,13 +3433,18 @@
       const safeDir = star.dir === 1 ? 1 : -1;
       const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
       const segs = 34;
+      const seed = fnv1aSeed(`red-giant:${star.edge}`);
+      const shimmerPhase = seed % 1e3 * 1e-3 * Math.PI * 2;
+      const shimmer = 0.5 + 0.5 * Math.sin(state.time * 2.2 + shimmerPhase);
+      const shimmerAmp = lerp(2, 10, shimmer);
       function boundaryPoints(offsetPx = 0) {
         const pts = [];
         if (star.axis === "x") {
           for (let i = 0; i <= segs; i++) {
             const t = i / segs;
             const u = lerp(-1, 1, t);
-            const bulge = safeDir * arcAmp * (1 - u * u);
+            const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+            const bulge = safeDir * arcAmp * (1 - u * u) + fire;
             const y = lerp(-halfH, halfH, t);
             const x = b + bulge + safeDir * offsetPx;
             pts.push({ x, y });
@@ -3448,7 +3453,8 @@
           for (let i = 0; i <= segs; i++) {
             const t = i / segs;
             const u = lerp(-1, 1, t);
-            const bulge = safeDir * arcAmp * (1 - u * u);
+            const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+            const bulge = safeDir * arcAmp * (1 - u * u) + fire;
             const x = lerp(-halfW, halfW, t);
             const y = b + bulge + safeDir * offsetPx;
             pts.push({ x, y });
@@ -3460,9 +3466,9 @@
       if (star.axis === "x") {
         const edgeX = safeDir === 1 ? -halfW : halfW;
         const grad = ctx.createLinearGradient(b, 0, edgeX, 0);
-        grad.addColorStop(0, "rgba(255,110,75,0.22)");
-        grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
-        grad.addColorStop(1, "rgba(210,35,15,0.46)");
+        grad.addColorStop(0, "rgba(255,140,95,0.45)");
+        grad.addColorStop(0.25, "rgba(255,85,45,0.72)");
+        grad.addColorStop(1, "rgba(180,18,8,0.88)");
         ctx.fillStyle = grad;
         const curve = boundaryPoints(0);
         ctx.beginPath();
@@ -3475,9 +3481,9 @@
       } else {
         const edgeY = safeDir === 1 ? -halfH : halfH;
         const grad = ctx.createLinearGradient(0, b, 0, edgeY);
-        grad.addColorStop(0, "rgba(255,110,75,0.22)");
-        grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
-        grad.addColorStop(1, "rgba(210,35,15,0.46)");
+        grad.addColorStop(0, "rgba(255,140,95,0.45)");
+        grad.addColorStop(0.25, "rgba(255,85,45,0.72)");
+        grad.addColorStop(1, "rgba(180,18,8,0.88)");
         ctx.fillStyle = grad;
         const curve = boundaryPoints(0);
         ctx.beginPath();
@@ -3529,13 +3535,18 @@
       const safeDir = star.dir === 1 ? 1 : -1;
       const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
       const segs = 34;
+      const seed = fnv1aSeed(`red-giant:${star.edge}`);
+      const shimmerPhase = seed % 1e3 * 1e-3 * Math.PI * 2;
+      const shimmer = 0.5 + 0.5 * Math.sin(state.time * 2.2 + shimmerPhase);
+      const shimmerAmp = lerp(2, 10, shimmer);
       function boundaryPoints(offsetPx = 0) {
         const pts = [];
         if (star.axis === "x") {
           for (let i = 0; i <= segs; i++) {
             const t = i / segs;
             const u = lerp(-1, 1, t);
-            const bulge = safeDir * arcAmp * (1 - u * u);
+            const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+            const bulge = safeDir * arcAmp * (1 - u * u) + fire;
             const y = lerp(-halfH, halfH, t);
             const x = b + bulge + safeDir * offsetPx;
             pts.push({ x, y });
@@ -3544,7 +3555,8 @@
           for (let i = 0; i <= segs; i++) {
             const t = i / segs;
             const u = lerp(-1, 1, t);
-            const bulge = safeDir * arcAmp * (1 - u * u);
+            const fire = safeDir * shimmerAmp * Math.sin(u * 4.7 + state.time * 3.4 + shimmerPhase);
+            const bulge = safeDir * arcAmp * (1 - u * u) + fire;
             const x = lerp(-halfW, halfW, t);
             const y = b + bulge + safeDir * offsetPx;
             pts.push({ x, y });
@@ -3581,17 +3593,18 @@
       ctx.closePath();
       ctx.fill();
       ctx.globalCompositeOperation = "lighter";
-      ctx.shadowColor = "rgba(255,120,70,0.85)";
-      ctx.shadowBlur = 18;
-      ctx.strokeStyle = "rgba(255,170,150,0.70)";
-      ctx.lineWidth = 10;
+      const flicker = 0.5 + 0.5 * Math.sin(state.time * 5.1 + shimmerPhase * 1.7);
+      ctx.shadowColor = "rgba(255,120,70,0.95)";
+      ctx.shadowBlur = lerp(16, 26, flicker);
+      ctx.strokeStyle = `rgba(255,170,150,${(0.5 + flicker * 0.18).toFixed(3)})`;
+      ctx.lineWidth = lerp(12, 16, flicker);
       ctx.beginPath();
       ctx.moveTo(curve0[0].x, curve0[0].y);
       for (let i = 1; i < curve0.length; i++)
         ctx.lineTo(curve0[i].x, curve0[i].y);
       ctx.stroke();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = "rgba(255,240,220,0.35)";
+      ctx.strokeStyle = `rgba(255,245,230,${(0.18 + flicker * 0.12).toFixed(3)})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(curve0[0].x, curve0[0].y);
@@ -3645,7 +3658,7 @@
         const t = active ? 0.65 : 0.4;
         ctx.save();
         ctx.translate(px, py);
-        ctx.rotate(i * segSpan);
+        ctx.rotate(ang - segSpan * 0.5);
         ctx.globalCompositeOperation = "lighter";
         if (filled) {
           ctx.fillStyle = rgbToRgba(baseRgb, 0.22);
@@ -3855,17 +3868,15 @@
       }
       const pingFxT = Math.max(0, Number(a.techPingFxT) || 0);
       if (pingFxT > 1e-3) {
-        const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
-        const t = clamp(pingFxT / glowSec, 0, 1);
+        const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
+        const fadeOutSec = clamp(Math.min(2, glowSec), 0.1, 10);
+        const intensity = pingFxT > fadeOutSec ? 1 : clamp(pingFxT / fadeOutSec, 0, 1);
+        const alpha = 0.06 + 0.28 * intensity;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        ctx.strokeStyle = `rgba(215,150,255,${(0.06 + 0.26 * t).toFixed(3)})`;
-        ctx.lineWidth = lerp(2, 7, t);
         ctx.shadowColor = "rgba(215,150,255,0.95)";
-        ctx.shadowBlur = lerp(6, 18, t);
-        ctx.beginPath();
-        ctx.arc(a.pos.x, a.pos.y, a.radius * lerp(1.05, 1.55, t), 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.shadowBlur = lerp(8, 22, intensity);
+        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, `rgba(215,150,255,${alpha.toFixed(3)})`, lerp(4, 9, intensity));
         ctx.restore();
       }
       const base = a.size === "xxlarge" ? "rgba(231,240,255,0.62)" : a.size === "xlarge" ? "rgba(231,240,255,0.68)" : a.size === "large" ? "rgba(231,240,255,0.74)" : a.size === "med" ? "rgba(231,240,255,0.80)" : "rgba(231,240,255,0.88)";
@@ -4261,7 +4272,8 @@
     "tune-star-accent-chance",
     "tune-twinkle-chance",
     "tune-twinkle-strength",
-    "tune-twinkle-speed"
+    "tune-twinkle-speed",
+    "tune-tech-ping-cooldown"
   ]);
   function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
     const menu = documentRef.getElementById("menu");
@@ -4457,6 +4469,10 @@
     const tuneTwinkleSpeedOut = documentRef.getElementById("tune-twinkle-speed-out");
     const tuneTwinkleSpeedSave = documentRef.getElementById("tune-twinkle-speed-save");
     const tuneTwinkleSpeedDefault = documentRef.getElementById("tune-twinkle-speed-default");
+    const tuneTechPingCooldown = documentRef.getElementById("tune-tech-ping-cooldown");
+    const tuneTechPingCooldownOut = documentRef.getElementById("tune-tech-ping-cooldown-out");
+    const tuneTechPingCooldownSave = documentRef.getElementById("tune-tech-ping-cooldown-save");
+    const tuneTechPingCooldownDefault = documentRef.getElementById("tune-tech-ping-cooldown-default");
     const nf = new Intl.NumberFormat();
     const touch = {
       active: false,
@@ -4866,6 +4882,14 @@
         savedOut: tuneTwinkleSpeedDefault,
         suffix: "",
         format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "techPingCooldownSec",
+        input: tuneTechPingCooldown,
+        saveBtn: tuneTechPingCooldownSave,
+        savedOut: tuneTechPingCooldownDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)} s`
       }
     ];
     function readTuningDefaultsFromStorage() {
@@ -4941,6 +4965,7 @@
       p.tier2Zoom = clamp(p.tier2Zoom, 0.35, 1.2);
       p.tier3Zoom = clamp(p.tier3Zoom, 0.35, 1.2);
       p.tierZoomTweenSec = clamp(p.tierZoomTweenSec, 0.05, 1.2);
+      p.techPingCooldownSec = clamp(Number(p.techPingCooldownSec ?? 3), 0, 60);
       if (Object.prototype.hasOwnProperty.call(defaults, "forceFieldRadius") && before.forceFieldRadius !== p.forceFieldRadius) {
         defaults.forceFieldRadius = p.forceFieldRadius;
         writeTuningDefaultsToStorage(defaults);
@@ -5056,6 +5081,8 @@
         tuneTwinkleStrength.value = String(p.starTwinkleStrength);
       if (tuneTwinkleSpeed)
         tuneTwinkleSpeed.value = String(p.starTwinkleSpeed);
+      if (tuneTechPingCooldown)
+        tuneTechPingCooldown.value = String(p.techPingCooldownSec ?? 3);
       syncTuningUiLabels();
     }
     function syncTuningUiLabels() {
@@ -5141,6 +5168,9 @@
       if (tuneTwinkleSpeedOut) {
         tuneTwinkleSpeedOut.textContent = `${readNum(tuneTwinkleSpeed, p.starTwinkleSpeed).toFixed(2)}x`;
       }
+      if (tuneTechPingCooldownOut) {
+        tuneTechPingCooldownOut.textContent = `${readNum(tuneTechPingCooldown, p.techPingCooldownSec ?? 3).toFixed(2)} s`;
+      }
     }
     function applyTuningFromMenu() {
       const p = game.state.params;
@@ -5191,6 +5221,7 @@
       p.starTwinkleChance = clamp(readNum(tuneTwinkleChance, p.starTwinkleChance), 0, 1);
       p.starTwinkleStrength = clamp(readNum(tuneTwinkleStrength, p.starTwinkleStrength), 0, 0.8);
       p.starTwinkleSpeed = clamp(readNum(tuneTwinkleSpeed, p.starTwinkleSpeed), 0.2, 3);
+      p.techPingCooldownSec = clamp(readNum(tuneTechPingCooldown, p.techPingCooldownSec ?? 3), 0, 60);
       game.state.settings.tierOverrideEnabled = !!dbgTierOverride?.checked;
       game.state.settings.tierOverrideIndex = clamp(Math.round(readNum(dbgTierOverrideLevel, 1)), 1, 3);
       game.state.settings.pauseOnMenuOpen = !!dbgPauseOnOpen?.checked;
