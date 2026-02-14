@@ -289,6 +289,7 @@ function shipForward(ship) {
 export function createEngine({ width, height, seed } = {}) {
   const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 0xdecafbad;
   const baseSeed = (baseSeedRaw >>> 0) || 0xdecafbad;
+  let sessionSeed = baseSeed;
   let rng = seededRng(baseSeed);
   const starRng = seededRng(0x51a7f00d);
   let exhaustRng = seededRng(0x1ee7beef);
@@ -297,6 +298,8 @@ export function createEngine({ width, height, seed } = {}) {
     mode: "menu", // menu | playing | gameover
     time: 0,
     round: {
+      sessionSeed: baseSeed,
+      roundIndex: 0,
       seed: baseSeed,
       durationSec: 300,
       elapsedSec: 0,
@@ -307,6 +310,7 @@ export function createEngine({ width, height, seed } = {}) {
       carriedPartId: null,
       techPing: null,
       techPingCooldownSec: 0,
+      starExposureSec: 0,
     },
     ship: makeShip("small"),
     asteroids: [],
@@ -349,7 +353,7 @@ export function createEngine({ width, height, seed } = {}) {
     },
     // Large-arena scaffold (phase LA-01). Kept equal to view for now.
     world: {
-      scale: 10,
+      scale: 3,
       w: width,
       h: height,
     },
@@ -446,12 +450,17 @@ export function createEngine({ width, height, seed } = {}) {
       jumpGateRadius: 190,
       jumpGateEdgeInsetExtraPx: 160,
       jumpGateInstallPad: 60,
+      jumpGateChargeSec: 2,
       techPartRadius: 80,
       techPartPickupPad: 20,
       techPingSpeedPxPerSec: 2400,
       techPingCooldownSec: 3,
       techPingGlowSec: 8,
       techPingThicknessPx: 22,
+      techPartEdgeMarginPx: 520,
+      shipStarKillSec: 3,
+      shipStarCoolRate: 1.6,
+      wallRestitution: 0.65,
 
       starDensityScale: 1,
       starParallaxStrength: 1,
@@ -481,11 +490,32 @@ export function createEngine({ width, height, seed } = {}) {
   const worldCellActiveKeys = new Set();
   ensureAttractRadiusCoversForcefield(state.params);
 
-  function setRoundSeed(nextSeed) {
+  function setGameplaySeed(nextSeed) {
     const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 0xdecafbad;
     const s = (raw >>> 0) || 0xdecafbad;
     state.round.seed = s;
     rng = seededRng(s);
+  }
+
+  // Public: sets the session seed (and resets the round index). The next `resetWorld()` will
+  // advance to round 1 via a deterministic derived seed.
+  function setRoundSeed(nextSeed) {
+    setSessionSeed(nextSeed);
+    setGameplaySeed(state.round.sessionSeed);
+  }
+
+  function setSessionSeed(nextSeed) {
+    const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 0xdecafbad;
+    const s = (raw >>> 0) || 0xdecafbad;
+    sessionSeed = s;
+    state.round.sessionSeed = s;
+    state.round.roundIndex = 0;
+  }
+
+  function advanceToNextRoundSeed() {
+    const nextIndex = Math.max(0, Math.floor(state.round.roundIndex || 0)) + 1;
+    state.round.roundIndex = nextIndex;
+    setGameplaySeed(deriveSeed(sessionSeed, `round-${nextIndex}`));
   }
 
   function makeRoundRng(tag) {
@@ -874,6 +904,14 @@ export function createEngine({ width, height, seed } = {}) {
     }
   }
 
+  function starSignedDistToBodyEdge(body, star) {
+    if (!body || !star) return Infinity;
+    const r = Math.max(0, Number(body.radius) || 0);
+    const axisPos = star.axis === "x" ? Number(body.pos?.x) || 0 : Number(body.pos?.y) || 0;
+    const dir = star.dir === 1 ? 1 : -1;
+    return (axisPos - Number(star.boundary || 0)) * dir - r;
+  }
+
   function starConsumesBody(body, star) {
     if (!body || !star) return false;
     const r = Math.max(0, Number(body.radius) || 0);
@@ -924,6 +962,7 @@ export function createEngine({ width, height, seed } = {}) {
     const rr = makeRoundRng("jump-gate");
     const radiusRaw = Number(state.params.jumpGateRadius ?? 190);
     const edgeInsetExtraPx = Number(state.params.jumpGateEdgeInsetExtraPx ?? 0);
+    const chargeSec = clamp(Number(state.params.jumpGateChargeSec ?? 2), 0, 30);
     const halfW = state.world.w / 2;
     const halfH = state.world.h / 2;
     const radius = clamp(radiusRaw, 16, Math.min(halfW, halfH) * 0.35);
@@ -953,6 +992,8 @@ export function createEngine({ width, height, seed } = {}) {
       pos: vec(x, y),
       radius,
       active: false,
+      chargeSec,
+      chargeElapsedSec: null,
       slots: new Array(ROUND_PART_COUNT).fill(null),
     };
   }
@@ -1094,7 +1135,9 @@ export function createEngine({ width, height, seed } = {}) {
     const asteroidR = asteroidRadiusForSize(state.params, "xlarge");
     const bufferMax = Math.min(state.world.w, state.world.h) * 0.45;
     const buffer = clamp(Number(state.params.starSafeBufferPx ?? 0), 0, bufferMax);
-    const margin = clamp(Math.max(asteroidR + 60, 180), 0, Math.min(halfW, halfH) * 0.45);
+    const edgeMarginParam = Number(state.params.techPartEdgeMarginPx ?? 520);
+    const edgeMarginWanted = clamp(edgeMarginParam, asteroidR + 120, Math.min(halfW, halfH) * 0.45);
+    const margin = clamp(Math.max(asteroidR + 60, edgeMarginWanted), 0, Math.min(halfW, halfH) * 0.45);
     const fallbackRect = { xMin: -halfW + margin, xMax: halfW - margin, yMin: -halfH + margin, yMax: halfH - margin };
     const rect = starSafeRectRelaxed(star, { bufferPx: buffer, marginPx: margin }) || fallbackRect;
 
@@ -1104,7 +1147,11 @@ export function createEngine({ width, height, seed } = {}) {
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const p = points[i] || randomPointInRect(rect, placementRng);
+      const pRaw = points[i] || randomPointInRect(rect, placementRng);
+      const p = {
+        x: clamp(pRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
+        y: clamp(pRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted),
+      };
       const rr = makeRoundRng(`tech-part-${i}`);
       const speed = lerp(12, 46, rr());
       const ang = rr() * Math.PI * 2;
@@ -1129,6 +1176,7 @@ export function createEngine({ width, height, seed } = {}) {
     state.round.carriedPartId = null;
     state.round.techPing = null;
     state.round.techPingCooldownSec = 0;
+    state.round.starExposureSec = 0;
 
     const starEdge = pickRoundStarEdge();
     const star = makeRedGiant(starEdge);
@@ -1151,16 +1199,34 @@ export function createEngine({ width, height, seed } = {}) {
     if (t >= 1) endRound("lose", "star_reached_far_edge");
   }
 
+  function updateShipStarExposure(dt) {
+    const star = state.round.star;
+    if (!star) {
+      state.round.starExposureSec = 0;
+      state.ship.starHeat = 0;
+      return;
+    }
+
+    const killSec = clamp(Number(state.params.shipStarKillSec ?? 3), 0.25, 30);
+    const coolRate = clamp(Number(state.params.shipStarCoolRate ?? 1.6), 0, 20);
+    const signed = starSignedDistToBodyEdge(state.ship, star);
+    const inStar = signed < 0;
+
+    let next = Math.max(0, Number(state.round.starExposureSec) || 0);
+    if (inStar) next += dt;
+    else next = Math.max(0, next - coolRate * dt);
+    state.round.starExposureSec = next;
+    state.ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
+
+    if (next >= killSec) {
+      spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
+      endRound("lose", "star_overheat");
+    }
+  }
+
   function applyRedGiantHazard() {
     const star = state.round.star;
     if (!star) return;
-
-    // Ship: instant loss on contact.
-    if (starConsumesBody(state.ship, star)) {
-      spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 89, 100], r0: 10, r1: 54, ttl: 0.22 });
-      endRound("lose", "star_contact");
-      return;
-    }
 
     // Asteroids: destroyed when consumed; tech parts inside are lost (respawned later).
     for (let i = state.asteroids.length - 1; i >= 0; i--) {
@@ -1197,9 +1263,10 @@ export function createEngine({ width, height, seed } = {}) {
     }
   }
 
-  function updateTechParts() {
+  function updateTechParts(dt) {
     const parts = state.round.techParts;
     if (!Array.isArray(parts) || parts.length === 0) return;
+    const stepDt = Math.max(0, Number(dt) || 0);
 
     const ship = state.ship;
     const gate = state.round.gate;
@@ -1250,9 +1317,16 @@ export function createEngine({ width, height, seed } = {}) {
           const part = parts[i];
           if (!part || part.state !== "lost") continue;
 
+          const edgeMarginParam = Number(state.params.techPartEdgeMarginPx ?? 520);
+          const edgeMarginWanted = clamp(edgeMarginParam, asteroidR + 120, Math.min(halfW, halfH) * 0.45);
+
           const nextCount = Math.max(0, Number(part.respawnCount) || 0) + 1;
           const rr = makeRoundRng(`tech-part-respawn-${part.id}-${nextCount}`);
-          const picked = randomPointInRect(rect, rr);
+          const pickedRaw = randomPointInRect(rect, rr);
+          const picked = {
+            x: clamp(pickedRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
+            y: clamp(pickedRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted),
+          };
 
           const speed = lerp(12, 46, rr());
           const ang = rr() * Math.PI * 2;
@@ -1324,9 +1398,19 @@ export function createEngine({ width, height, seed } = {}) {
       }
     }
 
-    // Gate activation: 4 installed.
+    // Gate activation: charge up after 4 installed.
     if (gate && Array.isArray(gate.slots)) {
-      gate.active = gate.slots.every((slot) => !!slot);
+      const allInstalled = gate.slots.every((slot) => !!slot);
+      if (!allInstalled) {
+        gate.active = false;
+        gate.chargeElapsedSec = null;
+      } else if (!gate.active) {
+        if (gate.chargeElapsedSec == null) gate.chargeElapsedSec = 0;
+        gate.chargeElapsedSec += stepDt;
+        const chargeSec = clamp(Number(gate.chargeSec ?? state.params.jumpGateChargeSec ?? 2), 0, 30);
+        gate.chargeSec = chargeSec;
+        if (gate.chargeElapsedSec >= chargeSec) gate.active = true;
+      }
     }
 
     // Attach carried part to ship nose.
@@ -1725,8 +1809,18 @@ export function createEngine({ width, height, seed } = {}) {
     const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
     const sizeBias = fractureSizeBias(target?.size);
     const speed = baseSpeed * sizeBias;
+    const tough =
+      target?.size === "xxlarge"
+        ? 0.8
+        : target?.size === "xlarge"
+          ? 0.84
+          : target?.size === "large"
+            ? 0.92
+            : target?.size === "small"
+              ? 1.08
+              : 1;
     // Interpret fractureImpactSpeed as the equal-mass break speed (physics-ish).
-    return 0.25 * targetMass * speed * speed;
+    return 0.25 * targetMass * speed * speed * tough;
   }
 
   function impactEnergy(projectile, target, relativeSpeed) {
@@ -1853,7 +1947,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function resetWorld() {
-    setRoundSeed(state.round.seed);
+    advanceToNextRoundSeed();
     state.time = 0;
     state.score = 0;
     state.progression.gemScore = 0;
@@ -1876,6 +1970,7 @@ export function createEngine({ width, height, seed } = {}) {
     state.input.up = false;
     state.input.down = false;
     state.input.burst = false;
+    state.input.ping = false;
     state.input.turnAnalog = 0;
     state.input.thrustAnalog = 0;
     state.ship = makeShip("small");
@@ -1929,7 +2024,7 @@ export function createEngine({ width, height, seed } = {}) {
 
   function startGame(options = {}) {
     if (options && Object.prototype.hasOwnProperty.call(options, "seed")) {
-      setRoundSeed(options.seed);
+      setSessionSeed(options.seed);
     }
     resetWorld();
     if (options && options.shipSpawn && typeof options.shipSpawn === "object") {
@@ -2301,6 +2396,11 @@ export function createEngine({ width, height, seed } = {}) {
     const attractRadius = currentAttractRadius();
     const forceFieldRadius = currentForceFieldRadius();
     const attractRadius2 = attractRadius * attractRadius;
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const wallRest = clamp(Number(state.params.wallRestitution ?? 0.65), 0, 0.98);
+    const star = state.round?.star;
+    const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
 
     // Keep attached asteroids distributed around the ring.
     // Simple angular repulsion so they don't overlap.
@@ -2390,10 +2490,35 @@ export function createEngine({ width, height, seed } = {}) {
       if (a.pullFx < 1e-4) a.pullFx = 0;
 
       a.pos = add(a.pos, mul(a.vel, dt));
-      if (isOutsideWorld(a, 8)) {
-        if (a.techPartId) dropTechPartFromAsteroid(a, { lost: true });
-        state.asteroids.splice(i, 1);
-        continue;
+
+      // World boundary walls: keep asteroids inside the arena (no silent escapes).
+      const minX = -halfW + a.radius;
+      const maxX = halfW - a.radius;
+      const minY = -halfH + a.radius;
+      const maxY = halfH - a.radius;
+      if (a.pos.x < minX) {
+        a.pos.x = minX;
+        if (a.vel.x < 0) a.vel.x = -a.vel.x * wallRest;
+      } else if (a.pos.x > maxX) {
+        a.pos.x = maxX;
+        if (a.vel.x > 0) a.vel.x = -a.vel.x * wallRest;
+      }
+      if (a.pos.y < minY) {
+        a.pos.y = minY;
+        if (a.vel.y < 0) a.vel.y = -a.vel.y * wallRest;
+      } else if (a.pos.y > maxY) {
+        a.pos.y = maxY;
+        if (a.vel.y > 0) a.vel.y = -a.vel.y * wallRest;
+      }
+
+      // Star "heat up" as the boundary approaches.
+      if (star) {
+        const axisPos = star.axis === "x" ? a.pos.x : a.pos.y;
+        const dir = star.dir === 1 ? 1 : -1;
+        const signedDist = (axisPos - Number(star.boundary || 0)) * dir - a.radius;
+        a.starHeat = clamp(1 - signedDist / Math.max(1, heatBand), 0, 1);
+      } else {
+        a.starHeat = 0;
       }
       a.rot += a.rotVel * dt;
     }
@@ -2765,6 +2890,8 @@ export function createEngine({ width, height, seed } = {}) {
       tryStartTechPing();
     }
     updateShip(dt);
+    updateShipStarExposure(dt);
+    if (state.mode !== "playing") return;
     updateExhaust(dt);
     syncCameraToShip();
     updateAsteroids(dt);
@@ -2779,7 +2906,7 @@ export function createEngine({ width, height, seed } = {}) {
     handleCollisions();
     if (state.mode !== "playing") return;
     updateTechPing(dt);
-    updateTechParts();
+    updateTechParts(dt);
     if (state.mode !== "playing") return;
     rebuildWorldCellIndex();
     maintainAsteroidPopulation(dt);
@@ -2822,6 +2949,8 @@ export function createEngine({ width, height, seed } = {}) {
       coordinate_system:
         "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
       round: {
+        session_seed: state.round.sessionSeed >>> 0,
+        round_index: Math.max(0, Math.floor(state.round.roundIndex || 0)),
         seed: state.round.seed >>> 0,
         duration_sec: +Number(state.round.durationSec || 0).toFixed(3),
         elapsed_sec: +Number(state.round.elapsedSec || 0).toFixed(3),
@@ -2842,6 +2971,9 @@ export function createEngine({ width, height, seed } = {}) {
               y: Math.round(state.round.gate.pos?.y || 0),
               radius: +Number(state.round.gate.radius || 0).toFixed(2),
               active: !!state.round.gate.active,
+              charging: state.round.gate.chargeElapsedSec != null && !state.round.gate.active,
+              charge_elapsed_sec: state.round.gate.chargeElapsedSec != null ? +Number(state.round.gate.chargeElapsedSec || 0).toFixed(3) : null,
+              charge_sec: +Number(state.round.gate.chargeSec ?? 0).toFixed(3),
               installed: Array.isArray(state.round.gate.slots)
                 ? state.round.gate.slots.reduce((n, slot) => n + (slot ? 1 : 0), 0)
                 : 0,

@@ -452,6 +452,7 @@
   function createEngine({ width, height, seed } = {}) {
     const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 3737844653;
     const baseSeed = baseSeedRaw >>> 0 || 3737844653;
+    let sessionSeed = baseSeed;
     let rng = seededRng(baseSeed);
     const starRng = seededRng(1369960461);
     let exhaustRng = seededRng(518504175);
@@ -461,6 +462,8 @@
       // menu | playing | gameover
       time: 0,
       round: {
+        sessionSeed: baseSeed,
+        roundIndex: 0,
         seed: baseSeed,
         durationSec: 300,
         elapsedSec: 0,
@@ -471,7 +474,8 @@
         techParts: [],
         carriedPartId: null,
         techPing: null,
-        techPingCooldownSec: 0
+        techPingCooldownSec: 0,
+        starExposureSec: 0
       },
       ship: makeShip("small"),
       asteroids: [],
@@ -516,7 +520,7 @@
       },
       // Large-arena scaffold (phase LA-01). Kept equal to view for now.
       world: {
-        scale: 10,
+        scale: 3,
         w: width,
         h: height
       },
@@ -622,12 +626,17 @@
         jumpGateRadius: 190,
         jumpGateEdgeInsetExtraPx: 160,
         jumpGateInstallPad: 60,
+        jumpGateChargeSec: 2,
         techPartRadius: 80,
         techPartPickupPad: 20,
         techPingSpeedPxPerSec: 2400,
         techPingCooldownSec: 3,
         techPingGlowSec: 8,
         techPingThicknessPx: 22,
+        techPartEdgeMarginPx: 520,
+        shipStarKillSec: 3,
+        shipStarCoolRate: 1.6,
+        wallRestitution: 0.65,
         starDensityScale: 1,
         starParallaxStrength: 1,
         starAccentChance: 0.06,
@@ -654,11 +663,27 @@
     const worldCellAsteroidCounts = /* @__PURE__ */ new Map();
     const worldCellActiveKeys = /* @__PURE__ */ new Set();
     ensureAttractRadiusCoversForcefield(state.params);
-    function setRoundSeed(nextSeed) {
+    function setGameplaySeed(nextSeed) {
       const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 3737844653;
       const s = raw >>> 0 || 3737844653;
       state.round.seed = s;
       rng = seededRng(s);
+    }
+    function setRoundSeed(nextSeed) {
+      setSessionSeed(nextSeed);
+      setGameplaySeed(state.round.sessionSeed);
+    }
+    function setSessionSeed(nextSeed) {
+      const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 3737844653;
+      const s = raw >>> 0 || 3737844653;
+      sessionSeed = s;
+      state.round.sessionSeed = s;
+      state.round.roundIndex = 0;
+    }
+    function advanceToNextRoundSeed() {
+      const nextIndex = Math.max(0, Math.floor(state.round.roundIndex || 0)) + 1;
+      state.round.roundIndex = nextIndex;
+      setGameplaySeed(deriveSeed(sessionSeed, `round-${nextIndex}`));
     }
     function makeRoundRng(tag) {
       return seededRng(deriveSeed(state.round.seed, tag));
@@ -1012,6 +1037,14 @@
         star.boundary = lerp(start, end, tt);
       }
     }
+    function starSignedDistToBodyEdge(body, star) {
+      if (!body || !star)
+        return Infinity;
+      const r = Math.max(0, Number(body.radius) || 0);
+      const axisPos = star.axis === "x" ? Number(body.pos?.x) || 0 : Number(body.pos?.y) || 0;
+      const dir = star.dir === 1 ? 1 : -1;
+      return (axisPos - Number(star.boundary || 0)) * dir - r;
+    }
     function starConsumesBody(body, star) {
       if (!body || !star)
         return false;
@@ -1066,6 +1099,7 @@
       const rr = makeRoundRng("jump-gate");
       const radiusRaw = Number(state.params.jumpGateRadius ?? 190);
       const edgeInsetExtraPx = Number(state.params.jumpGateEdgeInsetExtraPx ?? 0);
+      const chargeSec = clamp(Number(state.params.jumpGateChargeSec ?? 2), 0, 30);
       const halfW = state.world.w / 2;
       const halfH = state.world.h / 2;
       const radius = clamp(radiusRaw, 16, Math.min(halfW, halfH) * 0.35);
@@ -1093,6 +1127,8 @@
         pos: vec(x, y),
         radius,
         active: false,
+        chargeSec,
+        chargeElapsedSec: null,
         slots: new Array(ROUND_PART_COUNT).fill(null)
       };
     }
@@ -1230,7 +1266,9 @@
       const asteroidR = asteroidRadiusForSize(state.params, "xlarge");
       const bufferMax = Math.min(state.world.w, state.world.h) * 0.45;
       const buffer = clamp(Number(state.params.starSafeBufferPx ?? 0), 0, bufferMax);
-      const margin = clamp(Math.max(asteroidR + 60, 180), 0, Math.min(halfW, halfH) * 0.45);
+      const edgeMarginParam = Number(state.params.techPartEdgeMarginPx ?? 520);
+      const edgeMarginWanted = clamp(edgeMarginParam, asteroidR + 120, Math.min(halfW, halfH) * 0.45);
+      const margin = clamp(Math.max(asteroidR + 60, edgeMarginWanted), 0, Math.min(halfW, halfH) * 0.45);
       const fallbackRect = { xMin: -halfW + margin, xMax: halfW - margin, yMin: -halfH + margin, yMax: halfH - margin };
       const rect = starSafeRectRelaxed(star, { bufferPx: buffer, marginPx: margin }) || fallbackRect;
       const placementRng = makeRoundRng("tech-part-placement");
@@ -1238,7 +1276,11 @@
       const points = generateSeparatedPoints(parts.length, rect, { minSeparation: minSep, rngFn: placementRng });
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        const p = points[i] || randomPointInRect(rect, placementRng);
+        const pRaw = points[i] || randomPointInRect(rect, placementRng);
+        const p = {
+          x: clamp(pRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
+          y: clamp(pRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted)
+        };
         const rr = makeRoundRng(`tech-part-${i}`);
         const speed = lerp(12, 46, rr());
         const ang = rr() * Math.PI * 2;
@@ -1262,6 +1304,7 @@
       state.round.carriedPartId = null;
       state.round.techPing = null;
       state.round.techPingCooldownSec = 0;
+      state.round.starExposureSec = 0;
       const starEdge = pickRoundStarEdge();
       const star = makeRedGiant(starEdge);
       updateRedGiant(star, 0);
@@ -1281,15 +1324,33 @@
       if (t >= 1)
         endRound("lose", "star_reached_far_edge");
     }
+    function updateShipStarExposure(dt) {
+      const star = state.round.star;
+      if (!star) {
+        state.round.starExposureSec = 0;
+        state.ship.starHeat = 0;
+        return;
+      }
+      const killSec = clamp(Number(state.params.shipStarKillSec ?? 3), 0.25, 30);
+      const coolRate = clamp(Number(state.params.shipStarCoolRate ?? 1.6), 0, 20);
+      const signed = starSignedDistToBodyEdge(state.ship, star);
+      const inStar = signed < 0;
+      let next = Math.max(0, Number(state.round.starExposureSec) || 0);
+      if (inStar)
+        next += dt;
+      else
+        next = Math.max(0, next - coolRate * dt);
+      state.round.starExposureSec = next;
+      state.ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
+      if (next >= killSec) {
+        spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
+        endRound("lose", "star_overheat");
+      }
+    }
     function applyRedGiantHazard() {
       const star = state.round.star;
       if (!star)
         return;
-      if (starConsumesBody(state.ship, star)) {
-        spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 89, 100], r0: 10, r1: 54, ttl: 0.22 });
-        endRound("lose", "star_contact");
-        return;
-      }
       for (let i = state.asteroids.length - 1; i >= 0; i--) {
         const a = state.asteroids[i];
         if (!starConsumesBody(a, star))
@@ -1323,10 +1384,11 @@
         }
       }
     }
-    function updateTechParts() {
+    function updateTechParts(dt) {
       const parts = state.round.techParts;
       if (!Array.isArray(parts) || parts.length === 0)
         return;
+      const stepDt = Math.max(0, Number(dt) || 0);
       const ship = state.ship;
       const gate = state.round.gate;
       const star = state.round.star;
@@ -1368,9 +1430,15 @@
             const part = parts[i];
             if (!part || part.state !== "lost")
               continue;
+            const edgeMarginParam = Number(state.params.techPartEdgeMarginPx ?? 520);
+            const edgeMarginWanted = clamp(edgeMarginParam, asteroidR + 120, Math.min(halfW, halfH) * 0.45);
             const nextCount = Math.max(0, Number(part.respawnCount) || 0) + 1;
             const rr = makeRoundRng(`tech-part-respawn-${part.id}-${nextCount}`);
-            const picked = randomPointInRect(rect, rr);
+            const pickedRaw = randomPointInRect(rect, rr);
+            const picked = {
+              x: clamp(pickedRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
+              y: clamp(pickedRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted)
+            };
             const speed = lerp(12, 46, rr());
             const ang = rr() * Math.PI * 2;
             const v = mul(angleToVec(ang), speed);
@@ -1437,7 +1505,19 @@
         }
       }
       if (gate && Array.isArray(gate.slots)) {
-        gate.active = gate.slots.every((slot) => !!slot);
+        const allInstalled = gate.slots.every((slot) => !!slot);
+        if (!allInstalled) {
+          gate.active = false;
+          gate.chargeElapsedSec = null;
+        } else if (!gate.active) {
+          if (gate.chargeElapsedSec == null)
+            gate.chargeElapsedSec = 0;
+          gate.chargeElapsedSec += stepDt;
+          const chargeSec = clamp(Number(gate.chargeSec ?? state.params.jumpGateChargeSec ?? 2), 0, 30);
+          gate.chargeSec = chargeSec;
+          if (gate.chargeElapsedSec >= chargeSec)
+            gate.active = true;
+        }
       }
       if (state.round.carriedPartId) {
         const part = getTechPartById(state.round.carriedPartId);
@@ -1804,7 +1884,8 @@
       const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
       const sizeBias = fractureSizeBias(target?.size);
       const speed = baseSpeed * sizeBias;
-      return 0.25 * targetMass * speed * speed;
+      const tough = target?.size === "xxlarge" ? 0.8 : target?.size === "xlarge" ? 0.84 : target?.size === "large" ? 0.92 : target?.size === "small" ? 1.08 : 1;
+      return 0.25 * targetMass * speed * speed * tough;
     }
     function impactEnergy(projectile, target, relativeSpeed) {
       const rel = Math.max(0, Number(relativeSpeed) || 0);
@@ -1933,7 +2014,7 @@
       return true;
     }
     function resetWorld() {
-      setRoundSeed(state.round.seed);
+      advanceToNextRoundSeed();
       state.time = 0;
       state.score = 0;
       state.progression.gemScore = 0;
@@ -1956,6 +2037,7 @@
       state.input.up = false;
       state.input.down = false;
       state.input.burst = false;
+      state.input.ping = false;
       state.input.turnAnalog = 0;
       state.input.thrustAnalog = 0;
       state.ship = makeShip("small");
@@ -2005,7 +2087,7 @@
     }
     function startGame(options = {}) {
       if (options && Object.prototype.hasOwnProperty.call(options, "seed")) {
-        setRoundSeed(options.seed);
+        setSessionSeed(options.seed);
       }
       resetWorld();
       if (options && options.shipSpawn && typeof options.shipSpawn === "object") {
@@ -2346,6 +2428,11 @@
       const attractRadius = currentAttractRadius();
       const forceFieldRadius = currentForceFieldRadius();
       const attractRadius2 = attractRadius * attractRadius;
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const wallRest = clamp(Number(state.params.wallRestitution ?? 0.65), 0, 0.98);
+      const star = state.round?.star;
+      const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
       const attached = state.asteroids.filter((a) => a.attached);
       if (attached.length >= 2) {
         const iters = 3;
@@ -2421,11 +2508,35 @@
         if (a.pullFx < 1e-4)
           a.pullFx = 0;
         a.pos = add(a.pos, mul(a.vel, dt));
-        if (isOutsideWorld(a, 8)) {
-          if (a.techPartId)
-            dropTechPartFromAsteroid(a, { lost: true });
-          state.asteroids.splice(i, 1);
-          continue;
+        const minX = -halfW + a.radius;
+        const maxX = halfW - a.radius;
+        const minY = -halfH + a.radius;
+        const maxY = halfH - a.radius;
+        if (a.pos.x < minX) {
+          a.pos.x = minX;
+          if (a.vel.x < 0)
+            a.vel.x = -a.vel.x * wallRest;
+        } else if (a.pos.x > maxX) {
+          a.pos.x = maxX;
+          if (a.vel.x > 0)
+            a.vel.x = -a.vel.x * wallRest;
+        }
+        if (a.pos.y < minY) {
+          a.pos.y = minY;
+          if (a.vel.y < 0)
+            a.vel.y = -a.vel.y * wallRest;
+        } else if (a.pos.y > maxY) {
+          a.pos.y = maxY;
+          if (a.vel.y > 0)
+            a.vel.y = -a.vel.y * wallRest;
+        }
+        if (star) {
+          const axisPos = star.axis === "x" ? a.pos.x : a.pos.y;
+          const dir = star.dir === 1 ? 1 : -1;
+          const signedDist = (axisPos - Number(star.boundary || 0)) * dir - a.radius;
+          a.starHeat = clamp(1 - signedDist / Math.max(1, heatBand), 0, 1);
+        } else {
+          a.starHeat = 0;
         }
         a.rot += a.rotVel * dt;
       }
@@ -2790,6 +2901,9 @@
         tryStartTechPing();
       }
       updateShip(dt);
+      updateShipStarExposure(dt);
+      if (state.mode !== "playing")
+        return;
       updateExhaust(dt);
       syncCameraToShip();
       updateAsteroids(dt);
@@ -2806,7 +2920,7 @@
       if (state.mode !== "playing")
         return;
       updateTechPing(dt);
-      updateTechParts();
+      updateTechParts(dt);
       if (state.mode !== "playing")
         return;
       rebuildWorldCellIndex();
@@ -2847,6 +2961,8 @@
       return JSON.stringify({
         coordinate_system: "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
         round: {
+          session_seed: state.round.sessionSeed >>> 0,
+          round_index: Math.max(0, Math.floor(state.round.roundIndex || 0)),
           seed: state.round.seed >>> 0,
           duration_sec: +Number(state.round.durationSec || 0).toFixed(3),
           elapsed_sec: +Number(state.round.elapsedSec || 0).toFixed(3),
@@ -2864,6 +2980,9 @@
             y: Math.round(state.round.gate.pos?.y || 0),
             radius: +Number(state.round.gate.radius || 0).toFixed(2),
             active: !!state.round.gate.active,
+            charging: state.round.gate.chargeElapsedSec != null && !state.round.gate.active,
+            charge_elapsed_sec: state.round.gate.chargeElapsedSec != null ? +Number(state.round.gate.chargeElapsedSec || 0).toFixed(3) : null,
+            charge_sec: +Number(state.round.gate.chargeSec ?? 0).toFixed(3),
             installed: Array.isArray(state.round.gate.slots) ? state.round.gate.slots.reduce((n, slot) => n + (slot ? 1 : 0), 0) : 0
           } : null,
           tech_parts: Array.isArray(state.round.techParts) ? state.round.techParts.map((p) => ({
@@ -3618,10 +3737,12 @@
       if (!gate)
         return;
       const active = !!gate.active;
+      const charging = gate.chargeElapsedSec != null && !active;
+      const chargeT = charging ? clamp((Number(gate.chargeElapsedSec) || 0) / Math.max(1e-6, Number(gate.chargeSec) || 1), 0, 1) : 0;
       const slots = Array.isArray(gate.slots) ? gate.slots : [];
       const total = Math.max(1, slots.length || 4);
       const installed = installedCountFromSlots(slots);
-      const baseRgb = active ? [84, 240, 165] : [142, 198, 255];
+      const baseRgb = active ? [84, 240, 165] : charging ? [255, 190, 125] : [142, 198, 255];
       const slotR = clamp(
         Number(state.round?.techParts?.[0]?.radius ?? state.params?.techPartRadius ?? 80) || 80,
         4,
@@ -3636,9 +3757,9 @@
       ctx.globalCompositeOperation = "lighter";
       ctx.strokeStyle = rgbToRgba(baseRgb, active ? 0.34 : 0.26);
       const ringW = clamp(gate.radius * 0.12, 12, 30);
-      ctx.lineWidth = active ? ringW * 1.15 : ringW;
+      ctx.lineWidth = active ? ringW * 1.15 : charging ? ringW * 1.05 : ringW;
       ctx.shadowColor = rgbToRgba(baseRgb, 0.85);
-      ctx.shadowBlur = active ? clamp(gate.radius * 0.22, 20, 46) : clamp(gate.radius * 0.18, 18, 40);
+      ctx.shadowBlur = active ? clamp(gate.radius * 0.22, 20, 46) : charging ? clamp(gate.radius * 0.2, 18, 44) : clamp(gate.radius * 0.18, 18, 40);
       ctx.beginPath();
       ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -3683,11 +3804,12 @@
         ctx.stroke();
         ctx.restore();
       }
-      if (active) {
+      if (active || charging) {
         const wave = 0.5 + 0.5 * Math.sin(state.time * 5.5);
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        ctx.strokeStyle = rgbToRgba(baseRgb, 0.14 + wave * 0.08);
+        const a = active ? 0.14 + wave * 0.08 : 0.12 + wave * 0.14 * chargeT;
+        ctx.strokeStyle = rgbToRgba(baseRgb, a);
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(0, 0, gate.radius * 0.72, 0, Math.PI * 2);
@@ -3697,7 +3819,11 @@
       ctx.fillStyle = "rgba(231,240,255,0.70)";
       ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
       ctx.textAlign = "center";
-      ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + slotR * 1.55);
+      ctx.fillText(
+        active ? "GATE ACTIVE" : charging ? `CHARGING ${(chargeT * 100).toFixed(0)}%` : `${installed}/${total}`,
+        0,
+        gate.radius + slotR * 1.55
+      );
       ctx.restore();
     }
     function drawTechPart(ctx, part, { carried = false } = {}) {
@@ -3879,6 +4005,18 @@
         drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, `rgba(215,150,255,${alpha.toFixed(3)})`, lerp(4, 9, intensity));
         ctx.restore();
       }
+      const starHeat = clamp(Number(a.starHeat) || 0, 0, 1);
+      if (starHeat > 1e-3) {
+        const hotRgb = lerpRgb([255, 130, 80], [255, 255, 255], clamp(starHeat * starHeat, 0, 1));
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.shadowColor = rgbToRgba([255, 120, 70], 0.9);
+        ctx.shadowBlur = lerp(6, 24, starHeat);
+        ctx.strokeStyle = rgbToRgba(hotRgb, 0.06 + 0.22 * starHeat);
+        ctx.lineWidth = lerp(2, 9, starHeat);
+        drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+        ctx.restore();
+      }
       const base = a.size === "xxlarge" ? "rgba(231,240,255,0.62)" : a.size === "xlarge" ? "rgba(231,240,255,0.68)" : a.size === "large" ? "rgba(231,240,255,0.74)" : a.size === "med" ? "rgba(231,240,255,0.80)" : "rgba(231,240,255,0.88)";
       let color = a.attached ? attachedAsteroidColorForTierRgb(tier.ringRgb) : base;
       if (pullFx > 0.01) {
@@ -3886,6 +4024,11 @@
         const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
         const aAlpha = lerp(0.78, 0.98, pullFx);
         color = rgbToRgba(mixed, aAlpha);
+      }
+      if (starHeat > 1e-3) {
+        const hotRgb = lerpRgb([255, 150, 95], [255, 255, 255], clamp(starHeat * starHeat, 0, 1));
+        const mixed = lerpRgb([231, 240, 255], hotRgb, clamp(starHeat * 0.9, 0, 1));
+        color = rgbToRgba(mixed, 0.88);
       }
       drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
     }
@@ -3946,6 +4089,18 @@
         if (thrusting && (legacyJets || !particlesOn)) {
           drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
         }
+        ctx.restore();
+      }
+      const heat = clamp(Number(ship.starHeat) || 0, 0, 1);
+      if (heat > 1e-3) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.shadowColor = "rgba(255,120,70,0.95)";
+        ctx.shadowBlur = lerp(10, 28, heat);
+        ctx.fillStyle = `rgba(255,140,95,${(0.05 + 0.22 * heat).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, shipRadius * lerp(1.1, 1.65, heat), 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
       }
       ctx.restore();

@@ -65,6 +65,7 @@ const buttonNameToKey = {
   a: "KeyA",
   b: "KeyB",
   q: "KeyQ",
+  r: "KeyR",
 };
 
 async function sleep(ms) {

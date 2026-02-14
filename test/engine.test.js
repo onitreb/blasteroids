@@ -79,7 +79,7 @@ test("engine accepts a seed and reports it in renderGameToText", () => {
   const engine = createEngine({ width: 900, height: 540, seed: 123 });
   engine.startGame();
   const payload = JSON.parse(engine.renderGameToText());
-  assert.equal(payload.round.seed, 123);
+  assert.equal(payload.round.session_seed, 123);
 });
 
 test("round spawns red giant and gate deterministically for the same seed", () => {
@@ -96,18 +96,32 @@ test("round spawns red giant and gate deterministically for the same seed", () =
   assert.equal(Math.round(a.state.round.gate.pos.y), Math.round(b.state.round.gate.pos.y));
 });
 
-test("red giant contact ends the round as a loss", () => {
+test("red giant exposure ends the round as a loss", () => {
   const engine = createEngine({ width: 900, height: 540, seed: 7 });
   engine.startGame();
-  engine.state.ship.pos = { x: 0, y: 0 };
-  engine.state.ship.vel = { x: 0, y: 0 };
-  engine.state.round.elapsedSec = 0;
-  engine.state.round.durationSec = 2;
+  const dur = 100;
+  engine.state.round.durationSec = dur;
+  engine.state.round.elapsedSec = dur * 0.5;
+  engine.update(0);
 
-  engine.update(1);
+  const star = engine.state.round.star;
+  const ship = engine.state.ship;
+  const dir = star.dir;
+  if (star.axis === "x") {
+    ship.pos = { x: star.boundary - dir * ship.radius * 1.25, y: 0 };
+  } else {
+    ship.pos = { x: 0, y: star.boundary - dir * ship.radius * 1.25 };
+  }
+  ship.vel = { x: 0, y: 0 };
+
+  // Freeze star motion so exposure accumulates consistently.
+  engine.state.round.durationSec = 1e9;
+  engine.state.round.elapsedSec = engine.state.round.durationSec * 0.5;
+  engine.update(0);
+  engine.update(3.2);
   assert.equal(engine.state.mode, "gameover");
   assert.equal(engine.state.round.outcome.kind, "lose");
-  assert.equal(engine.state.round.outcome.reason, "star_contact");
+  assert.equal(engine.state.round.outcome.reason, "star_overheat");
 });
 
 test("round ends as a loss when the star reaches the far edge", () => {
@@ -163,7 +177,17 @@ test("escape through an active gate ends the round as a win", () => {
   engine.state.ship.pos = { x: engine.state.round.gate.pos.x, y: engine.state.round.gate.pos.y };
   engine.state.ship.vel = { x: 0, y: 0 };
 
+  // Avoid unrelated loss conditions.
+  engine.state.round.star = null;
+  engine.state.round.durationSec = 1e9;
+
+  // Charging phase: should not instantly end the round when the 4th slot is filled.
   engine.update(0);
+  assert.equal(engine.state.mode, "playing");
+  assert.equal(engine.state.round.gate.active, false);
+
+  // After charge-up, entering the portal ends the round.
+  engine.update((engine.state.round.gate.chargeSec || 2) + 0.01);
   assert.equal(engine.state.mode, "gameover");
   assert.equal(engine.state.round.outcome.kind, "win");
   assert.equal(engine.state.round.outcome.reason, "escaped");

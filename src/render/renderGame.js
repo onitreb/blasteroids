@@ -703,10 +703,12 @@ export function createRenderer(engine) {
     if (!gate) return;
 
     const active = !!gate.active;
+    const charging = gate.chargeElapsedSec != null && !active;
+    const chargeT = charging ? clamp((Number(gate.chargeElapsedSec) || 0) / Math.max(1e-6, Number(gate.chargeSec) || 1), 0, 1) : 0;
     const slots = Array.isArray(gate.slots) ? gate.slots : [];
     const total = Math.max(1, slots.length || 4);
     const installed = installedCountFromSlots(slots);
-    const baseRgb = active ? [84, 240, 165] : [142, 198, 255];
+    const baseRgb = active ? [84, 240, 165] : charging ? [255, 190, 125] : [142, 198, 255];
     const slotR = clamp(
       Number(state.round?.techParts?.[0]?.radius ?? state.params?.techPartRadius ?? 80) || 80,
       4,
@@ -723,9 +725,13 @@ export function createRenderer(engine) {
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = rgbToRgba(baseRgb, active ? 0.34 : 0.26);
     const ringW = clamp(gate.radius * 0.12, 12, 30);
-    ctx.lineWidth = active ? ringW * 1.15 : ringW;
+    ctx.lineWidth = active ? ringW * 1.15 : charging ? ringW * 1.05 : ringW;
     ctx.shadowColor = rgbToRgba(baseRgb, 0.85);
-    ctx.shadowBlur = active ? clamp(gate.radius * 0.22, 20, 46) : clamp(gate.radius * 0.18, 18, 40);
+    ctx.shadowBlur = active
+      ? clamp(gate.radius * 0.22, 20, 46)
+      : charging
+        ? clamp(gate.radius * 0.2, 18, 44)
+        : clamp(gate.radius * 0.18, 18, 40);
     ctx.beginPath();
     ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
     ctx.stroke();
@@ -781,11 +787,12 @@ export function createRenderer(engine) {
     }
 
     // Subtle inner shimmer when active.
-    if (active) {
+    if (active || charging) {
       const wave = 0.5 + 0.5 * Math.sin(state.time * 5.5);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = rgbToRgba(baseRgb, 0.14 + wave * 0.08);
+      const a = active ? 0.14 + wave * 0.08 : 0.12 + wave * 0.14 * chargeT;
+      ctx.strokeStyle = rgbToRgba(baseRgb, a);
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, gate.radius * 0.72, 0, Math.PI * 2);
@@ -797,7 +804,11 @@ export function createRenderer(engine) {
     ctx.fillStyle = "rgba(231,240,255,0.70)";
     ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
     ctx.textAlign = "center";
-    ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + slotR * 1.55);
+    ctx.fillText(
+      active ? "GATE ACTIVE" : charging ? `CHARGING ${(chargeT * 100).toFixed(0)}%` : `${installed}/${total}`,
+      0,
+      gate.radius + slotR * 1.55,
+    );
 
     ctx.restore();
   }
@@ -1002,6 +1013,19 @@ export function createRenderer(engine) {
       ctx.restore();
     }
 
+    const starHeat = clamp(Number(a.starHeat) || 0, 0, 1);
+    if (starHeat > 1e-3) {
+      const hotRgb = lerpRgb([255, 130, 80], [255, 255, 255], clamp(starHeat * starHeat, 0, 1));
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.shadowColor = rgbToRgba([255, 120, 70], 0.9);
+      ctx.shadowBlur = lerp(6, 24, starHeat);
+      ctx.strokeStyle = rgbToRgba(hotRgb, 0.06 + 0.22 * starHeat);
+      ctx.lineWidth = lerp(2, 9, starHeat);
+      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+      ctx.restore();
+    }
+
     const base =
       a.size === "xxlarge"
         ? "rgba(231,240,255,0.62)"
@@ -1018,6 +1042,11 @@ export function createRenderer(engine) {
       const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
       const aAlpha = lerp(0.78, 0.98, pullFx);
       color = rgbToRgba(mixed, aAlpha);
+    }
+    if (starHeat > 1e-3) {
+      const hotRgb = lerpRgb([255, 150, 95], [255, 255, 255], clamp(starHeat * starHeat, 0, 1));
+      const mixed = lerpRgb([231, 240, 255], hotRgb, clamp(starHeat * 0.9, 0, 1));
+      color = rgbToRgba(mixed, 0.88);
     }
     drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
   }
@@ -1077,6 +1106,19 @@ export function createRenderer(engine) {
       if (thrusting && (legacyJets || !particlesOn)) {
         drawThrusterJets(ctx, engines, { tierKey: tier.key, exhaustSign: -1, t: state.time });
       }
+      ctx.restore();
+    }
+
+    const heat = clamp(Number(ship.starHeat) || 0, 0, 1);
+    if (heat > 1e-3) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.shadowColor = "rgba(255,120,70,0.95)";
+      ctx.shadowBlur = lerp(10, 28, heat);
+      ctx.fillStyle = `rgba(255,140,95,${(0.05 + 0.22 * heat).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, shipRadius * lerp(1.1, 1.65, heat), 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
     ctx.restore();
