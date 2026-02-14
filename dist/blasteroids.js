@@ -227,6 +227,8 @@
     xxlarge: 0.25
   };
   var FRACTURE_SIZE_BIAS_PER_RANK = 0.06;
+  var WORLD_BASE_MIN_W = 980;
+  var WORLD_BASE_MIN_H = 620;
   var ROUND_PART_COUNT = 4;
   var STAR_EDGE_ORDER = ["left", "right", "top", "bottom"];
   function oppositeStarEdge(edge) {
@@ -619,6 +621,7 @@
         tier1Zoom: 1,
         tier2Zoom: 0.78,
         tier3Zoom: 0.58,
+        deviceCameraZoomScale: 1,
         tierZoomTweenSec: 0.45,
         gemTtlSec: 6,
         gemBlinkMaxHz: 5,
@@ -727,11 +730,9 @@
       return sizeSetHas(currentShipAttractSizes(), size);
     }
     function cameraZoomForTier(tierKey) {
-      if (tierKey === "large")
-        return clamp(state.params.tier3Zoom, 0.35, 1.2);
-      if (tierKey === "medium")
-        return clamp(state.params.tier2Zoom, 0.35, 1.2);
-      return clamp(state.params.tier1Zoom, 0.35, 1.2);
+      const base = tierKey === "large" ? clamp(state.params.tier3Zoom, 0.35, 1.2) : tierKey === "medium" ? clamp(state.params.tier2Zoom, 0.35, 1.2) : clamp(state.params.tier1Zoom, 0.35, 1.2);
+      const deviceScale = clamp(Number(state.params.deviceCameraZoomScale ?? 1), 0.55, 1);
+      return clamp(base * deviceScale, 0.35, 1.2);
     }
     function beginCameraZoomTo(targetZoom, animate = true) {
       const z = clamp(targetZoom, 0.35, 1.25);
@@ -2395,8 +2396,10 @@
     function applyWorldScale(scale) {
       const s = clamp(Number(scale) || 1, 1, 10);
       state.world.scale = s;
-      state.world.w = state.view.w * s;
-      state.world.h = state.view.h * s;
+      const baseViewW = Math.max(Number(state.view.w) || 0, WORLD_BASE_MIN_W);
+      const baseViewH = Math.max(Number(state.view.h) || 0, WORLD_BASE_MIN_H);
+      state.world.w = baseViewW * s;
+      state.world.h = baseViewH * s;
       confineShipToWorld();
       clampCameraToWorld();
     }
@@ -5882,6 +5885,23 @@
       renderer
     };
     const ui = createUiBindings({ game, canvas, documentRef: document, windowRef: window });
+    function applyAndroidZoomCompensation() {
+      const userAgent = String(window.navigator?.userAgent || "");
+      const isAndroid = /Android/i.test(userAgent);
+      const isCoarse = window.matchMedia?.("(pointer: coarse)")?.matches === true;
+      const shortest = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+      let scale = 1;
+      if (isAndroid && isCoarse) {
+        if (shortest <= 420)
+          scale = 0.72;
+        else if (shortest <= 520)
+          scale = 0.78;
+        else
+          scale = 0.84;
+      }
+      game.state.params.deviceCameraZoomScale = scale;
+      game.refreshProgression({ animateZoom: false });
+    }
     function resizeCanvasToCss() {
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -5905,7 +5925,10 @@
     }
     window.addEventListener("resize", () => resizeCanvasToCss());
     document.addEventListener("fullscreenchange", () => resizeCanvasToCss());
+    window.addEventListener("resize", () => applyAndroidZoomCompensation());
+    window.addEventListener("orientationchange", () => applyAndroidZoomCompensation());
     resizeCanvasToCss();
+    applyAndroidZoomCompensation();
     const input = game.state.input;
     function restartGame() {
       ui.applyAllFromMenu();

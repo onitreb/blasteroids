@@ -17,6 +17,22 @@ import { createUiBindings } from "./ui/createUiBindings.js";
 
   const ui = createUiBindings({ game, canvas, documentRef: document, windowRef: window });
 
+  function applyAndroidZoomCompensation() {
+    const userAgent = String(window.navigator?.userAgent || "");
+    const isAndroid = /Android/i.test(userAgent);
+    const isCoarse = window.matchMedia?.("(pointer: coarse)")?.matches === true;
+    const shortest = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+
+    let scale = 1;
+    if (isAndroid && isCoarse) {
+      if (shortest <= 420) scale = 0.72;
+      else if (shortest <= 520) scale = 0.78;
+      else scale = 0.84;
+    }
+    game.state.params.deviceCameraZoomScale = scale;
+    game.refreshProgression({ animateZoom: false });
+  }
+
   function resizeCanvasToCss() {
     const rect = canvas.getBoundingClientRect();
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -40,7 +56,10 @@ import { createUiBindings } from "./ui/createUiBindings.js";
 
   window.addEventListener("resize", () => resizeCanvasToCss());
   document.addEventListener("fullscreenchange", () => resizeCanvasToCss());
+  window.addEventListener("resize", () => applyAndroidZoomCompensation());
+  window.addEventListener("orientationchange", () => applyAndroidZoomCompensation());
   resizeCanvasToCss();
+  applyAndroidZoomCompensation();
 
   const input = game.state.input;
   function restartGame() {

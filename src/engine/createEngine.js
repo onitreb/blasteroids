@@ -49,6 +49,8 @@ const ASTEROID_ROT_VEL_MAX = {
   xxlarge: 0.25,
 };
 const FRACTURE_SIZE_BIAS_PER_RANK = 0.06;
+const WORLD_BASE_MIN_W = 980;
+const WORLD_BASE_MIN_H = 620;
 
 const ROUND_PART_COUNT = 4;
 const STAR_EDGE_ORDER = ["left", "right", "top", "bottom"];
@@ -441,6 +443,7 @@ export function createEngine({ width, height, seed } = {}) {
       tier1Zoom: 1,
       tier2Zoom: 0.78,
       tier3Zoom: 0.58,
+      deviceCameraZoomScale: 1,
       tierZoomTweenSec: 0.45,
 
       gemTtlSec: 6,
@@ -566,9 +569,14 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function cameraZoomForTier(tierKey) {
-    if (tierKey === "large") return clamp(state.params.tier3Zoom, 0.35, 1.2);
-    if (tierKey === "medium") return clamp(state.params.tier2Zoom, 0.35, 1.2);
-    return clamp(state.params.tier1Zoom, 0.35, 1.2);
+    const base =
+      tierKey === "large"
+        ? clamp(state.params.tier3Zoom, 0.35, 1.2)
+        : tierKey === "medium"
+          ? clamp(state.params.tier2Zoom, 0.35, 1.2)
+          : clamp(state.params.tier1Zoom, 0.35, 1.2);
+    const deviceScale = clamp(Number(state.params.deviceCameraZoomScale ?? 1), 0.55, 1);
+    return clamp(base * deviceScale, 0.35, 1.2);
   }
 
   function beginCameraZoomTo(targetZoom, animate = true) {
@@ -2352,8 +2360,10 @@ export function createEngine({ width, height, seed } = {}) {
   function applyWorldScale(scale) {
     const s = clamp(Number(scale) || 1, 1, 10);
     state.world.scale = s;
-    state.world.w = state.view.w * s;
-    state.world.h = state.view.h * s;
+    const baseViewW = Math.max(Number(state.view.w) || 0, WORLD_BASE_MIN_W);
+    const baseViewH = Math.max(Number(state.view.h) || 0, WORLD_BASE_MIN_H);
+    state.world.w = baseViewW * s;
+    state.world.h = baseViewH * s;
     confineShipToWorld();
     clampCameraToWorld();
   }
