@@ -82,6 +82,170 @@ test("engine accepts a seed and reports it in renderGameToText", () => {
   assert.equal(payload.round.seed, 123);
 });
 
+test("round spawns red giant and gate deterministically for the same seed", () => {
+  const a = createEngine({ width: 900, height: 540, seed: 123 });
+  const b = createEngine({ width: 900, height: 540, seed: 123 });
+  a.startGame();
+  b.startGame();
+
+  const opposite = { left: "right", right: "left", top: "bottom", bottom: "top" };
+  assert.equal(a.state.round.star.edge, b.state.round.star.edge);
+  assert.equal(a.state.round.gate.edge, b.state.round.gate.edge);
+  assert.equal(a.state.round.gate.edge, opposite[a.state.round.star.edge]);
+  assert.equal(Math.round(a.state.round.gate.pos.x), Math.round(b.state.round.gate.pos.x));
+  assert.equal(Math.round(a.state.round.gate.pos.y), Math.round(b.state.round.gate.pos.y));
+});
+
+test("red giant contact ends the round as a loss", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 7 });
+  engine.startGame();
+  engine.state.ship.pos = { x: 0, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.round.elapsedSec = 0;
+  engine.state.round.durationSec = 2;
+
+  engine.update(1);
+  assert.equal(engine.state.mode, "gameover");
+  assert.equal(engine.state.round.outcome.kind, "lose");
+  assert.equal(engine.state.round.outcome.reason, "star_contact");
+});
+
+test("round ends as a loss when the star reaches the far edge", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 7 });
+  engine.startGame();
+  engine.state.round.elapsedSec = 0;
+  engine.state.round.durationSec = 1;
+
+  engine.update(1);
+  assert.equal(engine.state.mode, "gameover");
+  assert.equal(engine.state.round.outcome.kind, "lose");
+  assert.equal(engine.state.round.outcome.reason, "star_reached_far_edge");
+});
+
+test("carried tech part installs into the gate when in range", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 8 });
+  engine.startGame();
+  engine.state.asteroids = [];
+  engine.state.gems = [];
+  engine.state.saucer = null;
+  engine.state.saucerLasers = [];
+
+  const gate = engine.state.round.gate;
+  const part = engine.state.round.techParts[0];
+  assert.ok(gate && part);
+
+  engine.state.round.carriedPartId = part.id;
+  part.state = "carried";
+  part.containerAsteroidId = null;
+  part.installedSlot = null;
+
+  engine.state.ship.pos = { x: gate.pos.x, y: gate.pos.y };
+  engine.state.ship.vel = { x: 0, y: 0 };
+
+  engine.update(0);
+  assert.equal(engine.state.mode, "playing");
+  assert.equal(engine.state.round.carriedPartId, null);
+  assert.equal(part.state, "installed");
+  assert.equal(part.installedSlot, 0);
+  assert.equal(engine.state.round.gate.slots[0], part.id);
+  assert.equal(engine.state.round.gate.active, false);
+});
+
+test("escape through an active gate ends the round as a win", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 9 });
+  engine.startGame();
+  engine.state.asteroids = [];
+  engine.state.gems = [];
+  engine.state.saucer = null;
+  engine.state.saucerLasers = [];
+
+  engine.state.round.gate.slots = ["part-0", "part-1", "part-2", "part-3"];
+  engine.state.ship.pos = { x: engine.state.round.gate.pos.x, y: engine.state.round.gate.pos.y };
+  engine.state.ship.vel = { x: 0, y: 0 };
+
+  engine.update(0);
+  assert.equal(engine.state.mode, "gameover");
+  assert.equal(engine.state.round.outcome.kind, "win");
+  assert.equal(engine.state.round.outcome.reason, "escaped");
+});
+
+test("lost tech parts respawn inside new XL asteroids in the star safe region", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 10 });
+  engine.startGame();
+  engine.state.asteroids = [];
+  engine.state.gems = [];
+  engine.state.saucer = null;
+  engine.state.saucerLasers = [];
+
+  for (const part of engine.state.round.techParts) {
+    part.state = "lost";
+    part.containerAsteroidId = null;
+    part.respawnCount = 0;
+  }
+
+  engine.update(0);
+
+  const star = engine.state.round.star;
+  const bufferMax = Math.min(engine.state.world.w, engine.state.world.h) * 0.45;
+  const buffer = Math.max(0, Math.min(engine.state.params.starSafeBufferPx, bufferMax));
+
+  for (const part of engine.state.round.techParts) {
+    assert.equal(part.state, "in_asteroid");
+    assert.ok(part.containerAsteroidId);
+    const a = engine.state.asteroids.find((it) => it.id === part.containerAsteroidId);
+    assert.ok(a, `expected respawn asteroid for ${part.id}`);
+    assert.equal(a.size, "xlarge");
+    assert.equal(a.techPartId, part.id);
+
+    if (star.axis === "x") {
+      if (star.dir === 1) assert.ok(a.pos.x - a.radius >= star.boundary + buffer);
+      else assert.ok(a.pos.x + a.radius <= star.boundary - buffer);
+    } else {
+      if (star.dir === 1) assert.ok(a.pos.y - a.radius >= star.boundary + buffer);
+      else assert.ok(a.pos.y + a.radius <= star.boundary - buffer);
+    }
+  }
+});
+
+test("tech part respawn placement is deterministic and ignores gameplay RNG consumption", () => {
+  const a = createEngine({ width: 900, height: 540, seed: 11 });
+  const b = createEngine({ width: 900, height: 540, seed: 11 });
+  a.startGame();
+  b.startGame();
+
+  // Consume gameplay RNG/time in A.
+  for (let i = 0; i < 240; i++) a.update(1 / 60);
+
+  // Realign both engines to the same round-time and neutral state.
+  a.state.round.elapsedSec = 0;
+  b.state.round.elapsedSec = 0;
+  a.state.ship.pos = { x: 0, y: 0 };
+  b.state.ship.pos = { x: 0, y: 0 };
+  a.state.ship.vel = { x: 0, y: 0 };
+  b.state.ship.vel = { x: 0, y: 0 };
+  a.state.asteroids = [];
+  b.state.asteroids = [];
+
+  for (const engine of [a, b]) {
+    for (const part of engine.state.round.techParts) {
+      part.state = "lost";
+      part.containerAsteroidId = null;
+      part.respawnCount = 0;
+    }
+  }
+
+  a.update(0);
+  b.update(0);
+
+  const partA = a.state.round.techParts[0];
+  const partB = b.state.round.techParts[0];
+  const asteroidA = a.state.asteroids.find((it) => it.id === partA.containerAsteroidId);
+  const asteroidB = b.state.asteroids.find((it) => it.id === partB.containerAsteroidId);
+  assert.ok(asteroidA && asteroidB);
+  assert.equal(Math.round(asteroidA.pos.x), Math.round(asteroidB.pos.x));
+  assert.equal(Math.round(asteroidA.pos.y), Math.round(asteroidB.pos.y));
+});
+
 test("setRoundSeed resets spawn point generation deterministically", () => {
   const engine = createEngine({ width: 1000, height: 700, seed: 999 });
   engine.startGame();

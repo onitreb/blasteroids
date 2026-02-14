@@ -51,6 +51,7 @@ Open `index.html` via `file://` and verify:
 - `window.Blasteroids.advanceTime(1000)` advances without throwing
 - Legacy aliases still work: `render_game_to_text()`, `advanceTime(1000)`, `set_ship_svg_renderer(...)`
 - Tier progression: ship grows at **500** and **1000** total score (default)
+- Round loop telemetry present: `renderGameToText().round.star`, `.round.gate`, and `.round.tech_parts` are non-null after Start (visual markers exist but may be off-camera in the larger arena)
 
 ## Troubleshooting
 ### “Cannot use import statement outside a module”

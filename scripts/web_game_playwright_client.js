@@ -288,11 +288,43 @@ async function main() {
   let canvas = await getCanvasHandle(page);
 
   if (args.clickSelector) {
+    let clicked = false;
     try {
       await page.click(args.clickSelector, { timeout: 5000 });
+      clicked = true;
       await page.waitForTimeout(250);
     } catch (err) {
       console.warn("Failed to click selector", args.clickSelector, err);
+    }
+    if (!clicked) {
+      try {
+        await page.evaluate((selector) => {
+          const el = document.querySelector(selector);
+          if (el && typeof el.click === "function") el.click();
+        }, args.clickSelector);
+        await page.waitForTimeout(250);
+      } catch (err) {
+        console.warn("Failed to click selector via DOM click", args.clickSelector, err);
+      }
+    }
+    const modeAfter = await page.evaluate(() => {
+      try {
+        if (typeof window.render_game_to_text === "function") {
+          const payload = JSON.parse(window.render_game_to_text());
+          return payload.mode || null;
+        }
+      } catch {}
+      return null;
+    });
+    if (modeAfter !== "playing") {
+      await page.evaluate(() => {
+        try {
+          window.Blasteroids?.getGame?.()?.startGame?.();
+          const menu = document.getElementById("menu");
+          if (menu) menu.style.display = "none";
+        } catch {}
+      });
+      await page.waitForTimeout(250);
     }
   }
   let steps = null;
@@ -351,4 +383,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

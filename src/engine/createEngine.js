@@ -50,6 +50,39 @@ const ASTEROID_ROT_VEL_MAX = {
 };
 const FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
 
+const ROUND_PART_COUNT = 4;
+const STAR_EDGE_ORDER = ["left", "right", "top", "bottom"];
+
+function oppositeStarEdge(edge) {
+  if (edge === "left") return "right";
+  if (edge === "right") return "left";
+  if (edge === "top") return "bottom";
+  return "top";
+}
+
+function hashStringToU32(str) {
+  const s = String(str ?? "");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function deriveSeed(seed, salt) {
+  const base = (Number(seed) >>> 0) || 0xdecafbad;
+  const mix = base ^ hashStringToU32(salt) ^ 0x9e3779b9;
+  // 32-bit finalizer to avoid obvious correlations between derived seeds.
+  let x = mix >>> 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x7feb352d);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b);
+  x ^= x >>> 16;
+  return (x >>> 0) || 0xdecafbad;
+}
+
 const DEFAULT_SHIP_RENDERERS = {
   small: {
     type: "polygon",
@@ -265,6 +298,13 @@ export function createEngine({ width, height, seed } = {}) {
     time: 0,
     round: {
       seed: baseSeed,
+      durationSec: 300,
+      elapsedSec: 0,
+      outcome: null, // { kind: "win"|"lose", reason: string } | null
+      star: null,
+      gate: null,
+      techParts: [],
+      carriedPartId: null,
     },
     ship: makeShip("small"),
     asteroids: [],
@@ -396,6 +436,15 @@ export function createEngine({ width, height, seed } = {}) {
 
       gemTtlSec: 6,
       gemBlinkMaxHz: 5,
+
+      // Round loop (RL-01..04) — deterministic star/gate/parts.
+      roundDurationSec: 300,
+      starSafeBufferPx: 320,
+      jumpGateRadius: 86,
+      jumpGateInstallPad: 60,
+      techPartRadius: 12,
+      techPartPickupPad: 20,
+
       starDensityScale: 1,
       starParallaxStrength: 1,
       starAccentChance: 0.06,
@@ -429,6 +478,10 @@ export function createEngine({ width, height, seed } = {}) {
     const s = (raw >>> 0) || 0xdecafbad;
     state.round.seed = s;
     rng = seededRng(s);
+  }
+
+  function makeRoundRng(tag) {
+    return seededRng(deriveSeed(state.round.seed, tag));
   }
 
   function shipTierForProgression() {
@@ -528,26 +581,28 @@ export function createEngine({ width, height, seed } = {}) {
     return changed;
   }
 
-  function makeAsteroid(size, pos, vel) {
+  function makeAsteroid(size, pos, vel, rngFn = null) {
+    const rr = typeof rngFn === "function" ? rngFn : rng;
     const radius = asteroidRadiusForSize(state.params, size);
     const verts = ASTEROID_VERTS[size] || ASTEROID_VERTS.small;
     const rotVelMax = ASTEROID_ROT_VEL_MAX[size] || ASTEROID_ROT_VEL_MAX.small;
-    const shape = makeAsteroidShape(rng, radius, verts);
+    const shape = makeAsteroidShape(rr, radius, verts);
     return {
-      id: `${size}-${Math.floor(rng() * 1e9)}`,
+      id: `${size}-${Math.floor(rr() * 1e9)}`,
       size,
       pos,
       vel,
       radius,
       mass: asteroidMassForRadius(radius),
-      rot: rng() * Math.PI * 2,
-      rotVel: (rng() * 2 - 1) * rotVelMax,
+      rot: rr() * Math.PI * 2,
+      rotVel: (rr() * 2 - 1) * rotVelMax,
       shape,
       attached: false,
       shipLaunched: false,
       orbitA: 0, // ship-local angle (radians) when attached
       fractureCooldownT: 0,
       hitFxT: 0,
+      techPartId: null,
     };
   }
 
@@ -713,6 +768,519 @@ export function createEngine({ width, height, seed } = {}) {
     }
 
     return points;
+  }
+
+  function randomPointInRect(rect, rngFn = null) {
+    const rr = typeof rngFn === "function" ? rngFn : rng;
+    const x = lerp(rect.xMin, rect.xMax, rr());
+    const y = lerp(rect.yMin, rect.yMax, rr());
+    return vec(x, y);
+  }
+
+  function generateSeparatedPoints(
+    count,
+    rect,
+    { minSeparation = 0, maxAttemptsPerPoint = 1200, relaxFactor = 0.82, rngFn = null } = {},
+  ) {
+    const n = Math.max(0, Math.floor(count));
+    const points = [];
+    if (!rect || n === 0) return points;
+
+    const rr = typeof rngFn === "function" ? rngFn : rng;
+    let sep = Math.max(0, Number(minSeparation) || 0);
+    const relax = clamp(Number(relaxFactor) || 0.82, 0.5, 0.99);
+    const maxAttempts = Math.max(10, Math.floor(maxAttemptsPerPoint));
+
+    const dist2 = (a, b) => {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return dx * dx + dy * dy;
+    };
+
+    for (let i = 0; i < n; i++) {
+      let picked = null;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const cand = randomPointInRect(rect, rr);
+        const sep2 = sep * sep;
+        let ok = true;
+        for (let j = 0; j < points.length; j++) {
+          if (dist2(cand, points[j]) < sep2) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          picked = cand;
+          break;
+        }
+      }
+
+      if (!picked) {
+        // Fallback: choose the candidate with maximum minimum distance, then relax separation.
+        let best = null;
+        let bestMinD2 = -1;
+        const fallbackAttempts = Math.min(200, maxAttempts);
+        for (let attempt = 0; attempt < fallbackAttempts; attempt++) {
+          const cand = randomPointInRect(rect, rr);
+          let minD2 = Infinity;
+          for (let j = 0; j < points.length; j++) {
+            const d2 = dist2(cand, points[j]);
+            if (d2 < minD2) minD2 = d2;
+          }
+          if (minD2 > bestMinD2) {
+            bestMinD2 = minD2;
+            best = cand;
+          }
+        }
+        picked = best || randomPointInRect(rect, rr);
+        sep *= relax;
+      }
+
+      points.push(picked);
+    }
+
+    return points;
+  }
+
+  function makeRedGiant(edge) {
+    const axis = edge === "left" || edge === "right" ? "x" : "y";
+    const dir = edge === "left" || edge === "top" ? 1 : -1;
+    return { id: "red-giant-0", edge, axis, dir, t: 0, boundary: 0 };
+  }
+
+  function updateRedGiant(star, t) {
+    if (!star) return;
+    const tt = clamp(Number(t) || 0, 0, 1);
+    star.t = tt;
+    if (star.axis === "x") {
+      const halfW = state.world.w / 2;
+      const start = star.dir === 1 ? -halfW : halfW;
+      const end = star.dir === 1 ? halfW : -halfW;
+      star.boundary = lerp(start, end, tt);
+    } else {
+      const halfH = state.world.h / 2;
+      const start = star.dir === 1 ? -halfH : halfH;
+      const end = star.dir === 1 ? halfH : -halfH;
+      star.boundary = lerp(start, end, tt);
+    }
+  }
+
+  function starConsumesBody(body, star) {
+    if (!body || !star) return false;
+    const r = Math.max(0, Number(body.radius) || 0);
+    const x = Number(body.pos?.x) || 0;
+    const y = Number(body.pos?.y) || 0;
+    const b = Number(star.boundary) || 0;
+
+    if (star.axis === "x") {
+      if (star.dir === 1) return x - r < b;
+      return x + r > b;
+    }
+    if (star.dir === 1) return y - r < b;
+    return y + r > b;
+  }
+
+  function starSafeRect(star, { bufferPx = 0, marginPx = 0 } = {}) {
+    if (!star) return null;
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const m = clamp(Number(marginPx) || 0, 0, Math.min(halfW, halfH));
+    const buf = Math.max(0, Number(bufferPx) || 0);
+
+    let xMin = -halfW + m;
+    let xMax = halfW - m;
+    let yMin = -halfH + m;
+    let yMax = halfH - m;
+
+    if (star.axis === "x") {
+      if (star.dir === 1) xMin = Math.max(xMin, star.boundary + buf);
+      else xMax = Math.min(xMax, star.boundary - buf);
+    } else {
+      if (star.dir === 1) yMin = Math.max(yMin, star.boundary + buf);
+      else yMax = Math.min(yMax, star.boundary - buf);
+    }
+
+    if (xMin > xMax || yMin > yMax) return null;
+    return { xMin, xMax, yMin, yMax };
+  }
+
+  function starSafeRectRelaxed(star, { bufferPx = 0, marginPx = 0 } = {}) {
+    const rect = starSafeRect(star, { bufferPx, marginPx });
+    if (rect) return rect;
+    if (bufferPx > 0) return starSafeRect(star, { bufferPx: 0, marginPx });
+    return null;
+  }
+
+  function makeJumpGate(edge) {
+    const rr = makeRoundRng("jump-gate");
+    const radiusRaw = Number(state.params.jumpGateRadius ?? 86);
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const radius = clamp(radiusRaw, 16, Math.min(halfW, halfH) * 0.35);
+    const inset = radius + 14;
+    const alongMargin = Math.max(radius + 40, Math.min(halfW, halfH) * 0.08);
+
+    let x = 0;
+    let y = 0;
+    if (edge === "left") {
+      x = -halfW + inset;
+      y = lerp(-halfH + alongMargin, halfH - alongMargin, rr());
+    } else if (edge === "right") {
+      x = halfW - inset;
+      y = lerp(-halfH + alongMargin, halfH - alongMargin, rr());
+    } else if (edge === "top") {
+      x = lerp(-halfW + alongMargin, halfW - alongMargin, rr());
+      y = -halfH + inset;
+    } else {
+      x = lerp(-halfW + alongMargin, halfW - alongMargin, rr());
+      y = halfH - inset;
+    }
+
+    return {
+      id: "jump-gate-0",
+      edge,
+      pos: vec(x, y),
+      radius,
+      active: false,
+      slots: new Array(ROUND_PART_COUNT).fill(null),
+    };
+  }
+
+  function makeTechPart(index) {
+    const radius = clamp(Number(state.params.techPartRadius ?? 12), 2, 64);
+    return {
+      id: `part-${index}`,
+      state: "lost",
+      pos: vec(0, 0),
+      vel: vec(0, 0),
+      radius,
+      containerAsteroidId: null,
+      installedSlot: null,
+      respawnCount: 0,
+    };
+  }
+
+  function getTechPartById(id) {
+    const parts = state.round.techParts;
+    if (!Array.isArray(parts)) return null;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].id === id) return parts[i];
+    }
+    return null;
+  }
+
+  function endRound(kind, reason) {
+    if (state.mode !== "playing") return;
+    state.round.outcome = { kind, reason };
+    state.mode = "gameover";
+  }
+
+  function dropTechPartFromAsteroid(asteroid, { lost = false } = {}) {
+    if (!asteroid || !asteroid.techPartId) return false;
+    const part = getTechPartById(asteroid.techPartId);
+    const partId = asteroid.techPartId;
+    asteroid.techPartId = null;
+
+    if (!part || part.state === "installed") return false;
+    part.containerAsteroidId = null;
+    part.pos = vec(Number(asteroid.pos?.x) || 0, Number(asteroid.pos?.y) || 0);
+
+    if (lost) {
+      part.state = "lost";
+      part.vel = vec(0, 0);
+    } else {
+      part.state = "dropped";
+      const v = asteroid.vel || vec(0, 0);
+      part.vel = mul(vec(Number(v.x) || 0, Number(v.y) || 0), 0.35);
+    }
+
+    if (state.round.carriedPartId === partId) state.round.carriedPartId = null;
+    return true;
+  }
+
+  function setTechPartLost(part, { reason = "lost" } = {}) {
+    if (!part || part.state === "installed") return false;
+    part.state = "lost";
+    part.containerAsteroidId = null;
+    part.vel = vec(0, 0);
+    if (state.round.carriedPartId === part.id) state.round.carriedPartId = null;
+    if (reason && typeof reason === "string") part.lostReason = reason;
+    return true;
+  }
+
+  function roundDurationSec() {
+    return clamp(Number(state.params.roundDurationSec ?? 300), 10, 60 * 60);
+  }
+
+  function pickRoundStarEdge() {
+    const rr = makeRoundRng("red-giant-edge");
+    const idx = Math.min(STAR_EDGE_ORDER.length - 1, Math.floor(rr() * STAR_EDGE_ORDER.length));
+    return STAR_EDGE_ORDER[idx] || "left";
+  }
+
+  function seedInitialTechParts() {
+    const star = state.round.star;
+    const parts = state.round.techParts;
+    if (!star || !Array.isArray(parts) || parts.length === 0) return;
+
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const asteroidR = asteroidRadiusForSize(state.params, "xlarge");
+    const bufferMax = Math.min(state.world.w, state.world.h) * 0.45;
+    const buffer = clamp(Number(state.params.starSafeBufferPx ?? 0), 0, bufferMax);
+    const margin = clamp(Math.max(asteroidR + 60, 180), 0, Math.min(halfW, halfH) * 0.45);
+    const fallbackRect = { xMin: -halfW + margin, xMax: halfW - margin, yMin: -halfH + margin, yMax: halfH - margin };
+    const rect = starSafeRectRelaxed(star, { bufferPx: buffer, marginPx: margin }) || fallbackRect;
+
+    const placementRng = makeRoundRng("tech-part-placement");
+    const minSep = clamp(Math.min(state.world.w, state.world.h) * 0.22, asteroidR * 2.4, Math.min(state.world.w, state.world.h) * 0.65);
+    const points = generateSeparatedPoints(parts.length, rect, { minSeparation: minSep, rngFn: placementRng });
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const p = points[i] || randomPointInRect(rect, placementRng);
+      const rr = makeRoundRng(`tech-part-${i}`);
+      const speed = lerp(12, 46, rr());
+      const ang = rr() * Math.PI * 2;
+      const v = mul(angleToVec(ang), speed);
+      const asteroid = makeAsteroid("xlarge", vec(p.x, p.y), v, rr);
+      asteroid.techPartId = part.id;
+      state.asteroids.push(asteroid);
+      part.state = "in_asteroid";
+      part.containerAsteroidId = asteroid.id;
+      part.pos = vec(p.x, p.y);
+      part.vel = vec(0, 0);
+      part.installedSlot = null;
+      part.respawnCount = 0;
+      part.lostReason = undefined;
+    }
+  }
+
+  function resetRoundState() {
+    state.round.durationSec = roundDurationSec();
+    state.round.elapsedSec = 0;
+    state.round.outcome = null;
+    state.round.carriedPartId = null;
+
+    const starEdge = pickRoundStarEdge();
+    const star = makeRedGiant(starEdge);
+    updateRedGiant(star, 0);
+    state.round.star = star;
+
+    const gateEdge = oppositeStarEdge(starEdge);
+    state.round.gate = makeJumpGate(gateEdge);
+
+    state.round.techParts = [];
+    for (let i = 0; i < ROUND_PART_COUNT; i++) state.round.techParts.push(makeTechPart(i));
+    seedInitialTechParts();
+  }
+
+  function updateRound(dt) {
+    const dur = Math.max(0.001, Number(state.round.durationSec) || roundDurationSec());
+    state.round.elapsedSec = Math.max(0, Number(state.round.elapsedSec) || 0) + dt;
+    const t = clamp(state.round.elapsedSec / dur, 0, 1);
+    updateRedGiant(state.round.star, t);
+    if (t >= 1) endRound("lose", "star_reached_far_edge");
+  }
+
+  function applyRedGiantHazard() {
+    const star = state.round.star;
+    if (!star) return;
+
+    // Ship: instant loss on contact.
+    if (starConsumesBody(state.ship, star)) {
+      spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 89, 100], r0: 10, r1: 54, ttl: 0.22 });
+      endRound("lose", "star_contact");
+      return;
+    }
+
+    // Asteroids: destroyed when consumed; tech parts inside are lost (respawned later).
+    for (let i = state.asteroids.length - 1; i >= 0; i--) {
+      const a = state.asteroids[i];
+      if (!starConsumesBody(a, star)) continue;
+      if (a.techPartId) dropTechPartFromAsteroid(a, { lost: true });
+      state.asteroids.splice(i, 1);
+    }
+
+    // Gems: despawned when consumed.
+    for (let i = state.gems.length - 1; i >= 0; i--) {
+      if (starConsumesBody(state.gems[i], star)) state.gems.splice(i, 1);
+    }
+
+    // Saucer + lasers: deleted when consumed.
+    if (state.saucer && starConsumesBody(state.saucer, star)) {
+      state.saucer = null;
+      state.saucerLasers = [];
+    } else {
+      for (let i = state.saucerLasers.length - 1; i >= 0; i--) {
+        if (starConsumesBody(state.saucerLasers[i], star)) state.saucerLasers.splice(i, 1);
+      }
+    }
+
+    // Dropped parts: lost when consumed.
+    const parts = state.round.techParts;
+    if (Array.isArray(parts)) {
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.state !== "dropped") continue;
+        if (!starConsumesBody(part, star)) continue;
+        setTechPartLost(part, { reason: "star" });
+      }
+    }
+  }
+
+  function updateTechParts() {
+    const parts = state.round.techParts;
+    if (!Array.isArray(parts) || parts.length === 0) return;
+
+    const ship = state.ship;
+    const gate = state.round.gate;
+    const star = state.round.star;
+
+    // Keep in-asteroid parts aligned with their container for telemetry/rendering.
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part || part.state !== "in_asteroid") continue;
+      const cid = part.containerAsteroidId;
+      if (!cid) {
+        setTechPartLost(part, { reason: "container_missing" });
+        continue;
+      }
+      let container = null;
+      for (let j = 0; j < state.asteroids.length; j++) {
+        const a = state.asteroids[j];
+        if (a && a.id === cid) {
+          container = a;
+          break;
+        }
+      }
+      if (!container) {
+        setTechPartLost(part, { reason: "container_missing" });
+        continue;
+      }
+      part.pos = vec(Number(container.pos?.x) || 0, Number(container.pos?.y) || 0);
+    }
+
+    // Respawn invariant: any uninstalled lost part immediately respawns inside a new XL asteroid
+    // in the star safe region (derived RNG; independent of gameplay RNG consumption).
+    if (star) {
+      const halfW = state.world.w / 2;
+      const halfH = state.world.h / 2;
+      const asteroidR = asteroidRadiusForSize(state.params, "xlarge");
+      const bufferMax = Math.min(state.world.w, state.world.h) * 0.45;
+      const baseBuffer = clamp(Number(state.params.starSafeBufferPx ?? 0), 0, bufferMax);
+
+      // Ensure the spawned asteroid is actually safe for its radius.
+      const bufferWanted = baseBuffer + asteroidR + 20;
+      const bufferMin = asteroidR + 4;
+      const margin = clamp(asteroidR + 2, 0, Math.min(halfW, halfH));
+      const rect =
+        starSafeRect(star, { bufferPx: bufferWanted, marginPx: margin }) ||
+        starSafeRect(star, { bufferPx: bufferMin, marginPx: margin });
+      if (rect) {
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (!part || part.state !== "lost") continue;
+
+          const nextCount = Math.max(0, Number(part.respawnCount) || 0) + 1;
+          const rr = makeRoundRng(`tech-part-respawn-${part.id}-${nextCount}`);
+          const picked = randomPointInRect(rect, rr);
+
+          const speed = lerp(12, 46, rr());
+          const ang = rr() * Math.PI * 2;
+          const v = mul(angleToVec(ang), speed);
+          const asteroid = makeAsteroid("xlarge", vec(picked.x, picked.y), v, rr);
+          asteroid.techPartId = part.id;
+          state.asteroids.push(asteroid);
+
+          part.state = "in_asteroid";
+          part.containerAsteroidId = asteroid.id;
+          part.pos = vec(picked.x, picked.y);
+          part.vel = vec(0, 0);
+          part.installedSlot = null;
+          part.respawnCount = nextCount;
+          part.lostReason = undefined;
+        }
+      }
+    }
+
+    // Sanity: if the carried id doesn't exist (or isn't carried), clear it.
+    if (state.round.carriedPartId) {
+      const carried = getTechPartById(state.round.carriedPartId);
+      if (!carried || carried.state !== "carried") state.round.carriedPartId = null;
+    }
+
+    // Pickup (one at a time).
+    if (!state.round.carriedPartId) {
+      const pad = clamp(Number(state.params.techPartPickupPad ?? 20), 0, 800);
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part || part.state !== "dropped") continue;
+        const pickR = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + pad;
+        if (len2(sub(part.pos, ship.pos)) > pickR * pickR) continue;
+        part.state = "carried";
+        part.containerAsteroidId = null;
+        part.installedSlot = null;
+        part.vel = vec(0, 0);
+        state.round.carriedPartId = part.id;
+        break;
+      }
+    }
+
+    // Install (auto) when carrying and in range of the gate.
+    if (gate && state.round.carriedPartId) {
+      const part = getTechPartById(state.round.carriedPartId);
+      const slots = Array.isArray(gate.slots) ? gate.slots : null;
+      if (part && part.state === "carried" && slots) {
+        const pad = clamp(Number(state.params.jumpGateInstallPad ?? 60), 0, 2000);
+        const installR = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0) + pad;
+        if (len2(sub(ship.pos, gate.pos)) <= installR * installR) {
+          let slotIndex = -1;
+          for (let i = 0; i < slots.length; i++) {
+            if (!slots[i]) {
+              slotIndex = i;
+              break;
+            }
+          }
+          if (slotIndex >= 0) {
+            slots[slotIndex] = part.id;
+            gate.slots = slots;
+            part.state = "installed";
+            part.installedSlot = slotIndex;
+            part.containerAsteroidId = null;
+            part.vel = vec(0, 0);
+            part.pos = vec(Number(gate.pos?.x) || 0, Number(gate.pos?.y) || 0);
+            state.round.carriedPartId = null;
+          }
+        }
+      }
+    }
+
+    // Gate activation: 4 installed.
+    if (gate && Array.isArray(gate.slots)) {
+      gate.active = gate.slots.every((slot) => !!slot);
+    }
+
+    // Attach carried part to ship nose.
+    if (state.round.carriedPartId) {
+      const part = getTechPartById(state.round.carriedPartId);
+      if (part && part.state === "carried") {
+        const fwd = shipForward(ship);
+        const gap = 10;
+        const off = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + gap;
+        part.pos = add(ship.pos, mul(fwd, off));
+        part.vel = vec(0, 0);
+      } else {
+        state.round.carriedPartId = null;
+      }
+    }
+
+    // Win condition: enter active gate.
+    if (gate?.active) {
+      const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
+      if (len2(sub(ship.pos, gate.pos)) <= r * r) endRound("win", "escaped");
+    }
   }
 
   function rebuildWorldCellIndex() {
@@ -1066,7 +1634,7 @@ export function createEngine({ width, height, seed } = {}) {
       state.saucerLasers.splice(i, 1);
       spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
       if (state.settings.shipExplodesOnImpact) {
-        state.mode = "gameover";
+        endRound("lose", "saucer_laser");
         return;
       }
       const pushDir = norm(b.vel);
@@ -1218,6 +1786,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function resetWorld() {
+    setRoundSeed(state.round.seed);
     state.time = 0;
     state.score = 0;
     state.progression.gemScore = 0;
@@ -1287,6 +1856,7 @@ export function createEngine({ width, height, seed } = {}) {
       localAttempts++;
     }
 
+    resetRoundState();
     rebuildWorldCellIndex();
   }
 
@@ -1754,6 +2324,7 @@ export function createEngine({ width, height, seed } = {}) {
 
       a.pos = add(a.pos, mul(a.vel, dt));
       if (isOutsideWorld(a, 8)) {
+        if (a.techPartId) dropTechPartFromAsteroid(a, { lost: true });
         state.asteroids.splice(i, 1);
         continue;
       }
@@ -1986,11 +2557,13 @@ export function createEngine({ width, height, seed } = {}) {
           if (energy >= threshold) {
             const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
             if (frags) {
+              if (a.techPartId) dropTechPartFromAsteroid(a);
               shipRemovals.add(a.id);
               const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
               shipAdds.push(...frags.slice(0, room));
             }
           } else {
+            if (a.techPartId) dropTechPartFromAsteroid(a);
             shipRemovals.add(a.id);
             spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
           }
@@ -2010,7 +2583,7 @@ export function createEngine({ width, height, seed } = {}) {
       const hit = circleCollide(state.ship, a);
       if (!hit) continue;
       if (state.settings.shipExplodesOnImpact) {
-        state.mode = "gameover";
+        endRound("lose", "ship_impact");
         return;
       }
       resolveElasticCollision(state.ship, a, hit.n, hit.penetration);
@@ -2070,6 +2643,7 @@ export function createEngine({ width, height, seed } = {}) {
 
           const frags = fractureAsteroid(target, it.impactDir, relSpeed);
           if (frags) {
+            if (target.techPartId) dropTechPartFromAsteroid(target);
             toRemove.add(target.id);
             const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + toAdd.length - toRemove.size));
             toAdd.push(...frags.slice(0, room));
@@ -2102,6 +2676,8 @@ export function createEngine({ width, height, seed } = {}) {
 
   function update(dt) {
     if (state.mode !== "playing") return;
+    updateRound(dt);
+    if (state.mode !== "playing") return;
     state.time += dt;
     state.burstCooldown = Math.max(0, state.burstCooldown - dt);
     state.blastPulseT = Math.max(0, state.blastPulseT - dt);
@@ -2124,10 +2700,15 @@ export function createEngine({ width, height, seed } = {}) {
     updateGems(dt);
     updateSaucer(dt);
     updateSaucerLasers(dt);
+    applyRedGiantHazard();
+    if (state.mode !== "playing") return;
     handleSaucerAsteroidCollisions();
     handleGemShipCollisions();
     handleSaucerLaserShipCollisions();
     handleCollisions();
+    if (state.mode !== "playing") return;
+    updateTechParts();
+    if (state.mode !== "playing") return;
     rebuildWorldCellIndex();
     maintainAsteroidPopulation(dt);
   }
@@ -2168,7 +2749,45 @@ export function createEngine({ width, height, seed } = {}) {
     return JSON.stringify({
       coordinate_system:
         "World coords are pixels with origin at world center; screen center follows camera. +x right, +y down.",
-      round: { seed: state.round.seed >>> 0 },
+      round: {
+        seed: state.round.seed >>> 0,
+        duration_sec: +Number(state.round.durationSec || 0).toFixed(3),
+        elapsed_sec: +Number(state.round.elapsedSec || 0).toFixed(3),
+        outcome: state.round.outcome ? { ...state.round.outcome } : null,
+        star: state.round.star
+          ? {
+              edge: state.round.star.edge,
+              axis: state.round.star.axis,
+              dir: state.round.star.dir,
+              t: +Number(state.round.star.t || 0).toFixed(6),
+              boundary: +Number(state.round.star.boundary || 0).toFixed(3),
+            }
+          : null,
+        gate: state.round.gate
+          ? {
+              edge: state.round.gate.edge,
+              x: Math.round(state.round.gate.pos?.x || 0),
+              y: Math.round(state.round.gate.pos?.y || 0),
+              radius: +Number(state.round.gate.radius || 0).toFixed(2),
+              active: !!state.round.gate.active,
+              installed: Array.isArray(state.round.gate.slots)
+                ? state.round.gate.slots.reduce((n, slot) => n + (slot ? 1 : 0), 0)
+                : 0,
+            }
+          : null,
+        tech_parts: Array.isArray(state.round.techParts)
+          ? state.round.techParts.map((p) => ({
+              id: p.id,
+              state: p.state,
+              x: Math.round(p.pos?.x || 0),
+              y: Math.round(p.pos?.y || 0),
+              container: p.containerAsteroidId,
+              installed_slot: p.installedSlot,
+              respawns: p.respawnCount || 0,
+            }))
+          : [],
+        carried_part: state.round.carriedPartId || null,
+      },
       mode: state.mode,
       view: { w: state.view.w, h: state.view.h },
       world: { w: state.world.w, h: state.world.h },

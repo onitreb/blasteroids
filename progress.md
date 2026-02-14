@@ -445,3 +445,39 @@ Updates
     - large: bulwark
 - 2026-02-12 ship thruster markers:
   - Replaced always-on red glow with neutral nozzle geometry markers so ship orientation is clear without implying thrust.
+- 2026-02-13 round loop kickoff (RL-01..02, with early RL-03/04 scaffolding):
+  - Added round state to the engine (`state.round.durationSec`, `elapsedSec`, `outcome`) and reset behavior that rebuilds round layout each `resetWorld()`.
+  - Implemented red giant hazard as a deterministic moving kill wall:
+    - Deterministic edge spawn driven by `round.seed` (independent derived RNG).
+    - Boundary advances with round elapsed/duration; contact ends the round as a loss; reaching the far edge ends the round as a loss.
+    - Star deletes consumed entities (ship/asteroids/gems/saucer/lasers); tech parts inside consumed asteroids become lost (respawn rules still TODO).
+  - Spawned a deterministic opposite-edge jump gate (inactive scaffold) and seeded 4 tech parts into XL asteroids (scaffold for RL-03/04).
+  - `renderGameToText()` now exports round/star/gate/parts state for deterministic Playwright validation.
+  - Tests:
+    - Added engine tests for deterministic star+gate spawn and star loss conditions.
+  - Playwright:
+    - Hardened `scripts/web_game_playwright_client.js` start click (DOM-click + JS fallback) so smoke runs don’t flake on `#start-btn`.
+    - Captured artifacts at `output/web-game/round-loop-star-hazard-2/`.
+  - Validation:
+    - `npm test`: `28 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-13 round loop mechanics + rendering (RL-03..05 MVP pass):
+  - Tech parts:
+    - Drop from XL asteroid when it fractures/is removed (collision and out-of-bounds paths).
+    - Pickup + carry (one at a time), with carried part attached to ship nose.
+    - Auto-install into gate when in range; gate activates at 4/4; entering active gate wins (`endRound("win","escaped")`).
+    - Lost parts immediately respawn deterministically inside a new XL asteroid in the star-safe region (derived round RNG; not tied to gameplay RNG consumption).
+  - Rendering:
+    - Star boundary band (gradient + boundary line).
+    - Gate ring (inactive/active) with 0/4 slot pips.
+    - Dropped + carried part markers.
+    - Game-over overlay now reflects win/lose + outcome reason; minimal on-canvas progress text added (gate progress, carried part, star edge).
+  - Tests:
+    - Added engine tests for gate install, escape win, and deterministic safe-zone respawn behavior.
+  - Playwright artifacts:
+    - `output/web-game/round-loop-rendering-initial-1/`
+    - `output/web-game/round-loop-rendering-gate-visible-3/`
+    - `output/web-game/round-loop-rendering-star-1/`
+  - Validation:
+    - `npm test`: `32 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).

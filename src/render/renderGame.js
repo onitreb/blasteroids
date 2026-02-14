@@ -393,6 +393,11 @@ function gemRgb(kind) {
   return [84, 240, 165];
 }
 
+function installedCountFromSlots(slots) {
+  if (!Array.isArray(slots)) return 0;
+  return slots.reduce((n, slot) => n + (slot ? 1 : 0), 0);
+}
+
 export function createRenderer(engine) {
   const state = engine.state;
   const currentShipTier = () => engine.getCurrentShipTier();
@@ -487,6 +492,223 @@ export function createRenderer(engine) {
       return exhaustSpritesCache;
     } catch {
       return null;
+    }
+  }
+
+  function drawRedGiantUnderlay(ctx) {
+    const star = state.round?.star;
+    if (!star) return;
+
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const b = Number(star.boundary) || 0;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,75,35,0.06)";
+
+    if (star.axis === "x") {
+      if (star.dir === 1) ctx.fillRect(-halfW, -halfH, b - -halfW, state.world.h);
+      else ctx.fillRect(b, -halfH, halfW - b, state.world.h);
+    } else {
+      if (star.dir === 1) ctx.fillRect(-halfW, -halfH, state.world.w, b - -halfH);
+      else ctx.fillRect(-halfW, b, state.world.w, halfH - b);
+    }
+
+    ctx.restore();
+  }
+
+  function drawRedGiantOverlay(ctx) {
+    const star = state.round?.star;
+    if (!star) return;
+
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const b = Number(star.boundary) || 0;
+    const bandW = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
+
+    ctx.save();
+
+    // Gradient band that bleeds into the safe zone.
+    const safeDir = star.dir === 1 ? 1 : -1;
+    if (star.axis === "x") {
+      const x0 = b;
+      const x1 = b + safeDir * bandW;
+      const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+      grad.addColorStop(0, "rgba(255,75,35,0.58)");
+      grad.addColorStop(0.32, "rgba(255,120,70,0.18)");
+      grad.addColorStop(1, "rgba(255,120,70,0)");
+      ctx.fillStyle = grad;
+      const rx = safeDir === 1 ? x0 : x1;
+      ctx.fillRect(rx, -halfH, bandW, state.world.h);
+    } else {
+      const y0 = b;
+      const y1 = b + safeDir * bandW;
+      const grad = ctx.createLinearGradient(0, y0, 0, y1);
+      grad.addColorStop(0, "rgba(255,75,35,0.58)");
+      grad.addColorStop(0.32, "rgba(255,120,70,0.18)");
+      grad.addColorStop(1, "rgba(255,120,70,0)");
+      ctx.fillStyle = grad;
+      const ry = safeDir === 1 ? y0 : y1;
+      ctx.fillRect(-halfW, ry, state.world.w, bandW);
+    }
+
+    // Boundary line (bright + warm).
+    ctx.globalCompositeOperation = "lighter";
+    ctx.shadowColor = "rgba(255,120,70,0.85)";
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = "rgba(255,170,150,0.70)";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    if (star.axis === "x") {
+      ctx.moveTo(b, -halfH);
+      ctx.lineTo(b, halfH);
+    } else {
+      ctx.moveTo(-halfW, b);
+      ctx.lineTo(halfW, b);
+    }
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,240,220,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (star.axis === "x") {
+      ctx.moveTo(b, -halfH);
+      ctx.lineTo(b, halfH);
+    } else {
+      ctx.moveTo(-halfW, b);
+      ctx.lineTo(halfW, b);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawJumpGate(ctx) {
+    const gate = state.round?.gate;
+    if (!gate) return;
+
+    const active = !!gate.active;
+    const slots = Array.isArray(gate.slots) ? gate.slots : [];
+    const total = Math.max(1, slots.length || 4);
+    const installed = installedCountFromSlots(slots);
+    const baseRgb = active ? [84, 240, 165] : [142, 198, 255];
+
+    ctx.save();
+    ctx.translate(gate.pos.x, gate.pos.y);
+
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = rgbToRgba(baseRgb, active ? 0.34 : 0.26);
+    ctx.lineWidth = active ? 16 : 12;
+    ctx.shadowColor = rgbToRgba(baseRgb, 0.85);
+    ctx.shadowBlur = active ? 28 : 22;
+    ctx.beginPath();
+    ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.globalCompositeOperation = "source-over";
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = active ? "rgba(231,240,255,0.78)" : "rgba(231,240,255,0.62)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Slot pips (progress 0/4).
+    const pipR = 6;
+    const pipDist = gate.radius + 18;
+    for (let i = 0; i < total; i++) {
+      const ang = -Math.PI / 2 + (i / total) * Math.PI * 2;
+      const px = Math.cos(ang) * pipDist;
+      const py = Math.sin(ang) * pipDist;
+      const filled = !!slots[i];
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = filled ? rgbToRgba(baseRgb, 0.55) : "rgba(231,240,255,0.10)";
+      ctx.beginPath();
+      ctx.arc(0, 0, pipR * 1.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = filled ? rgbToRgba(baseRgb, 0.95) : "rgba(231,240,255,0.32)";
+      ctx.beginPath();
+      ctx.arc(0, 0, pipR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Subtle inner shimmer when active.
+    if (active) {
+      const wave = 0.5 + 0.5 * Math.sin(state.time * 5.5);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = rgbToRgba(baseRgb, 0.14 + wave * 0.08);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, gate.radius * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Optional readability label (world-space).
+    ctx.fillStyle = "rgba(231,240,255,0.70)";
+    ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + 44);
+
+    ctx.restore();
+  }
+
+  function drawTechPart(ctx, part, { carried = false } = {}) {
+    if (!part) return;
+    const r = clamp(Number(part.radius) || 12, 2, 64);
+    const seed = fnv1aSeed(part.id);
+    const phase = (seed % 1000) * 0.001 * Math.PI * 2;
+    const spin = phase + state.time * (carried ? 2.2 : 1.6);
+    const coreRgb = carried ? [231, 240, 255] : [215, 150, 255];
+
+    ctx.save();
+    ctx.translate(part.pos.x, part.pos.y);
+    ctx.rotate(spin);
+
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.18 : 0.16);
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 2.1);
+    ctx.lineTo(r * 2.1, 0);
+    ctx.lineTo(0, r * 2.1);
+    ctx.lineTo(-r * 2.1, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowColor = rgbToRgba(coreRgb, 0.95);
+    ctx.shadowBlur = carried ? 18 : 14;
+    ctx.strokeStyle = rgbToRgba(coreRgb, carried ? 0.98 : 0.92);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawTechParts(ctx) {
+    const parts = state.round?.techParts;
+    if (!Array.isArray(parts) || parts.length === 0) return;
+    for (const part of parts) {
+      if (!part) continue;
+      if (part.state === "dropped") drawTechPart(ctx, part, { carried: false });
+      else if (part.state === "carried") drawTechPart(ctx, part, { carried: true });
     }
   }
 
@@ -727,6 +949,8 @@ export function createRenderer(engine) {
     ctx.strokeRect(-state.world.w / 2, -state.world.h / 2, state.world.w, state.world.h);
     ctx.restore();
 
+    drawRedGiantUnderlay(ctx);
+
     // Asteroid sorting: draw non-attached first (behind), then the forcefield ring,
     // then attached asteroids so the "trapped" rocks always read as in front.
     const tier = currentShipTier();
@@ -742,6 +966,8 @@ export function createRenderer(engine) {
       if (!a.attached) continue;
       drawAsteroid(ctx, a, { tier, ship });
     }
+
+    drawJumpGate(ctx);
 
     // Gems (dropped from broken small asteroids).
     for (const g of state.gems) {
@@ -787,6 +1013,9 @@ export function createRenderer(engine) {
       }
       ctx.restore();
     }
+
+    drawTechParts(ctx);
+    drawRedGiantOverlay(ctx);
 
     // Flying saucer + lasers (no wrap).
     if (state.saucer) {
@@ -922,11 +1151,22 @@ export function createRenderer(engine) {
     const med = state.asteroids.filter((a) => a.size === "med").length;
     const small = state.asteroids.filter((a) => a.size === "small").length;
     if (state.mode === "playing") {
+      const gate = state.round?.gate;
+      const star = state.round?.star;
+      const totalSlots = gate && Array.isArray(gate.slots) ? gate.slots.length : 0;
+      const installed = gate && Array.isArray(gate.slots) ? installedCountFromSlots(gate.slots) : 0;
+      const gateLine =
+        gate && totalSlots > 0
+          ? `Gate: ${installed}/${totalSlots}${gate.active ? " ACTIVE" : ""}   Carry: ${state.round.carriedPartId || "—"}`
+          : "";
+      const starLine = star ? `Star: ${String(star.edge).toUpperCase()}` : "";
       ctx.fillText(
         `Tier: ${currentShipTier().label}   Attached: ${attached}   S:${small} M:${med} L:${large} XL:${xlarge} XXL:${xxlarge}   Gems: ${state.progression.gemScore}   Score: ${state.score}`,
         14,
         18,
       );
+      if (gateLine) ctx.fillText(gateLine, 14, 34);
+      if (starLine) ctx.fillText(starLine, 14, 50);
     } else if (state.mode === "gameover") {
       // Game-over overlay: clearer restart prompt without requiring the debug menu.
       ctx.save();
@@ -936,17 +1176,21 @@ export function createRenderer(engine) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      ctx.fillStyle = "rgba(255,89,100,0.96)";
+      const outcomeKind = state.round?.outcome?.kind || "lose";
+      const outcomeReason = state.round?.outcome?.reason || "";
+      const win = outcomeKind === "win";
+      ctx.fillStyle = win ? "rgba(84,240,165,0.96)" : "rgba(255,89,100,0.96)";
       ctx.font = "700 52px ui-sans-serif, system-ui";
-      ctx.fillText("GAME OVER", w * 0.5, h * 0.5 - 70);
+      ctx.fillText(win ? "ESCAPED" : "GAME OVER", w * 0.5, h * 0.5 - 70);
 
       ctx.fillStyle = "rgba(231,240,255,0.92)";
       ctx.font = "16px ui-sans-serif, system-ui";
       ctx.fillText(`Score: ${state.score}`, w * 0.5, h * 0.5 - 26);
-      ctx.fillText("Press R or click to restart", w * 0.5, h * 0.5 + 6);
+      if (outcomeReason) ctx.fillText(`Reason: ${outcomeReason}`, w * 0.5, h * 0.5 - 4);
+      ctx.fillText("Press R or click to restart", w * 0.5, h * 0.5 + 18);
 
       ctx.fillStyle = "rgba(231,240,255,0.70)";
-      ctx.fillText("Press M for debug/tuning", w * 0.5, h * 0.5 + 34);
+      ctx.fillText("Press M for debug/tuning", w * 0.5, h * 0.5 + 46);
       ctx.restore();
     }
     ctx.restore();

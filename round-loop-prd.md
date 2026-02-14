@@ -46,6 +46,11 @@ Foundations added (2026-02-13) to support multiplayer-style spawns and determini
 7. Player wins by entering the active gate.
 8. Player loses if killed by hazards (star contact) or if the star reaches the far edge before escape.
 
+## Implementation Status (As Of 2026-02-13)
+- Engine: round state, deterministic star + opposite-edge gate placement, deterministic seeding of 4 tech parts into XL asteroids, plus drop → pickup/carry → install → activate → escape win loop.
+- Invariants: if an uninstalled part is lost/consumed it respawns deterministically inside a new XL asteroid in the star-safe region.
+- Rendering MVP: star boundary band, gate ring (inactive/active), and dropped/carried part markers are now visible in-canvas.
+
 ## Mechanics Spec (MVP)
 
 ### Round Timer (Configurable)
@@ -152,5 +157,5 @@ Implementation note:
 2. **Gate spawn**: RESOLVED — random along opposite edge.
 3. **Part carrying**: RESOLVED — carry one part at a time (MVP).
 4. **Part loss**: if a part is dropped and then consumed by the star, respawn immediately or after delay?
-5. **Asteroid containment rule**: XL only, or XL+XXL?
-6. **Saucer interaction**: does the star delete saucer/lasers, or do they ignore it?
+5. **Asteroid containment rule**: RESOLVED — XL only (MVP).
+6. **Saucer interaction**: RESOLVED — star deletes saucer + lasers (MVP).
