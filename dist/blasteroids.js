@@ -226,7 +226,7 @@
     xlarge: 0.38,
     xxlarge: 0.25
   };
-  var FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
+  var FRACTURE_SIZE_BIAS_PER_RANK = 0.06;
   var ROUND_PART_COUNT = 4;
   var STAR_EDGE_ORDER = ["left", "right", "top", "bottom"];
   function oppositeStarEdge(edge) {
@@ -596,7 +596,7 @@
         medCount: 10,
         smallCount: 22,
         restitution: 0.92,
-        fractureImpactSpeed: 260,
+        fractureImpactSpeed: 275,
         projectileImpactScale: 1.35,
         maxAsteroids: 4e3,
         asteroidWorldDensityScale: 0.32,
@@ -616,9 +616,10 @@
         // Round loop (RL-01..04) — deterministic star/gate/parts.
         roundDurationSec: 300,
         starSafeBufferPx: 320,
-        jumpGateRadius: 86,
+        jumpGateRadius: 160,
+        jumpGateEdgeInsetExtraPx: 110,
         jumpGateInstallPad: 60,
-        techPartRadius: 12,
+        techPartRadius: 72,
         techPartPickupPad: 20,
         starDensityScale: 1,
         starParallaxStrength: 1,
@@ -1056,11 +1057,13 @@
     }
     function makeJumpGate(edge) {
       const rr = makeRoundRng("jump-gate");
-      const radiusRaw = Number(state.params.jumpGateRadius ?? 86);
+      const radiusRaw = Number(state.params.jumpGateRadius ?? 160);
+      const edgeInsetExtraPx = Number(state.params.jumpGateEdgeInsetExtraPx ?? 0);
       const halfW = state.world.w / 2;
       const halfH = state.world.h / 2;
       const radius = clamp(radiusRaw, 16, Math.min(halfW, halfH) * 0.35);
-      const inset = radius + 14;
+      const insetExtra = clamp(edgeInsetExtraPx || 0, 0, Math.min(halfW, halfH));
+      const inset = radius + 14 + insetExtra;
       const alongMargin = Math.max(radius + 40, Math.min(halfW, halfH) * 0.08);
       let x = 0;
       let y = 0;
@@ -1087,7 +1090,9 @@
       };
     }
     function makeTechPart(index) {
-      const radius = clamp(Number(state.params.techPartRadius ?? 12), 2, 64);
+      const radiusRaw = Number(state.params.techPartRadius ?? 72);
+      const maxR = clamp(Number(state.params.xlargeRadius ?? 90) * 0.92, 8, 220);
+      const radius = clamp(radiusRaw, 2, maxR);
       return {
         id: `part-${index}`,
         state: "lost",
@@ -3354,18 +3359,63 @@
       const halfW = state.world.w / 2;
       const halfH = state.world.h / 2;
       const b = Number(star.boundary) || 0;
+      const safeDir = star.dir === 1 ? 1 : -1;
+      const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
+      const segs = 34;
+      function boundaryPoints(offsetPx = 0) {
+        const pts = [];
+        if (star.axis === "x") {
+          for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const u = lerp(-1, 1, t);
+            const bulge = safeDir * arcAmp * (1 - u * u);
+            const y = lerp(-halfH, halfH, t);
+            const x = b + bulge + safeDir * offsetPx;
+            pts.push({ x, y });
+          }
+        } else {
+          for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const u = lerp(-1, 1, t);
+            const bulge = safeDir * arcAmp * (1 - u * u);
+            const x = lerp(-halfW, halfW, t);
+            const y = b + bulge + safeDir * offsetPx;
+            pts.push({ x, y });
+          }
+        }
+        return pts;
+      }
       ctx.save();
-      ctx.fillStyle = "rgba(255,75,35,0.06)";
       if (star.axis === "x") {
-        if (star.dir === 1)
-          ctx.fillRect(-halfW, -halfH, b - -halfW, state.world.h);
-        else
-          ctx.fillRect(b, -halfH, halfW - b, state.world.h);
+        const edgeX = safeDir === 1 ? -halfW : halfW;
+        const grad = ctx.createLinearGradient(b, 0, edgeX, 0);
+        grad.addColorStop(0, "rgba(255,110,75,0.22)");
+        grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
+        grad.addColorStop(1, "rgba(210,35,15,0.46)");
+        ctx.fillStyle = grad;
+        const curve = boundaryPoints(0);
+        ctx.beginPath();
+        ctx.moveTo(edgeX, -halfH);
+        ctx.lineTo(edgeX, halfH);
+        for (let i = curve.length - 1; i >= 0; i--)
+          ctx.lineTo(curve[i].x, curve[i].y);
+        ctx.closePath();
+        ctx.fill();
       } else {
-        if (star.dir === 1)
-          ctx.fillRect(-halfW, -halfH, state.world.w, b - -halfH);
-        else
-          ctx.fillRect(-halfW, b, state.world.w, halfH - b);
+        const edgeY = safeDir === 1 ? -halfH : halfH;
+        const grad = ctx.createLinearGradient(0, b, 0, edgeY);
+        grad.addColorStop(0, "rgba(255,110,75,0.22)");
+        grad.addColorStop(0.35, "rgba(255,75,35,0.34)");
+        grad.addColorStop(1, "rgba(210,35,15,0.46)");
+        ctx.fillStyle = grad;
+        const curve = boundaryPoints(0);
+        ctx.beginPath();
+        ctx.moveTo(-halfW, edgeY);
+        ctx.lineTo(halfW, edgeY);
+        for (let i = curve.length - 1; i >= 0; i--)
+          ctx.lineTo(curve[i].x, curve[i].y);
+        ctx.closePath();
+        ctx.fill();
       }
       ctx.restore();
     }
@@ -3377,54 +3427,77 @@
       const halfH = state.world.h / 2;
       const b = Number(star.boundary) || 0;
       const bandW = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
-      ctx.save();
       const safeDir = star.dir === 1 ? 1 : -1;
+      const arcAmp = clamp(Math.min(halfW, halfH) * 0.06, 18, 80);
+      const segs = 34;
+      function boundaryPoints(offsetPx = 0) {
+        const pts = [];
+        if (star.axis === "x") {
+          for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const u = lerp(-1, 1, t);
+            const bulge = safeDir * arcAmp * (1 - u * u);
+            const y = lerp(-halfH, halfH, t);
+            const x = b + bulge + safeDir * offsetPx;
+            pts.push({ x, y });
+          }
+        } else {
+          for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const u = lerp(-1, 1, t);
+            const bulge = safeDir * arcAmp * (1 - u * u);
+            const x = lerp(-halfW, halfW, t);
+            const y = b + bulge + safeDir * offsetPx;
+            pts.push({ x, y });
+          }
+        }
+        return pts;
+      }
+      ctx.save();
+      const curve0 = boundaryPoints(0);
+      const curve1 = boundaryPoints(bandW);
       if (star.axis === "x") {
         const x0 = b;
         const x1 = b + safeDir * bandW;
         const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-        grad.addColorStop(0, "rgba(255,75,35,0.58)");
-        grad.addColorStop(0.32, "rgba(255,120,70,0.18)");
+        grad.addColorStop(0, "rgba(255,75,35,0.62)");
+        grad.addColorStop(0.35, "rgba(255,120,70,0.20)");
         grad.addColorStop(1, "rgba(255,120,70,0)");
         ctx.fillStyle = grad;
-        const rx = safeDir === 1 ? x0 : x1;
-        ctx.fillRect(rx, -halfH, bandW, state.world.h);
       } else {
         const y0 = b;
         const y1 = b + safeDir * bandW;
         const grad = ctx.createLinearGradient(0, y0, 0, y1);
-        grad.addColorStop(0, "rgba(255,75,35,0.58)");
-        grad.addColorStop(0.32, "rgba(255,120,70,0.18)");
+        grad.addColorStop(0, "rgba(255,75,35,0.62)");
+        grad.addColorStop(0.35, "rgba(255,120,70,0.20)");
         grad.addColorStop(1, "rgba(255,120,70,0)");
         ctx.fillStyle = grad;
-        const ry = safeDir === 1 ? y0 : y1;
-        ctx.fillRect(-halfW, ry, state.world.w, bandW);
       }
+      ctx.beginPath();
+      ctx.moveTo(curve0[0].x, curve0[0].y);
+      for (let i = 1; i < curve0.length; i++)
+        ctx.lineTo(curve0[i].x, curve0[i].y);
+      for (let i = curve1.length - 1; i >= 0; i--)
+        ctx.lineTo(curve1[i].x, curve1[i].y);
+      ctx.closePath();
+      ctx.fill();
       ctx.globalCompositeOperation = "lighter";
       ctx.shadowColor = "rgba(255,120,70,0.85)";
       ctx.shadowBlur = 18;
       ctx.strokeStyle = "rgba(255,170,150,0.70)";
       ctx.lineWidth = 10;
       ctx.beginPath();
-      if (star.axis === "x") {
-        ctx.moveTo(b, -halfH);
-        ctx.lineTo(b, halfH);
-      } else {
-        ctx.moveTo(-halfW, b);
-        ctx.lineTo(halfW, b);
-      }
+      ctx.moveTo(curve0[0].x, curve0[0].y);
+      for (let i = 1; i < curve0.length; i++)
+        ctx.lineTo(curve0[i].x, curve0[i].y);
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.strokeStyle = "rgba(255,240,220,0.35)";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      if (star.axis === "x") {
-        ctx.moveTo(b, -halfH);
-        ctx.lineTo(b, halfH);
-      } else {
-        ctx.moveTo(-halfW, b);
-        ctx.lineTo(halfW, b);
-      }
+      ctx.moveTo(curve0[0].x, curve0[0].y);
+      for (let i = 1; i < curve0.length; i++)
+        ctx.lineTo(curve0[i].x, curve0[i].y);
       ctx.stroke();
       ctx.restore();
     }
@@ -3441,9 +3514,10 @@
       ctx.translate(gate.pos.x, gate.pos.y);
       ctx.globalCompositeOperation = "lighter";
       ctx.strokeStyle = rgbToRgba(baseRgb, active ? 0.34 : 0.26);
-      ctx.lineWidth = active ? 16 : 12;
+      const ringW = clamp(gate.radius * 0.12, 12, 30);
+      ctx.lineWidth = active ? ringW * 1.15 : ringW;
       ctx.shadowColor = rgbToRgba(baseRgb, 0.85);
-      ctx.shadowBlur = active ? 28 : 22;
+      ctx.shadowBlur = active ? clamp(gate.radius * 0.22, 20, 46) : clamp(gate.radius * 0.18, 18, 40);
       ctx.beginPath();
       ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -3454,8 +3528,8 @@
       ctx.beginPath();
       ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
       ctx.stroke();
-      const pipR = 6;
-      const pipDist = gate.radius + 18;
+      const pipR = clamp(gate.radius * 0.05, 6, 18);
+      const pipDist = gate.radius + pipR * 4;
       for (let i = 0; i < total; i++) {
         const ang = -Math.PI / 2 + i / total * Math.PI * 2;
         const px = Math.cos(ang) * pipDist;
@@ -3489,38 +3563,41 @@
       ctx.fillStyle = "rgba(231,240,255,0.70)";
       ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
       ctx.textAlign = "center";
-      ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + 44);
+      ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + pipR * 7);
       ctx.restore();
     }
     function drawTechPart(ctx, part, { carried = false } = {}) {
       if (!part)
         return;
-      const r = clamp(Number(part.radius) || 12, 2, 64);
+      const r = clamp(Number(part.radius) || 12, 4, 180);
       const seed = fnv1aSeed(part.id);
       const phase = seed % 1e3 * 1e-3 * Math.PI * 2;
       const spin = phase + state.time * (carried ? 2.2 : 1.6);
       const coreRgb = carried ? [231, 240, 255] : [215, 150, 255];
+      const index = Number(String(part.id).split("-").pop() || 0) || 0;
+      const segCount = 4;
+      const segSpan = Math.PI * 2 / segCount;
+      const segInset = segSpan * 0.08;
+      const a0 = index * segSpan + segInset;
+      const a1 = (index + 1) * segSpan - segInset;
+      const innerR = r * 0.62;
       ctx.save();
       ctx.translate(part.pos.x, part.pos.y);
       ctx.rotate(spin);
       ctx.globalCompositeOperation = "lighter";
       ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.18 : 0.16);
       ctx.beginPath();
-      ctx.moveTo(0, -r * 2.1);
-      ctx.lineTo(r * 2.1, 0);
-      ctx.lineTo(0, r * 2.1);
-      ctx.lineTo(-r * 2.1, 0);
+      ctx.arc(0, 0, r, a0, a1);
+      ctx.arc(0, 0, innerR, a1, a0, true);
       ctx.closePath();
       ctx.fill();
       ctx.shadowColor = rgbToRgba(coreRgb, 0.95);
-      ctx.shadowBlur = carried ? 18 : 14;
+      ctx.shadowBlur = carried ? clamp(r * 0.32, 10, 30) : clamp(r * 0.28, 10, 26);
       ctx.strokeStyle = rgbToRgba(coreRgb, carried ? 0.98 : 0.92);
-      ctx.lineWidth = 2;
+      ctx.lineWidth = clamp(r * 0.06, 2, 6);
       ctx.beginPath();
-      ctx.moveTo(0, -r);
-      ctx.lineTo(r, 0);
-      ctx.lineTo(0, r);
-      ctx.lineTo(-r, 0);
+      ctx.arc(0, 0, r, a0, a1);
+      ctx.arc(0, 0, innerR, a1, a0, true);
       ctx.closePath();
       ctx.stroke();
       ctx.shadowBlur = 0;

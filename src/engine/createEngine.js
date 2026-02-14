@@ -48,7 +48,7 @@ const ASTEROID_ROT_VEL_MAX = {
   xlarge: 0.38,
   xxlarge: 0.25,
 };
-const FRACTURE_SIZE_BIAS_PER_RANK = 0.12;
+const FRACTURE_SIZE_BIAS_PER_RANK = 0.06;
 
 const ROUND_PART_COUNT = 4;
 const STAR_EDGE_ORDER = ["left", "right", "top", "bottom"];
@@ -417,7 +417,7 @@ export function createEngine({ width, height, seed } = {}) {
       smallCount: 22,
 
       restitution: 0.92,
-      fractureImpactSpeed: 260,
+      fractureImpactSpeed: 275,
       projectileImpactScale: 1.35,
       maxAsteroids: 4000,
       asteroidWorldDensityScale: 0.32,
@@ -440,9 +440,10 @@ export function createEngine({ width, height, seed } = {}) {
       // Round loop (RL-01..04) — deterministic star/gate/parts.
       roundDurationSec: 300,
       starSafeBufferPx: 320,
-      jumpGateRadius: 86,
+      jumpGateRadius: 160,
+      jumpGateEdgeInsetExtraPx: 110,
       jumpGateInstallPad: 60,
-      techPartRadius: 12,
+      techPartRadius: 72,
       techPartPickupPad: 20,
 
       starDensityScale: 1,
@@ -914,11 +915,13 @@ export function createEngine({ width, height, seed } = {}) {
 
   function makeJumpGate(edge) {
     const rr = makeRoundRng("jump-gate");
-    const radiusRaw = Number(state.params.jumpGateRadius ?? 86);
+    const radiusRaw = Number(state.params.jumpGateRadius ?? 160);
+    const edgeInsetExtraPx = Number(state.params.jumpGateEdgeInsetExtraPx ?? 0);
     const halfW = state.world.w / 2;
     const halfH = state.world.h / 2;
     const radius = clamp(radiusRaw, 16, Math.min(halfW, halfH) * 0.35);
-    const inset = radius + 14;
+    const insetExtra = clamp(edgeInsetExtraPx || 0, 0, Math.min(halfW, halfH));
+    const inset = radius + 14 + insetExtra;
     const alongMargin = Math.max(radius + 40, Math.min(halfW, halfH) * 0.08);
 
     let x = 0;
@@ -948,7 +951,9 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function makeTechPart(index) {
-    const radius = clamp(Number(state.params.techPartRadius ?? 12), 2, 64);
+    const radiusRaw = Number(state.params.techPartRadius ?? 72);
+    const maxR = clamp(Number(state.params.xlargeRadius ?? 90) * 0.92, 8, 220);
+    const radius = clamp(radiusRaw, 2, maxR);
     return {
       id: `part-${index}`,
       state: "lost",

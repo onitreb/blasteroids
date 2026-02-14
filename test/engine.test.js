@@ -422,7 +422,7 @@ test("ship-launched impact boost enables fractures below ambient threshold", () 
   const targetRadius = asteroidRadiusForSize(p, "med");
   const projMass = asteroidMassForRadius(projRadius);
   const targetMass = asteroidMassForRadius(targetRadius);
-  const sizeBias = 1 + asteroidSizeRank("med") * 0.12;
+  const sizeBias = 1 + asteroidSizeRank("med") * 0.06;
   const thresholdEnergy = 0.25 * targetMass * (p.fractureImpactSpeed * sizeBias) ** 2;
   const mu = (projMass * targetMass) / (projMass + targetMass);
   const relSpeed = Math.sqrt((2 * thresholdEnergy) / (mu * p.projectileImpactScale)) * 1.02;
