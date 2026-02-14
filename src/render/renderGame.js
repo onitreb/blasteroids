@@ -567,6 +567,36 @@ export function createRenderer(engine) {
     ctx.restore();
   }
 
+  function drawTechPing(ctx) {
+    const ping = state.round?.techPing;
+    if (!ping) return;
+    const origin = ping.origin;
+    if (!origin) return;
+
+    const r = Math.max(0, Number(ping.radius) || 0);
+    const thickness = clamp(Number(state.params.techPingThicknessPx ?? 22), 4, 240);
+    const wave = 0.5 + 0.5 * Math.sin(state.time * 6.2);
+
+    ctx.save();
+    ctx.translate(Number(origin.x) || 0, Number(origin.y) || 0);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.shadowColor = "rgba(215,150,255,0.95)";
+    ctx.shadowBlur = clamp(thickness * 0.8, 10, 28);
+    ctx.strokeStyle = `rgba(215,150,255,${(0.10 + wave * 0.10).toFixed(3)})`;
+    ctx.lineWidth = thickness;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(231,240,255,${(0.12 + wave * 0.12).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawRedGiantOverlay(ctx) {
     const star = state.round?.star;
     if (!star) return;
@@ -663,6 +693,15 @@ export function createRenderer(engine) {
     const total = Math.max(1, slots.length || 4);
     const installed = installedCountFromSlots(slots);
     const baseRgb = active ? [84, 240, 165] : [142, 198, 255];
+    const slotR = clamp(
+      Number(state.round?.techParts?.[0]?.radius ?? state.params?.techPartRadius ?? 80) || 80,
+      4,
+      180,
+    );
+    const segCount = 4;
+    const segSpan = (Math.PI * 2) / segCount;
+    const segInset = segSpan * 0.08;
+    const slotInnerR = slotR * 0.62;
 
     ctx.save();
     ctx.translate(gate.pos.x, gate.pos.y);
@@ -685,27 +724,44 @@ export function createRenderer(engine) {
     ctx.arc(0, 0, gate.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Slot pips (progress 0/4).
-    const pipR = clamp(gate.radius * 0.05, 6, 18);
-    const pipDist = gate.radius + pipR * 4;
+    // Portal part slots: same shape/size as the parts. Empty slots are outline-only.
+    const slotDist = gate.radius + slotR * 0.62 + ringW * 0.15;
     for (let i = 0; i < total; i++) {
       const ang = -Math.PI / 2 + (i / total) * Math.PI * 2;
-      const px = Math.cos(ang) * pipDist;
-      const py = Math.sin(ang) * pipDist;
+      const px = Math.cos(ang) * slotDist;
+      const py = Math.sin(ang) * slotDist;
       const filled = !!slots[i];
+      const t = active ? 0.65 : 0.4;
 
       ctx.save();
       ctx.translate(px, py);
+      ctx.rotate(i * segSpan);
+
       ctx.globalCompositeOperation = "lighter";
-      ctx.fillStyle = filled ? rgbToRgba(baseRgb, 0.55) : "rgba(231,240,255,0.10)";
+      if (filled) {
+        ctx.fillStyle = rgbToRgba(baseRgb, 0.22);
+        ctx.beginPath();
+        ctx.arc(0, 0, slotR, segInset, segSpan - segInset);
+        ctx.arc(0, 0, slotInnerR, segSpan - segInset, segInset, true);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.shadowColor = rgbToRgba(baseRgb, 0.85);
+      ctx.shadowBlur = filled ? 16 : 10;
+      ctx.strokeStyle = filled ? rgbToRgba(baseRgb, 0.92) : `rgba(231,240,255,${(0.22 + t * 0.24).toFixed(3)})`;
+      ctx.lineWidth = clamp(slotR * 0.06, 2, 6);
       ctx.beginPath();
-      ctx.arc(0, 0, pipR * 1.9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = filled ? rgbToRgba(baseRgb, 0.95) : "rgba(231,240,255,0.32)";
-      ctx.beginPath();
-      ctx.arc(0, 0, pipR, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(0, 0, slotR, segInset, segSpan - segInset);
+      ctx.arc(0, 0, slotInnerR, segSpan - segInset, segInset, true);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
       ctx.restore();
     }
 
@@ -726,7 +782,7 @@ export function createRenderer(engine) {
     ctx.fillStyle = "rgba(231,240,255,0.70)";
     ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
     ctx.textAlign = "center";
-    ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + pipR * 7);
+    ctx.fillText(active ? "GATE ACTIVE" : `${installed}/${total}`, 0, gate.radius + slotR * 1.55);
 
     ctx.restore();
   }
@@ -742,16 +798,16 @@ export function createRenderer(engine) {
     const segCount = 4;
     const segSpan = (Math.PI * 2) / segCount;
     const segInset = segSpan * 0.08;
-    const a0 = index * segSpan + segInset;
-    const a1 = (index + 1) * segSpan - segInset;
+    const a0 = segInset;
+    const a1 = segSpan - segInset;
     const innerR = r * 0.62;
 
     ctx.save();
     ctx.translate(part.pos.x, part.pos.y);
-    ctx.rotate(spin);
+    ctx.rotate(spin + index * segSpan);
 
     ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.18 : 0.16);
+    ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.16 : 0.42);
     ctx.beginPath();
     ctx.arc(0, 0, r, a0, a1);
     ctx.arc(0, 0, innerR, a1, a0, true);
@@ -767,6 +823,38 @@ export function createRenderer(engine) {
     ctx.arc(0, 0, innerR, a1, a0, true);
     ctx.closePath();
     ctx.stroke();
+
+    // Simple "tech" details (grooves + bolts), deterministic per id.
+    const detail = clamp((seed % 1000) / 1000, 0, 1);
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = rgbToRgba(coreRgb, carried ? 0.32 : 0.26);
+    ctx.lineWidth = clamp(r * 0.02, 1, 3);
+    for (let i = 0; i < 3; i++) {
+      const tt = posMod(detail + i * 0.27, 1);
+      const ang = a0 + (a1 - a0) * (0.18 + 0.64 * tt);
+      const midR = lerp(innerR * 1.08, r * 0.94, 0.5);
+      ctx.beginPath();
+      ctx.arc(0, 0, midR, ang - 0.09, ang + 0.09);
+      ctx.stroke();
+
+      const tick0 = lerp(innerR * 1.06, r * 0.88, 0.15 + 0.7 * tt);
+      const tick1 = tick0 + clamp(r * 0.08, 5, 12);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * tick0, Math.sin(ang) * tick0);
+      ctx.lineTo(Math.cos(ang) * tick1, Math.sin(ang) * tick1);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(231,240,255,0.26)";
+    for (let i = 0; i < 2; i++) {
+      const tt = posMod(detail * 0.7 + i * 0.41, 1);
+      const ang = a0 + (a1 - a0) * (0.22 + 0.56 * tt);
+      const boltR = lerp(innerR * 1.12, r * 0.86, 0.55);
+      ctx.beginPath();
+      ctx.arc(Math.cos(ang) * boltR, Math.sin(ang) * boltR, clamp(r * 0.045, 1.5, 4.2), 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(0,0,0,0.55)";
@@ -882,6 +970,22 @@ export function createRenderer(engine) {
       ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
       ctx.shadowBlur = lerp(3, 14, pullFx) * stackScale * visScale.thickness;
       drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+      ctx.restore();
+    }
+
+    const pingFxT = Math.max(0, Number(a.techPingFxT) || 0);
+    if (pingFxT > 1e-3) {
+      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
+      const t = clamp(pingFxT / glowSec, 0, 1);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(215,150,255,${(0.06 + 0.26 * t).toFixed(3)})`;
+      ctx.lineWidth = lerp(2, 7, t);
+      ctx.shadowColor = "rgba(215,150,255,0.95)";
+      ctx.shadowBlur = lerp(6, 18, t);
+      ctx.beginPath();
+      ctx.arc(a.pos.x, a.pos.y, a.radius * lerp(1.05, 1.55, t), 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -1024,6 +1128,7 @@ export function createRenderer(engine) {
     ctx.restore();
 
     drawRedGiantUnderlay(ctx);
+    drawTechPing(ctx);
 
     // Asteroid sorting: draw non-attached first (behind), then the forcefield ring,
     // then attached asteroids so the "trapped" rocks always read as in front.

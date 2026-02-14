@@ -305,6 +305,8 @@ export function createEngine({ width, height, seed } = {}) {
       gate: null,
       techParts: [],
       carriedPartId: null,
+      techPing: null,
+      techPingCooldownSec: 0,
     },
     ship: makeShip("small"),
     asteroids: [],
@@ -337,6 +339,7 @@ export function createEngine({ width, height, seed } = {}) {
       up: false,
       down: false,
       burst: false,
+      ping: false,
       turnAnalog: 0, // [-1,1] optional analog turn input (UI/touch)
       thrustAnalog: 0, // [0,1] optional analog thrust input (UI/touch)
     },
@@ -440,11 +443,15 @@ export function createEngine({ width, height, seed } = {}) {
       // Round loop (RL-01..04) — deterministic star/gate/parts.
       roundDurationSec: 300,
       starSafeBufferPx: 320,
-      jumpGateRadius: 160,
-      jumpGateEdgeInsetExtraPx: 110,
+      jumpGateRadius: 190,
+      jumpGateEdgeInsetExtraPx: 160,
       jumpGateInstallPad: 60,
-      techPartRadius: 72,
+      techPartRadius: 80,
       techPartPickupPad: 20,
+      techPingSpeedPxPerSec: 2400,
+      techPingCooldownSec: 2.25,
+      techPingGlowSec: 5,
+      techPingThicknessPx: 22,
 
       starDensityScale: 1,
       starParallaxStrength: 1,
@@ -915,7 +922,7 @@ export function createEngine({ width, height, seed } = {}) {
 
   function makeJumpGate(edge) {
     const rr = makeRoundRng("jump-gate");
-    const radiusRaw = Number(state.params.jumpGateRadius ?? 160);
+    const radiusRaw = Number(state.params.jumpGateRadius ?? 190);
     const edgeInsetExtraPx = Number(state.params.jumpGateEdgeInsetExtraPx ?? 0);
     const halfW = state.world.w / 2;
     const halfH = state.world.h / 2;
@@ -951,7 +958,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function makeTechPart(index) {
-    const radiusRaw = Number(state.params.techPartRadius ?? 72);
+    const radiusRaw = Number(state.params.techPartRadius ?? 80);
     const maxR = clamp(Number(state.params.xlargeRadius ?? 90) * 0.92, 8, 220);
     const radius = clamp(radiusRaw, 2, maxR);
     return {
@@ -973,6 +980,59 @@ export function createEngine({ width, height, seed } = {}) {
       if (parts[i].id === id) return parts[i];
     }
     return null;
+  }
+
+  function techPingMaxRadius() {
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    return Math.sqrt(halfW * halfW + halfH * halfH) * 1.3;
+  }
+
+  function tryStartTechPing() {
+    if (state.mode !== "playing") return false;
+    if ((Number(state.round.techPingCooldownSec) || 0) > 0) return false;
+
+    const speed = clamp(Number(state.params.techPingSpeedPxPerSec ?? 2400), 200, 20000);
+    state.round.techPing = {
+      origin: vec(Number(state.ship.pos?.x) || 0, Number(state.ship.pos?.y) || 0),
+      radius: 0,
+      prevRadius: 0,
+      speed,
+      maxRadius: techPingMaxRadius(),
+    };
+    state.round.techPingCooldownSec = clamp(Number(state.params.techPingCooldownSec ?? 2.25), 0, 60);
+    return true;
+  }
+
+  function updateTechPing(dt) {
+    if (state.mode !== "playing") return;
+    state.round.techPingCooldownSec = Math.max(0, (Number(state.round.techPingCooldownSec) || 0) - dt);
+
+    const ping = state.round.techPing;
+    const thickness = clamp(Number(state.params.techPingThicknessPx ?? 22), 4, 240);
+    const glowSec = clamp(Number(state.params.techPingGlowSec ?? 5), 0.25, 30);
+    const origin = ping?.origin || vec(0, 0);
+
+    const prevR = ping ? Math.max(0, Number(ping.radius) || 0) : 0;
+    const nextR = ping ? prevR + Math.max(0, Number(ping.speed) || 0) * dt : 0;
+    if (ping) {
+      ping.prevRadius = prevR;
+      ping.radius = nextR;
+    }
+
+    for (let i = 0; i < state.asteroids.length; i++) {
+      const a = state.asteroids[i];
+      if (!a) continue;
+
+      if (a.techPingFxT) a.techPingFxT = Math.max(0, (Number(a.techPingFxT) || 0) - dt);
+      if (!ping || !a.techPartId) continue;
+
+      const dist = len(sub(a.pos, origin));
+      const pad = Math.max(0, Number(a.radius) || 0) + thickness;
+      if (dist >= prevR - pad && dist <= nextR + pad) a.techPingFxT = glowSec;
+    }
+
+    if (ping && nextR >= (Number(ping.maxRadius) || techPingMaxRadius())) state.round.techPing = null;
   }
 
   function endRound(kind, reason) {
@@ -1067,6 +1127,8 @@ export function createEngine({ width, height, seed } = {}) {
     state.round.elapsedSec = 0;
     state.round.outcome = null;
     state.round.carriedPartId = null;
+    state.round.techPing = null;
+    state.round.techPingCooldownSec = 0;
 
     const starEdge = pickRoundStarEdge();
     const star = makeRedGiant(starEdge);
@@ -2698,6 +2760,10 @@ export function createEngine({ width, height, seed } = {}) {
       state.input.burst = false;
       burstAttached();
     }
+    if (state.input.ping) {
+      state.input.ping = false;
+      tryStartTechPing();
+    }
     updateShip(dt);
     updateExhaust(dt);
     syncCameraToShip();
@@ -2712,6 +2778,7 @@ export function createEngine({ width, height, seed } = {}) {
     handleSaucerLaserShipCollisions();
     handleCollisions();
     if (state.mode !== "playing") return;
+    updateTechPing(dt);
     updateTechParts();
     if (state.mode !== "playing") return;
     rebuildWorldCellIndex();
@@ -2792,6 +2859,14 @@ export function createEngine({ width, height, seed } = {}) {
             }))
           : [],
         carried_part: state.round.carriedPartId || null,
+        tech_ping: state.round.techPing
+          ? {
+              x: Math.round(state.round.techPing.origin?.x || 0),
+              y: Math.round(state.round.techPing.origin?.y || 0),
+              radius: +Number(state.round.techPing.radius || 0).toFixed(1),
+              max_radius: +Number(state.round.techPing.maxRadius || 0).toFixed(1),
+            }
+          : null,
       },
       mode: state.mode,
       view: { w: state.view.w, h: state.view.h },

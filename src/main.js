@@ -76,6 +76,10 @@ import { createUiBindings } from "./ui/createUiBindings.js";
         if (isDown && !menuOpen) input.burst = true;
         e.preventDefault();
         break;
+      case "KeyQ":
+        if (isDown && !menuOpen) input.ping = true;
+        e.preventDefault();
+        break;
       case "KeyR":
         if (isDown) {
           restartGame();

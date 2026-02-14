@@ -64,6 +64,7 @@ const buttonNameToKey = {
   space: "Space",
   a: "KeyA",
   b: "KeyB",
+  q: "KeyQ",
 };
 
 async function sleep(ms) {
