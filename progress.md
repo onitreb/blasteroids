@@ -481,3 +481,39 @@ Updates
   - Validation:
     - `npm test`: `32 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
+- 2026-02-14 mobile controls + viewport scaling pass (sonar + accessibility/readability):
+  - Added a dedicated mobile `SONAR` touch button near `BURST` (`index.html`, `styles.css`, `src/ui/createUiBindings.js`).
+  - Sonar touch behavior: one-tap triggers `input.ping`; button shows live cooldown text (`SONAR 2.9s`) and cooldown visual state while ping is unavailable.
+  - Refactored touch action layout for responsive sizing using CSS clamps and safe-area insets; joystick + action buttons now scale with small mobile viewports instead of fixed px.
+  - Added `text-size-adjust: 100%` safeguards on page shell to reduce browser text inflation side-effects on touch controls.
+  - Fixed viewport/FOV coupling on high-DPI mobile: canvas backing buffer still uses DPR, but gameplay `view` now uses CSS pixel dimensions (`src/main.js`), preventing unintended in-game zoom shifts from DPI/visual scaling changes.
+  - Validation:
+    - `npm test`: `32 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright scripted run: `output/web-game/mobile-sonar-pass/shot-0.png`..`shot-2.png` + states, no `errors-*.json` generated.
+    - Mobile emulation run (Playwright iPhone 13 context): screenshot `output/web-game/mobile-sonar-pass/mobile-touch.png`; metrics `output/web-game/mobile-sonar-pass/mobile-touch-metrics.json` confirmed `touch-ui` visible, responsive button sizes (`ping 52x52`, `burst 112x56` CSS px), and sonar tap activates ping/cooldown (`techPingActive=true`, `cooldownSec=2.9`).
+  - Note: The skill-provided `$WEB_GAME_CLIENT` script failed module resolution for `playwright` from the skill directory in this environment, so equivalent repo-local Playwright client/scripted checks were used for execution.
+- 2026-02-14 follow-up desktop regression fix:
+  - Rolled back the `src/main.js` gameplay viewport sizing change that used CSS-pixel `game.resize(...)` dimensions.
+  - Restored previous resize behavior (`game.resize(rect * dpr)`) to match established desktop feel/FOV and remove the oversized/zoomed gameplay regression reported after the mobile pass.
+  - Kept the mobile touch UX improvements (SONAR button + responsive touch sizing + text-size-adjust guardrails) unchanged.
+  - Validation after rollback:
+    - `npm run build`: success.
+    - `npm test`: `32 passed, 0 failed`.
+- 2026-02-14 arena flow + round-loop polish pass (user-requested):
+  - Arena feel update:
+    - Removed asteroid world-wall bounce behavior; asteroids now leave the arena and despawn (no invisible rebound walls).
+    - Removed the rendered world boundary rectangle line to restore an unbound visual feel.
+  - Tech-part asteroid spawn placement improvements (initial seed + lost-part respawns):
+    - Kept star-safe and edge-margin constraints.
+    - Added camera-view exclusion attempts so tech-part asteroids are preferentially spawned outside the player’s current field of view when space allows.
+  - Gate completion sequence update:
+    - Replaced instant win on gate entry with a short escape sequence: ship is pulled/fly-in to gate center, shrinks/disappears, then round ends as win.
+    - Added round/ship escape telemetry in `renderGameToText` (`round.escape`, `ship.escape_scale`).
+  - Red giant asteroid consume fix/refactor:
+    - Added asteroid burn timing (`starBurnSec`) and configurable burn threshold (`starAsteroidBurnSec`) so asteroids glow orange→white briefly after crossing the boundary before despawning.
+    - Render heat now factors in burn progression for clearer pre-despawn feedback.
+  - Validation:
+    - `npm test`: `34 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright smoke artifacts: `output/web-game/arena-unbound-gate-sequence-pass/` (no `errors-*.json`).

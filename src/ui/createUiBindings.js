@@ -170,6 +170,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const touchJoystick = documentRef.getElementById("touch-joystick");
   const touchJoystickBase = documentRef.getElementById("touch-joystick-base");
   const touchJoystickKnob = documentRef.getElementById("touch-joystick-knob");
+  const touchPingBtn = documentRef.getElementById("touch-ping");
   const touchBurstBtn = documentRef.getElementById("touch-burst");
   const tuneDmg = documentRef.getElementById("tune-dmg");
   const tuneDmgOut = documentRef.getElementById("tune-dmg-out");
@@ -993,6 +994,13 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (dbgGemScore && documentRef.activeElement !== dbgGemScore) {
       dbgGemScore.value = String(clamp(Math.round(game.state.score), 0, 5000));
     }
+    if (touchPingBtn) {
+      const cooldownSec = Math.max(0, Number(game.state.round?.techPingCooldownSec) || 0);
+      const coolingDown = cooldownSec > 0.02;
+      touchPingBtn.classList.toggle("cooldown", coolingDown);
+      touchPingBtn.setAttribute("aria-disabled", coolingDown ? "true" : "false");
+      touchPingBtn.textContent = coolingDown ? `SONAR ${cooldownSec.toFixed(1)}s` : "SONAR";
+    }
   }
 
   function updateHudScore() {
@@ -1011,6 +1019,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     i.up = false;
     i.down = false;
     i.burst = false;
+    i.ping = false;
   }
 
   function syncMenuButtons() {
@@ -1217,6 +1226,36 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     touchBurstBtn.addEventListener("pointerup", release);
     touchBurstBtn.addEventListener("pointercancel", release);
     touchBurstBtn.addEventListener("lostpointercapture", () => touchBurstBtn.classList.remove("pressed"));
+  }
+
+  if (touchPingBtn) {
+    const press = (e) => {
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      if (game.state.mode !== "playing") return;
+      const cooldownSec = Math.max(0, Number(game.state.round?.techPingCooldownSec) || 0);
+      if (cooldownSec > 0.02) return;
+      game.state.input.ping = true;
+      touchPingBtn.classList.add("pressed");
+      try {
+        touchPingBtn.setPointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+      syncRuntimeDebugUi();
+    };
+    const release = (e) => {
+      if (typeof e?.preventDefault === "function") e.preventDefault();
+      touchPingBtn.classList.remove("pressed");
+      try {
+        touchPingBtn.releasePointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    touchPingBtn.addEventListener("pointerdown", press);
+    touchPingBtn.addEventListener("pointerup", release);
+    touchPingBtn.addEventListener("pointercancel", release);
+    touchPingBtn.addEventListener("lostpointercapture", () => touchPingBtn.classList.remove("pressed"));
   }
 
   return {

@@ -902,6 +902,7 @@ export function createRenderer(engine) {
 
   function drawForcefieldRings(ctx) {
     if (state.mode !== "playing") return;
+    if (state.round?.escape?.active) return;
 
     // Force field ring (where collected asteroids stick).
     const tier = currentShipTier();
@@ -1013,7 +1014,9 @@ export function createRenderer(engine) {
       ctx.restore();
     }
 
-    const starHeat = clamp(Number(a.starHeat) || 0, 0, 1);
+    const burnSecNeeded = Math.max(0.02, Number(state.params.starAsteroidBurnSec ?? 0.22));
+    const burnT = clamp((Number(a.starBurnSec) || 0) / burnSecNeeded, 0, 1);
+    const starHeat = clamp(Math.max(Number(a.starHeat) || 0, burnT), 0, 1);
     if (starHeat > 1e-3) {
       const hotRgb = lerpRgb([255, 130, 80], [255, 255, 255], clamp(starHeat * starHeat, 0, 1));
       ctx.save();
@@ -1055,9 +1058,12 @@ export function createRenderer(engine) {
     const tier = currentShipTier();
     const renderer = tier.renderer || {};
     const shipRadius = Math.max(1, Number(ship.radius) || Number(tier.radius) || 1);
+    const escapeScale = clamp(Number(ship.escapeScale) || 0, 0, 1);
+    if (escapeScale <= 1e-3) return;
     ctx.save();
     ctx.translate(ship.pos.x, ship.pos.y);
     ctx.rotate(ship.angle);
+    ctx.scale(escapeScale, escapeScale);
     ctx.strokeStyle = "rgba(231,240,255,0.95)";
     ctx.lineWidth = 2;
 
@@ -1174,13 +1180,6 @@ export function createRenderer(engine) {
     ctx.translate(w * 0.5, h * 0.5);
     ctx.scale(zoom, zoom);
     ctx.translate(-state.camera.x, -state.camera.y);
-
-    // Arena edge (phase LA-06 first pass): simple boundary line.
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.26)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-state.world.w / 2, -state.world.h / 2, state.world.w, state.world.h);
-    ctx.restore();
 
     drawRedGiantUnderlay(ctx);
     drawTechPing(ctx);
@@ -1389,9 +1388,10 @@ export function createRenderer(engine) {
       const star = state.round?.star;
       const totalSlots = gate && Array.isArray(gate.slots) ? gate.slots.length : 0;
       const installed = gate && Array.isArray(gate.slots) ? installedCountFromSlots(gate.slots) : 0;
+      const escaping = !!state.round?.escape?.active;
       const gateLine =
         gate && totalSlots > 0
-          ? `Gate: ${installed}/${totalSlots}${gate.active ? " ACTIVE" : ""}   Carry: ${state.round.carriedPartId || "—"}`
+          ? `Gate: ${installed}/${totalSlots}${gate.active ? " ACTIVE" : ""}${escaping ? " ESCAPING" : ""}   Carry: ${state.round.carriedPartId || "—"}`
           : "";
       const starLine = star ? `Star: ${String(star.edge).toUpperCase()}` : "";
       ctx.fillText(

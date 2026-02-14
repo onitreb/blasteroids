@@ -38,6 +38,7 @@ function makeTestAsteroid(engine, { id, size, x, y, vx = 0, vy = 0 }) {
     fractureCooldownT: 0,
     hitFxT: 0,
     pullFx: 0,
+    starBurnSec: 0,
   };
 }
 
@@ -165,7 +166,7 @@ test("carried tech part installs into the gate when in range", () => {
   assert.equal(engine.state.round.gate.active, false);
 });
 
-test("escape through an active gate ends the round as a win", () => {
+test("escape through an active gate runs the center-in vanish sequence then wins", () => {
   const engine = createEngine({ width: 900, height: 540, seed: 9 });
   engine.startGame();
   engine.state.asteroids = [];
@@ -186,8 +187,15 @@ test("escape through an active gate ends the round as a win", () => {
   assert.equal(engine.state.mode, "playing");
   assert.equal(engine.state.round.gate.active, false);
 
-  // After charge-up, entering the portal ends the round.
+  // After charge-up, entering the portal starts the escape sequence.
   engine.update((engine.state.round.gate.chargeSec || 2) + 0.01);
+  assert.equal(engine.state.mode, "playing");
+  assert.ok(engine.state.round.escape && engine.state.round.escape.active);
+
+  // Finish approach + vanish.
+  const totalEscapeSec =
+    (engine.state.params.jumpGateEscapeApproachSec || 0.75) + (engine.state.params.jumpGateEscapeVanishSec || 0.26);
+  engine.update(totalEscapeSec + 0.05);
   assert.equal(engine.state.mode, "gameover");
   assert.equal(engine.state.round.outcome.kind, "win");
   assert.equal(engine.state.round.outcome.reason, "escaped");
@@ -229,6 +237,68 @@ test("lost tech parts respawn inside new XL asteroids in the star safe region", 
       else assert.ok(a.pos.y + a.radius <= star.boundary - buffer);
     }
   }
+});
+
+test("lost tech parts respawn outside current camera view when space allows", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 212 });
+  engine.startGame();
+  engine.state.asteroids = [];
+  engine.state.gems = [];
+  engine.state.saucer = null;
+  engine.state.saucerLasers = [];
+  engine.state.camera.mode = "centered";
+  engine.state.camera.x = 0;
+  engine.state.camera.y = 0;
+
+  for (const part of engine.state.round.techParts) {
+    part.state = "lost";
+    part.containerAsteroidId = null;
+    part.respawnCount = 0;
+  }
+
+  engine.update(0);
+
+  const zoom = Math.max(0.1, engine.state.camera.zoom || 1);
+  const halfW = engine.state.view.w * 0.5 / zoom;
+  const halfH = engine.state.view.h * 0.5 / zoom;
+  for (const part of engine.state.round.techParts) {
+    const asteroid = engine.state.asteroids.find((it) => it.id === part.containerAsteroidId);
+    assert.ok(asteroid, `expected respawn asteroid for ${part.id}`);
+    const inX = Math.abs(asteroid.pos.x - engine.state.camera.x) <= halfW + asteroid.radius + 120;
+    const inY = Math.abs(asteroid.pos.y - engine.state.camera.y) <= halfH + asteroid.radius + 120;
+    assert.equal(inX && inY, false, `expected ${part.id} asteroid outside camera exclusion view`);
+  }
+});
+
+test("asteroids crossing red giant boundary burn briefly before despawn", () => {
+  const engine = createEngine({ width: 900, height: 540, seed: 313 });
+  engine.startGame();
+  engine.state.gems = [];
+  engine.state.saucer = null;
+  engine.state.saucerLasers = [];
+  engine.state.round.durationSec = 1e9;
+  engine.state.round.elapsedSec = engine.state.round.durationSec * 0.2;
+  engine.update(0);
+
+  const star = engine.state.round.star;
+  const dir = star.dir === 1 ? 1 : -1;
+  const asteroid = makeTestAsteroid(engine, { id: "burn-test", size: "small", x: 0, y: 0, vx: 0, vy: 0 });
+  if (star.axis === "x") {
+    asteroid.pos.x = star.boundary - dir * asteroid.radius * 0.4;
+    asteroid.pos.y = 0;
+  } else {
+    asteroid.pos.x = 0;
+    asteroid.pos.y = star.boundary - dir * asteroid.radius * 0.4;
+  }
+  engine.state.asteroids = [asteroid];
+
+  engine.update(0.05);
+  assert.ok(engine.state.asteroids.find((a) => a.id === "burn-test"), "asteroid should remain while burning");
+  assert.ok((engine.state.asteroids[0].starHeat || 0) > 0, "asteroid should show star heat before despawn");
+
+  const burnSec = Number(engine.state.params.starAsteroidBurnSec || 0.22);
+  engine.update(burnSec + 0.25);
+  assert.equal(engine.state.asteroids.some((a) => a.id === "burn-test"), false);
 });
 
 test("tech part respawn placement is deterministic and ignores gameplay RNG consumption", () => {

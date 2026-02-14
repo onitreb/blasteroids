@@ -5,6 +5,12 @@
   --muted: rgba(231, 240, 255, 0.72);
   --accent: #56b7ff;
   --danger: #ff5964;
+  --touch-ui-edge: clamp(10px, 2.4vmin, 20px);
+  --touch-joystick-size: clamp(112px, 29vmin, 170px);
+  --touch-burst-width: clamp(112px, 26vmin, 150px);
+  --touch-burst-height: clamp(56px, 14vmin, 78px);
+  --touch-ping-size: clamp(52px, 12vmin, 68px);
+  --touch-button-font: clamp(10px, 2.5vmin, 14px);
 }
 
 html,
@@ -16,6 +22,8 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
     "Segoe UI Emoji";
   overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #wrap {
@@ -62,10 +70,10 @@ canvas {
 
 #touch-joystick {
   position: absolute;
-  left: 18px;
-  bottom: 18px;
-  width: 170px;
-  height: 170px;
+  left: calc(var(--touch-ui-edge) + env(safe-area-inset-left));
+  bottom: calc(var(--touch-ui-edge) + env(safe-area-inset-bottom));
+  width: var(--touch-joystick-size);
+  height: var(--touch-joystick-size);
   pointer-events: auto;
   touch-action: none;
 }
@@ -108,18 +116,54 @@ canvas {
   transition: none;
 }
 
-#touch-burst {
+#touch-actions {
   position: absolute;
-  right: 18px;
-  bottom: 26px;
-  width: 150px;
-  height: 78px;
-  border-radius: 18px;
+  right: calc(var(--touch-ui-edge) + env(safe-area-inset-right));
+  bottom: calc(var(--touch-ui-edge) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: clamp(8px, 2vmin, 12px);
   pointer-events: auto;
+}
+
+#touch-ping,
+#touch-burst {
+  font-size: var(--touch-button-font);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-width: 1px;
+}
+
+#touch-ping {
+  width: var(--touch-ping-size);
+  height: var(--touch-ping-size);
+  border-radius: 999px;
+  touch-action: none;
+  background: rgba(146, 117, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(236, 228, 255, 0.96);
+}
+
+#touch-ping:active,
+#touch-ping.pressed {
+  background: rgba(146, 117, 255, 0.34);
+}
+
+#touch-ping.cooldown {
+  opacity: 0.72;
+  background: rgba(104, 97, 130, 0.3);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+#touch-burst {
+  position: relative;
+  width: var(--touch-burst-width);
+  height: var(--touch-burst-height);
+  border-radius: 18px;
   touch-action: none;
   background: rgba(255, 89, 100, 0.16);
   border-color: rgba(255, 255, 255, 0.20);
-  letter-spacing: 0.08em;
 }
 
 #touch-burst:active,

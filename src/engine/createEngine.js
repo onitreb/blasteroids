@@ -279,6 +279,7 @@ function makeShip(tierKey = "small") {
     radius: tier.radius,
     mass: tier.mass,
     tier: tier.key,
+    escapeScale: 1,
   };
 }
 
@@ -311,6 +312,7 @@ export function createEngine({ width, height, seed } = {}) {
       techPing: null,
       techPingCooldownSec: 0,
       starExposureSec: 0,
+      escape: null,
     },
     ship: makeShip("small"),
     asteroids: [],
@@ -451,6 +453,8 @@ export function createEngine({ width, height, seed } = {}) {
       jumpGateEdgeInsetExtraPx: 160,
       jumpGateInstallPad: 60,
       jumpGateChargeSec: 2,
+      jumpGateEscapeApproachSec: 0.75,
+      jumpGateEscapeVanishSec: 0.26,
       techPartRadius: 80,
       techPartPickupPad: 20,
       techPingSpeedPxPerSec: 2400,
@@ -460,6 +464,7 @@ export function createEngine({ width, height, seed } = {}) {
       techPartEdgeMarginPx: 520,
       shipStarKillSec: 3,
       shipStarCoolRate: 1.6,
+      starAsteroidBurnSec: 0.22,
       wallRestitution: 0.65,
 
       starDensityScale: 1,
@@ -640,6 +645,7 @@ export function createEngine({ width, height, seed } = {}) {
       orbitA: 0, // ship-local angle (radians) when attached
       fractureCooldownT: 0,
       hitFxT: 0,
+      starBurnSec: 0,
       techPartId: null,
     };
   }
@@ -958,6 +964,71 @@ export function createEngine({ width, height, seed } = {}) {
     return null;
   }
 
+  function clampPointInsideWorld(point, edgeMargin) {
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const margin = clamp(Number(edgeMargin) || 0, 0, Math.min(halfW, halfH) - 2);
+    return {
+      x: clamp(Number(point?.x) || 0, -halfW + margin, halfW - margin),
+      y: clamp(Number(point?.y) || 0, -halfH + margin, halfH - margin),
+    };
+  }
+
+  function pointInsideAnyView(point, radius, marginPx = 0) {
+    const views = currentSpawnExclusionViews();
+    for (let i = 0; i < views.length; i++) {
+      if (isInsideViewRect(point, radius, views[i], marginPx)) return true;
+    }
+    return false;
+  }
+
+  function pointTooCloseToList(point, points, minSeparation) {
+    const minD2 = Math.max(0, Number(minSeparation) || 0) ** 2;
+    if (minD2 <= 0) return false;
+    for (let i = 0; i < points.length; i++) {
+      const dx = Number(point.x) - Number(points[i].x);
+      const dy = Number(point.y) - Number(points[i].y);
+      if (dx * dx + dy * dy < minD2) return true;
+    }
+    return false;
+  }
+
+  function pickTechPartAsteroidPoint({
+    rect,
+    edgeMarginWanted,
+    asteroidRadius,
+    rngFn = null,
+    avoidViews = true,
+    viewMarginPx = 120,
+    minSeparation = 0,
+    existingPoints = [],
+  }) {
+    if (!rect) return null;
+    const rr = typeof rngFn === "function" ? rngFn : rng;
+    let fallback = null;
+    let fallbackScore = -Infinity;
+
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const raw = randomPointInRect(rect, rr);
+      const cand = clampPointInsideWorld(raw, edgeMarginWanted);
+      const insideView = avoidViews && pointInsideAnyView(cand, asteroidRadius, viewMarginPx);
+      const tooClose = pointTooCloseToList(cand, existingPoints, minSeparation);
+
+      if (!insideView && !tooClose) return cand;
+
+      const dx = Number(state.camera.x) - Number(cand.x);
+      const dy = Number(state.camera.y) - Number(cand.y);
+      const camDist = Math.hypot(dx, dy);
+      const score = camDist - (insideView ? 1e6 : 0) - (tooClose ? 1e5 : 0);
+      if (score > fallbackScore) {
+        fallback = cand;
+        fallbackScore = score;
+      }
+    }
+
+    return fallback;
+  }
+
   function makeJumpGate(edge) {
     const rr = makeRoundRng("jump-gate");
     const radiusRaw = Number(state.params.jumpGateRadius ?? 190);
@@ -1078,8 +1149,68 @@ export function createEngine({ width, height, seed } = {}) {
 
   function endRound(kind, reason) {
     if (state.mode !== "playing") return;
+    if (state.round.escape?.active) state.round.escape.active = false;
     state.round.outcome = { kind, reason };
     state.mode = "gameover";
+  }
+
+  function startGateEscapeSequence(gate) {
+    if (!gate || !gate.active) return false;
+    if (state.round.escape?.active) return true;
+    const approachSec = clamp(Number(state.params.jumpGateEscapeApproachSec ?? 0.75), 0.1, 4);
+    const vanishSec = clamp(Number(state.params.jumpGateEscapeVanishSec ?? 0.26), 0.05, 4);
+    state.round.escape = {
+      active: true,
+      elapsedSec: 0,
+      approachSec,
+      vanishSec,
+      startPos: vec(Number(state.ship.pos?.x) || 0, Number(state.ship.pos?.y) || 0),
+      startAngle: Number(state.ship.angle) || 0,
+    };
+    state.ship.vel = vec(0, 0);
+    state.ship.escapeScale = 1;
+    state.input.left = false;
+    state.input.right = false;
+    state.input.up = false;
+    state.input.down = false;
+    state.input.burst = false;
+    state.input.ping = false;
+    state.input.turnAnalog = 0;
+    state.input.thrustAnalog = 0;
+    return true;
+  }
+
+  function updateGateEscapeSequence(dt) {
+    const esc = state.round.escape;
+    const gate = state.round.gate;
+    if (!esc?.active || !gate) return false;
+    const stepDt = Math.max(0, Number(dt) || 0);
+    esc.elapsedSec += stepDt;
+    const approachSec = Math.max(0.001, Number(esc.approachSec) || 0.75);
+    const vanishSec = Math.max(0.001, Number(esc.vanishSec) || 0.26);
+    const approachT = clamp(esc.elapsedSec / approachSec, 0, 1);
+    const ease = 1 - (1 - approachT) * (1 - approachT);
+
+    state.ship.pos.x = lerp(Number(esc.startPos?.x) || 0, Number(gate.pos?.x) || 0, ease);
+    state.ship.pos.y = lerp(Number(esc.startPos?.y) || 0, Number(gate.pos?.y) || 0, ease);
+    state.ship.vel.x = 0;
+    state.ship.vel.y = 0;
+    const spinTurns = 0.8;
+    state.ship.angle = wrapAngle((Number(esc.startAngle) || 0) + approachT * Math.PI * 2 * spinTurns);
+
+    if (esc.elapsedSec <= approachSec) {
+      state.ship.escapeScale = 1;
+      return true;
+    }
+
+    const vanishT = clamp((esc.elapsedSec - approachSec) / vanishSec, 0, 1);
+    state.ship.escapeScale = 1 - vanishT;
+    if (vanishT >= 1) {
+      state.ship.escapeScale = 0;
+      endRound("win", "escaped");
+      return true;
+    }
+    return true;
   }
 
   function dropTechPartFromAsteroid(asteroid, { lost = false } = {}) {
@@ -1144,14 +1275,28 @@ export function createEngine({ width, height, seed } = {}) {
     const placementRng = makeRoundRng("tech-part-placement");
     const minSep = clamp(Math.min(state.world.w, state.world.h) * 0.22, asteroidR * 2.4, Math.min(state.world.w, state.world.h) * 0.65);
     const points = generateSeparatedPoints(parts.length, rect, { minSeparation: minSep, rngFn: placementRng });
+    const placed = [];
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const pRaw = points[i] || randomPointInRect(rect, placementRng);
-      const p = {
-        x: clamp(pRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
-        y: clamp(pRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted),
-      };
+      const pClamped = clampPointInsideWorld(pRaw, edgeMarginWanted);
+      const pNeedsRelocate =
+        pointInsideAnyView(pClamped, asteroidR, 120) || pointTooCloseToList(pClamped, placed, minSep * 0.85);
+      const p =
+        (pNeedsRelocate
+          ? pickTechPartAsteroidPoint({
+              rect,
+              edgeMarginWanted,
+              asteroidRadius: asteroidR,
+              rngFn: placementRng,
+              avoidViews: true,
+              viewMarginPx: 120,
+              minSeparation: minSep * 0.85,
+              existingPoints: placed,
+            })
+          : pClamped) || pClamped;
+      placed.push(p);
       const rr = makeRoundRng(`tech-part-${i}`);
       const speed = lerp(12, 46, rr());
       const ang = rr() * Math.PI * 2;
@@ -1177,6 +1322,7 @@ export function createEngine({ width, height, seed } = {}) {
     state.round.techPing = null;
     state.round.techPingCooldownSec = 0;
     state.round.starExposureSec = 0;
+    state.round.escape = null;
 
     const starEdge = pickRoundStarEdge();
     const star = makeRedGiant(starEdge);
@@ -1227,11 +1373,13 @@ export function createEngine({ width, height, seed } = {}) {
   function applyRedGiantHazard() {
     const star = state.round.star;
     if (!star) return;
+    const burnSecNeeded = clamp(Number(state.params.starAsteroidBurnSec ?? 0.22), 0.02, 2);
 
     // Asteroids: destroyed when consumed; tech parts inside are lost (respawned later).
     for (let i = state.asteroids.length - 1; i >= 0; i--) {
       const a = state.asteroids[i];
       if (!starConsumesBody(a, star)) continue;
+      if ((Number(a.starBurnSec) || 0) < burnSecNeeded) continue;
       if (a.techPartId) dropTechPartFromAsteroid(a, { lost: true });
       state.asteroids.splice(i, 1);
     }
@@ -1313,6 +1461,7 @@ export function createEngine({ width, height, seed } = {}) {
         starSafeRect(star, { bufferPx: bufferWanted, marginPx: margin }) ||
         starSafeRect(star, { bufferPx: bufferMin, marginPx: margin });
       if (rect) {
+        const respawnedPoints = [];
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
           if (!part || part.state !== "lost") continue;
@@ -1322,11 +1471,18 @@ export function createEngine({ width, height, seed } = {}) {
 
           const nextCount = Math.max(0, Number(part.respawnCount) || 0) + 1;
           const rr = makeRoundRng(`tech-part-respawn-${part.id}-${nextCount}`);
-          const pickedRaw = randomPointInRect(rect, rr);
-          const picked = {
-            x: clamp(pickedRaw.x, -halfW + edgeMarginWanted, halfW - edgeMarginWanted),
-            y: clamp(pickedRaw.y, -halfH + edgeMarginWanted, halfH - edgeMarginWanted),
-          };
+          const picked =
+            pickTechPartAsteroidPoint({
+              rect,
+              edgeMarginWanted,
+              asteroidRadius: asteroidR,
+              rngFn: rr,
+              avoidViews: true,
+              viewMarginPx: 120,
+              minSeparation: asteroidR * 2.2,
+              existingPoints: respawnedPoints,
+            }) || clampPointInsideWorld(randomPointInRect(rect, rr), edgeMarginWanted);
+          respawnedPoints.push(picked);
 
           const speed = lerp(12, 46, rr());
           const ang = rr() * Math.PI * 2;
@@ -1430,7 +1586,7 @@ export function createEngine({ width, height, seed } = {}) {
     // Win condition: enter active gate.
     if (gate?.active) {
       const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
-      if (len2(sub(ship.pos, gate.pos)) <= r * r) endRound("win", "escaped");
+      if (len2(sub(ship.pos, gate.pos)) <= r * r) startGateEscapeSequence(gate);
     }
   }
 
@@ -1942,6 +2098,7 @@ export function createEngine({ width, height, seed } = {}) {
     ship.pos.y = clamp(Number(pos.y) || 0, -halfH + r, halfH - r);
     ship.vel.x = 0;
     ship.vel.y = 0;
+    ship.escapeScale = 1;
     syncCameraToShip();
     return true;
   }
@@ -2396,9 +2553,6 @@ export function createEngine({ width, height, seed } = {}) {
     const attractRadius = currentAttractRadius();
     const forceFieldRadius = currentForceFieldRadius();
     const attractRadius2 = attractRadius * attractRadius;
-    const halfW = state.world.w / 2;
-    const halfH = state.world.h / 2;
-    const wallRest = clamp(Number(state.params.wallRestitution ?? 0.65), 0, 0.98);
     const star = state.round?.star;
     const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
 
@@ -2490,25 +2644,10 @@ export function createEngine({ width, height, seed } = {}) {
       if (a.pullFx < 1e-4) a.pullFx = 0;
 
       a.pos = add(a.pos, mul(a.vel, dt));
-
-      // World boundary walls: keep asteroids inside the arena (no silent escapes).
-      const minX = -halfW + a.radius;
-      const maxX = halfW - a.radius;
-      const minY = -halfH + a.radius;
-      const maxY = halfH - a.radius;
-      if (a.pos.x < minX) {
-        a.pos.x = minX;
-        if (a.vel.x < 0) a.vel.x = -a.vel.x * wallRest;
-      } else if (a.pos.x > maxX) {
-        a.pos.x = maxX;
-        if (a.vel.x > 0) a.vel.x = -a.vel.x * wallRest;
-      }
-      if (a.pos.y < minY) {
-        a.pos.y = minY;
-        if (a.vel.y < 0) a.vel.y = -a.vel.y * wallRest;
-      } else if (a.pos.y > maxY) {
-        a.pos.y = maxY;
-        if (a.vel.y > 0) a.vel.y = -a.vel.y * wallRest;
+      if (isOutsideWorld(a, 24)) {
+        if (a.techPartId) dropTechPartFromAsteroid(a, { lost: true });
+        state.asteroids.splice(i, 1);
+        continue;
       }
 
       // Star "heat up" as the boundary approaches.
@@ -2517,8 +2656,16 @@ export function createEngine({ width, height, seed } = {}) {
         const dir = star.dir === 1 ? 1 : -1;
         const signedDist = (axisPos - Number(star.boundary || 0)) * dir - a.radius;
         a.starHeat = clamp(1 - signedDist / Math.max(1, heatBand), 0, 1);
+        if (signedDist < 0) {
+          const burnDepth = clamp(-signedDist / Math.max(8, a.radius), 0, 3);
+          const nextBurn = (Number(a.starBurnSec) || 0) + dt * (0.6 + burnDepth * 1.4);
+          a.starBurnSec = clamp(nextBurn, 0, 4);
+        } else {
+          a.starBurnSec = Math.max(0, (Number(a.starBurnSec) || 0) - dt * 1.2);
+        }
       } else {
         a.starHeat = 0;
+        a.starBurnSec = 0;
       }
       a.rot += a.rotVel * dt;
     }
@@ -2868,6 +3015,21 @@ export function createEngine({ width, height, seed } = {}) {
 
   function update(dt) {
     if (state.mode !== "playing") return;
+    if (state.round.escape?.active) {
+      state.time += dt;
+      state.burstCooldown = Math.max(0, state.burstCooldown - dt);
+      state.blastPulseT = Math.max(0, state.blastPulseT - dt);
+      state.progression.tierShiftT = Math.max(0, state.progression.tierShiftT - dt);
+      updateCameraZoom(dt);
+      for (let i = state.effects.length - 1; i >= 0; i--) {
+        const e = state.effects[i];
+        e.t += dt;
+        if (e.t >= e.ttl) state.effects.splice(i, 1);
+      }
+      updateGateEscapeSequence(dt);
+      syncCameraToShip();
+      return;
+    }
     updateRound(dt);
     if (state.mode !== "playing") return;
     state.time += dt;
@@ -2999,6 +3161,14 @@ export function createEngine({ width, height, seed } = {}) {
               max_radius: +Number(state.round.techPing.maxRadius || 0).toFixed(1),
             }
           : null,
+        escape: state.round.escape
+          ? {
+              active: !!state.round.escape.active,
+              elapsed_sec: +Number(state.round.escape.elapsedSec || 0).toFixed(3),
+              approach_sec: +Number(state.round.escape.approachSec || 0).toFixed(3),
+              vanish_sec: +Number(state.round.escape.vanishSec || 0).toFixed(3),
+            }
+          : null,
       },
       mode: state.mode,
       view: { w: state.view.w, h: state.view.h },
@@ -3031,6 +3201,7 @@ export function createEngine({ width, height, seed } = {}) {
         angle: +ship.angle.toFixed(3),
         tier: ship.tier,
         radius: +ship.radius.toFixed(2),
+        escape_scale: +Number(ship.escapeScale ?? 1).toFixed(3),
       },
       saucer: state.saucer
         ? {
