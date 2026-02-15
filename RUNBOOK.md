@@ -67,3 +67,10 @@ Use a repo-local npm cache:
 ## Notes On Repo Design
 - Runtime is kept `file://`-friendly by bundling to a single **IIFE** script (`dist/blasteroids.js`).
 - During refactors, we commit `dist/blasteroids.js` so anyone can run the game without installing tooling.
+
+## Multiplayer (LAN) Server (MVP)
+Run the LAN server (serves static client + Colyseus websocket on the same port):
+- `npm run lan:server`
+
+Options:
+- `npm run lan:server -- --port 2567` (default port is 2567)
