@@ -608,6 +608,19 @@
         smallCount: 22,
         restitution: 0.92,
         fractureImpactSpeed: 275,
+        // < 0 makes larger asteroids a bit weaker per unit mass (size-effect realism).
+        // This counteracts "XL feels impossible" without making small/med paper-thin.
+        fractureSizeStrengthExp: -0.8,
+        // Below-threshold impacts can accumulate "chip damage" that decays over time.
+        // This lets repeated hits break XL/XXL even when a single hit is insufficient.
+        fractureChipScale: 1,
+        fractureChipDecaySec: 3,
+        fractureChipMinSpeed: 140,
+        // Glancing impacts: normal-only fracture feels "wrong" for big ship-slung rocks.
+        // We allow ship-launched asteroids to contribute some tangential (shear) speed to fracture energy,
+        // scaled by the amount of normal closing speed (friction-ish).
+        fractureShearWeightLaunched: 0.85,
+        fractureShearNormalRefSpeed: 120,
         projectileImpactScale: 1.35,
         maxAsteroids: 4e3,
         asteroidWorldDensityScale: 0.32,
@@ -807,6 +820,7 @@
         orbitA: 0,
         // ship-local angle (radians) when attached
         fractureCooldownT: 0,
+        fractureDamage: 0,
         hitFxT: 0,
         starBurnSec: 0,
         techPartId: null
@@ -2024,6 +2038,39 @@
       const b = Math.max(1, Number(bMass) || 1);
       return a * b / (a + b);
     }
+    function closingSpeedAlongNormal(a, b, n) {
+      if (!a || !b)
+        return 0;
+      const nn = n && Number.isFinite(n.x) && Number.isFinite(n.y) ? n : vec(1, 0);
+      const rv = sub(b.vel, a.vel);
+      const velAlongNormal = dot(rv, nn);
+      return Math.max(0, -velAlongNormal);
+    }
+    function impactSpeeds(a, b, n) {
+      if (!a || !b)
+        return { vN: 0, vT: 0, vRel: 0 };
+      const nn = n && Number.isFinite(n.x) && Number.isFinite(n.y) ? n : vec(1, 0);
+      const rv = sub(b.vel, a.vel);
+      const vRel2 = len2(rv);
+      const vRel = Math.sqrt(Math.max(0, vRel2));
+      const velAlongNormal = dot(rv, nn);
+      const vN = Math.max(0, -velAlongNormal);
+      const vT2 = Math.max(0, vRel2 - velAlongNormal * velAlongNormal);
+      const vT = Math.sqrt(vT2);
+      return { vN, vT, vRel };
+    }
+    function fractureImpactSpeed(projectile, target, n) {
+      const { vN, vT } = impactSpeeds(projectile, target, n);
+      if (!(vN > 0) || !(vT > 0) || !projectile?.shipLaunched)
+        return vN;
+      const w = clamp(Number(state.params.fractureShearWeightLaunched ?? 0), 0, 2);
+      if (w <= 0)
+        return vN;
+      const ref = Math.max(1e-6, Number(state.params.fractureShearNormalRefSpeed ?? 120));
+      const shearGate = clamp(vN / ref, 0, 1);
+      const slip = vT * w * shearGate;
+      return Math.sqrt(vN * vN + slip * slip);
+    }
     function fractureSizeBias(targetSize) {
       const rank = asteroidSizeRank(targetSize);
       return 1 + rank * FRACTURE_SIZE_BIAS_PER_RANK;
@@ -2033,24 +2080,40 @@
       const baseSpeed = Math.max(1, Number(state.params.fractureImpactSpeed) || 0);
       const sizeBias = fractureSizeBias(target?.size);
       const speed = baseSpeed * sizeBias;
-      const tough = target?.size === "xxlarge" ? 0.8 : target?.size === "xlarge" ? 0.84 : target?.size === "large" ? 0.92 : target?.size === "small" ? 1.08 : 1;
-      return 0.25 * targetMass * speed * speed * tough;
+      const refR = Math.max(1, asteroidRadiusForSize(state.params, "med"));
+      const r = Math.max(1, Number(target?.radius) || refR);
+      const exp = clamp(Number(state.params.fractureSizeStrengthExp ?? 0), -2, 2);
+      const sizeStrength = Math.pow(r / refR, exp);
+      return 0.25 * targetMass * speed * speed * sizeStrength;
     }
-    function impactEnergy(projectile, target, relativeSpeed) {
-      const rel = Math.max(0, Number(relativeSpeed) || 0);
+    function impactEnergy(projectile, target, impactSpeed) {
+      const rel = Math.max(0, Number(impactSpeed) || 0);
       const mu = reducedMass(projectile?.mass, target?.mass);
       const base = 0.5 * mu * rel * rel;
       const boostRaw = Number(state.params.projectileImpactScale ?? 1);
       const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
       return base * boost;
     }
-    function impactEnergyAgainstFixed(projectile, impactSpeed) {
+    function applyFractureChipDamage(target, energy, threshold, impactSpeed) {
+      if (!target)
+        return false;
+      if ((target.fractureCooldownT || 0) > 0)
+        return false;
+      if (energy >= threshold)
+        return true;
+      const minSpeed = Math.max(0, Number(state.params.fractureChipMinSpeed ?? 0));
       const speed = Math.max(0, Number(impactSpeed) || 0);
-      const mass = Math.max(1, Number(projectile?.mass) || 1);
-      const base = 0.5 * mass * speed * speed;
-      const boostRaw = Number(state.params.projectileImpactScale ?? 1);
-      const boost = projectile?.shipLaunched ? clamp(boostRaw, 0.2, 4) : 1;
-      return base * boost;
+      if (speed < minSpeed)
+        return false;
+      const scale = clamp(Number(state.params.fractureChipScale ?? 0), 0, 5);
+      if (scale <= 0)
+        return false;
+      if (!Number.isFinite(target.fractureDamage))
+        target.fractureDamage = 0;
+      const denom = Math.max(1e-6, threshold);
+      const next = target.fractureDamage + energy / denom * scale;
+      target.fractureDamage = clamp(next, 0, 1);
+      return target.fractureDamage >= 1;
     }
     function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       state.effects.push({
@@ -2582,6 +2645,7 @@
       const attractRadius2 = attractRadius * attractRadius;
       const star = state.round?.star;
       const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
+      const chipDecaySec = Math.max(0, Number(state.params.fractureChipDecaySec ?? 0));
       const attached = state.asteroids.filter((a) => a.attached);
       if (attached.length >= 2) {
         const iters = 3;
@@ -2605,6 +2669,13 @@
       }
       for (let i = state.asteroids.length - 1; i >= 0; i--) {
         const a = state.asteroids[i];
+        if (!Number.isFinite(a.fractureDamage))
+          a.fractureDamage = 0;
+        if (chipDecaySec > 0 && a.fractureDamage > 0) {
+          a.fractureDamage *= Math.exp(-dt / Math.max(1e-3, chipDecaySec));
+          if (a.fractureDamage < 1e-4)
+            a.fractureDamage = 0;
+        }
         if (a.attached) {
           a.pos = orbitPosFor(a);
           a.rot += a.rotVel * dt;
@@ -2888,15 +2959,19 @@
       for (const a of state.asteroids) {
         if (a.attached)
           continue;
-        const impactSpeed = len(a.vel);
-        if (a.shipLaunched && circleHit(state.ship, a)) {
+        const shipHit = circleCollide(state.ship, a);
+        if (!shipHit)
+          continue;
+        const impactSpeedN = closingSpeedAlongNormal(state.ship, a, shipHit.n);
+        const impactSpeedF = fractureImpactSpeed(a, state.ship, mul(shipHit.n, -1));
+        if (a.shipLaunched) {
           if (a.size === "small") {
             breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
           } else {
-            const energy = impactEnergyAgainstFixed(a, impactSpeed);
+            const energy = impactEnergy(a, state.ship, impactSpeedF);
             const threshold = fractureEnergyThreshold(a);
             if (energy >= threshold) {
-              const frags = fractureAsteroid(a, norm(a.vel), impactSpeed);
+              const frags = fractureAsteroid(a, norm(a.vel), impactSpeedN);
               if (frags) {
                 if (a.techPartId)
                   dropTechPartFromAsteroid(a);
@@ -2914,23 +2989,21 @@
           continue;
         }
         if (a.size === "small") {
-          if (circleHit(state.ship, a)) {
-            const energy = impactEnergyAgainstFixed(a, impactSpeed);
-            const threshold = fractureEnergyThreshold(a);
-            if (energy >= threshold) {
-              breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-            }
+          const energy = impactEnergy(a, state.ship, impactSpeedF);
+          const threshold = fractureEnergyThreshold(a);
+          const shouldBreak = applyFractureChipDamage(a, energy, threshold, impactSpeedF);
+          if (shouldBreak) {
+            breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+          } else {
+            resolveElasticCollision(state.ship, a, shipHit.n, shipHit.penetration);
           }
           continue;
         }
-        const hit = circleCollide(state.ship, a);
-        if (!hit)
-          continue;
         if (state.settings.shipExplodesOnImpact) {
           endRound("lose", "ship_impact");
           return;
         }
-        resolveElasticCollision(state.ship, a, hit.n, hit.penetration);
+        resolveElasticCollision(state.ship, a, shipHit.n, shipHit.penetration);
       }
       if (shipRemovals.size) {
         state.asteroids = state.asteroids.filter((a) => !shipRemovals.has(a.id));
@@ -2951,14 +3024,15 @@
         const hit = circleCollide(a, b);
         if (!hit)
           return;
-        const rv = sub(b.vel, a.vel);
-        const relSpeed = len(rv);
-        const aEnergy = impactEnergy(a, b, relSpeed);
-        const bEnergy = impactEnergy(b, a, relSpeed);
+        const impactSpeedN = closingSpeedAlongNormal(a, b, hit.n);
+        const aImpactSpeedF = fractureImpactSpeed(a, b, hit.n);
+        const bImpactSpeedF = fractureImpactSpeed(b, a, mul(hit.n, -1));
+        const aEnergy = impactEnergy(a, b, aImpactSpeedF);
+        const bEnergy = impactEnergy(b, a, bImpactSpeedF);
         const aThreshold = fractureEnergyThreshold(b);
         const bThreshold = fractureEnergyThreshold(a);
-        const aCanFracture = aEnergy >= aThreshold;
-        const bCanFracture = bEnergy >= bThreshold;
+        const aCanFracture = applyFractureChipDamage(b, aEnergy, aThreshold, aImpactSpeedF);
+        const bCanFracture = applyFractureChipDamage(a, bEnergy, bThreshold, bImpactSpeedF);
         if (aCanFracture || bCanFracture) {
           resolveElasticCollision(a, b, hit.n, hit.penetration);
           const interactions = [];
@@ -2984,7 +3058,7 @@
               state.score += 1;
               continue;
             }
-            const frags = fractureAsteroid(target, it.impactDir, relSpeed);
+            const frags = fractureAsteroid(target, it.impactDir, impactSpeedN);
             if (frags) {
               if (target.techPartId)
                 dropTechPartFromAsteroid(target);
@@ -2996,12 +3070,12 @@
             spawnExplosion(target.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
             const massRatio = projectile.mass > 0 && target.mass > 0 ? projectile.mass / target.mass : 1;
             const shoveScale = Math.min(1, Math.max(0, massRatio));
-            const shove = Math.min(180, relSpeed * 0.5 * shoveScale);
+            const shove = Math.min(180, impactSpeedN * 0.5 * shoveScale);
             target.vel = add(target.vel, mul(it.impactDir, shove));
           }
           return;
         }
-        if (relSpeed > 190 && (a.hitFxT <= 0 || b.hitFxT <= 0)) {
+        if (impactSpeedN > 190 && (a.hitFxT <= 0 || b.hitFxT <= 0)) {
           const mid = mul(add(a.pos, b.pos), 0.5);
           spawnExplosion(mid, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 16, ttl: 0.12 });
           a.hitFxT = 0.08;
@@ -4582,6 +4656,12 @@
     "tune-exhaust-jets",
     "tune-dmg",
     "tune-fracture",
+    "tune-fracture-sizeexp",
+    "tune-fracture-chip",
+    "tune-fracture-decay",
+    "tune-fracture-minspeed",
+    "tune-fracture-shear",
+    "tune-fracture-shearref",
     "tune-world-density",
     "tune-spawn-rate",
     "tune-xl-radius",
@@ -4721,6 +4801,30 @@
     const tuneFractureOut = documentRef.getElementById("tune-fracture-out");
     const tuneFractureSave = documentRef.getElementById("tune-fracture-save");
     const tuneFractureDefault = documentRef.getElementById("tune-fracture-default");
+    const tuneFractureSizeExp = documentRef.getElementById("tune-fracture-sizeexp");
+    const tuneFractureSizeExpOut = documentRef.getElementById("tune-fracture-sizeexp-out");
+    const tuneFractureSizeExpSave = documentRef.getElementById("tune-fracture-sizeexp-save");
+    const tuneFractureSizeExpDefault = documentRef.getElementById("tune-fracture-sizeexp-default");
+    const tuneFractureChip = documentRef.getElementById("tune-fracture-chip");
+    const tuneFractureChipOut = documentRef.getElementById("tune-fracture-chip-out");
+    const tuneFractureChipSave = documentRef.getElementById("tune-fracture-chip-save");
+    const tuneFractureChipDefault = documentRef.getElementById("tune-fracture-chip-default");
+    const tuneFractureDecay = documentRef.getElementById("tune-fracture-decay");
+    const tuneFractureDecayOut = documentRef.getElementById("tune-fracture-decay-out");
+    const tuneFractureDecaySave = documentRef.getElementById("tune-fracture-decay-save");
+    const tuneFractureDecayDefault = documentRef.getElementById("tune-fracture-decay-default");
+    const tuneFractureMinSpeed = documentRef.getElementById("tune-fracture-minspeed");
+    const tuneFractureMinSpeedOut = documentRef.getElementById("tune-fracture-minspeed-out");
+    const tuneFractureMinSpeedSave = documentRef.getElementById("tune-fracture-minspeed-save");
+    const tuneFractureMinSpeedDefault = documentRef.getElementById("tune-fracture-minspeed-default");
+    const tuneFractureShear = documentRef.getElementById("tune-fracture-shear");
+    const tuneFractureShearOut = documentRef.getElementById("tune-fracture-shear-out");
+    const tuneFractureShearSave = documentRef.getElementById("tune-fracture-shear-save");
+    const tuneFractureShearDefault = documentRef.getElementById("tune-fracture-shear-default");
+    const tuneFractureShearRef = documentRef.getElementById("tune-fracture-shearref");
+    const tuneFractureShearRefOut = documentRef.getElementById("tune-fracture-shearref-out");
+    const tuneFractureShearRefSave = documentRef.getElementById("tune-fracture-shearref-save");
+    const tuneFractureShearRefDefault = documentRef.getElementById("tune-fracture-shearref-default");
     const tuneWorldDensity = documentRef.getElementById("tune-world-density");
     const tuneWorldDensityOut = documentRef.getElementById("tune-world-density-out");
     const tuneWorldDensitySave = documentRef.getElementById("tune-world-density-save");
@@ -5098,6 +5202,52 @@
         suffix: " px/s"
       },
       {
+        key: "fractureSizeStrengthExp",
+        input: tuneFractureSizeExp,
+        saveBtn: tuneFractureSizeExpSave,
+        savedOut: tuneFractureSizeExpDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}`
+      },
+      {
+        key: "fractureChipScale",
+        input: tuneFractureChip,
+        saveBtn: tuneFractureChipSave,
+        savedOut: tuneFractureChipDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "fractureChipDecaySec",
+        input: tuneFractureDecay,
+        saveBtn: tuneFractureDecaySave,
+        savedOut: tuneFractureDecayDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)} s`
+      },
+      {
+        key: "fractureChipMinSpeed",
+        input: tuneFractureMinSpeed,
+        saveBtn: tuneFractureMinSpeedSave,
+        savedOut: tuneFractureMinSpeedDefault,
+        suffix: " px/s"
+      },
+      {
+        key: "fractureShearWeightLaunched",
+        input: tuneFractureShear,
+        saveBtn: tuneFractureShearSave,
+        savedOut: tuneFractureShearDefault,
+        suffix: "",
+        format: (v) => `${Number(v).toFixed(2)}x`
+      },
+      {
+        key: "fractureShearNormalRefSpeed",
+        input: tuneFractureShearRef,
+        saveBtn: tuneFractureShearRefSave,
+        savedOut: tuneFractureShearRefDefault,
+        suffix: " px/s"
+      },
+      {
         key: "tier2UnlockGemScore",
         input: tuneTier2Unlock,
         saveBtn: tuneTier2UnlockSave,
@@ -5278,6 +5428,14 @@
       p.exhaustCoreScale = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
       p.exhaustGlowScale = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
       p.exhaustLegacyJets = clamp(Math.round(Number(p.exhaustLegacyJets ?? 0)), 0, 1);
+      p.projectileImpactScale = clamp(Number(p.projectileImpactScale ?? 1), 0.2, 4);
+      p.fractureImpactSpeed = clamp(Number(p.fractureImpactSpeed ?? 275), 150, 700);
+      p.fractureSizeStrengthExp = clamp(Number(p.fractureSizeStrengthExp ?? -0.8), -1.5, 0.6);
+      p.fractureChipScale = clamp(Number(p.fractureChipScale ?? 1), 0, 3);
+      p.fractureChipDecaySec = clamp(Number(p.fractureChipDecaySec ?? 3), 0, 12);
+      p.fractureChipMinSpeed = clamp(Number(p.fractureChipMinSpeed ?? 140), 0, 520);
+      p.fractureShearWeightLaunched = clamp(Number(p.fractureShearWeightLaunched ?? 0.85), 0, 1.6);
+      p.fractureShearNormalRefSpeed = clamp(Number(p.fractureShearNormalRefSpeed ?? 120), 20, 320);
       p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
       p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
@@ -5377,6 +5535,18 @@
         tuneXxlCount.value = String(Math.round(p.xxlargeCount));
       if (tuneFracture)
         tuneFracture.value = String(Math.round(p.fractureImpactSpeed));
+      if (tuneFractureSizeExp)
+        tuneFractureSizeExp.value = String(p.fractureSizeStrengthExp ?? 0);
+      if (tuneFractureChip)
+        tuneFractureChip.value = String(p.fractureChipScale ?? 0);
+      if (tuneFractureDecay)
+        tuneFractureDecay.value = String(p.fractureChipDecaySec ?? 0);
+      if (tuneFractureMinSpeed)
+        tuneFractureMinSpeed.value = String(Math.round(p.fractureChipMinSpeed ?? 0));
+      if (tuneFractureShear)
+        tuneFractureShear.value = String(p.fractureShearWeightLaunched ?? 0);
+      if (tuneFractureShearRef)
+        tuneFractureShearRef.value = String(Math.round(p.fractureShearNormalRefSpeed ?? 120));
       if (tuneTier2Unlock)
         tuneTier2Unlock.value = String(Math.round(p.tier2UnlockGemScore));
       if (tuneTier3Unlock)
@@ -5460,6 +5630,20 @@
       setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
       setOut(tuneXxlCountOut, readNum(tuneXxlCount, p.xxlargeCount));
       setOut(tuneFractureOut, readNum(tuneFracture, p.fractureImpactSpeed), " px/s");
+      if (tuneFractureSizeExpOut) {
+        tuneFractureSizeExpOut.textContent = `${readNum(tuneFractureSizeExp, p.fractureSizeStrengthExp ?? 0).toFixed(2)}`;
+      }
+      if (tuneFractureChipOut) {
+        tuneFractureChipOut.textContent = `${readNum(tuneFractureChip, p.fractureChipScale ?? 0).toFixed(2)}x`;
+      }
+      if (tuneFractureDecayOut) {
+        tuneFractureDecayOut.textContent = `${readNum(tuneFractureDecay, p.fractureChipDecaySec ?? 0).toFixed(2)} s`;
+      }
+      setOut(tuneFractureMinSpeedOut, readNum(tuneFractureMinSpeed, p.fractureChipMinSpeed ?? 0), " px/s");
+      if (tuneFractureShearOut) {
+        tuneFractureShearOut.textContent = `${readNum(tuneFractureShear, p.fractureShearWeightLaunched ?? 0).toFixed(2)}x`;
+      }
+      setOut(tuneFractureShearRefOut, readNum(tuneFractureShearRef, p.fractureShearNormalRefSpeed ?? 120), " px/s");
       setOut(tuneTier2UnlockOut, readNum(tuneTier2Unlock, p.tier2UnlockGemScore));
       setOut(tuneTier3UnlockOut, readNum(tuneTier3Unlock, p.tier3UnlockGemScore));
       if (tuneTier1ZoomOut)
@@ -5523,12 +5707,22 @@
       p.exhaustCoreScale = clamp(readNum(tuneExhaustCore, p.exhaustCoreScale), 0, 2.5);
       p.exhaustGlowScale = clamp(readNum(tuneExhaustGlow, p.exhaustGlowScale), 0, 2.5);
       p.exhaustLegacyJets = clamp(Math.round(readNum(tuneExhaustJets, p.exhaustLegacyJets)), 0, 1);
-      p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
+      p.projectileImpactScale = clamp(readNum(tuneDmg, p.projectileImpactScale), 0.2, 4);
       p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
       p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
       p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);
       p.xxlargeCount = clamp(Math.round(readNum(tuneXxlCount, p.xxlargeCount)), 0, 50);
-      p.fractureImpactSpeed = readNum(tuneFracture, p.fractureImpactSpeed);
+      p.fractureImpactSpeed = clamp(readNum(tuneFracture, p.fractureImpactSpeed), 150, 700);
+      p.fractureSizeStrengthExp = clamp(readNum(tuneFractureSizeExp, p.fractureSizeStrengthExp ?? -0.8), -1.5, 0.6);
+      p.fractureChipScale = clamp(readNum(tuneFractureChip, p.fractureChipScale ?? 1), 0, 3);
+      p.fractureChipDecaySec = clamp(readNum(tuneFractureDecay, p.fractureChipDecaySec ?? 3), 0, 12);
+      p.fractureChipMinSpeed = clamp(Math.round(readNum(tuneFractureMinSpeed, p.fractureChipMinSpeed ?? 140)), 0, 520);
+      p.fractureShearWeightLaunched = clamp(readNum(tuneFractureShear, p.fractureShearWeightLaunched ?? 0.85), 0, 1.6);
+      p.fractureShearNormalRefSpeed = clamp(
+        Math.round(readNum(tuneFractureShearRef, p.fractureShearNormalRefSpeed ?? 120)),
+        20,
+        320
+      );
       p.tier2UnlockGemScore = clamp(Math.round(readNum(tuneTier2Unlock, p.tier2UnlockGemScore)), 1, 1e4);
       p.tier3UnlockGemScore = clamp(Math.round(readNum(tuneTier3Unlock, p.tier3UnlockGemScore)), 1, 1e4);
       if (p.tier3UnlockGemScore <= p.tier2UnlockGemScore)

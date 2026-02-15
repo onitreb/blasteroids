@@ -532,9 +532,87 @@
                   </div>
 
                   <div class="tune-row">
-                    <span>Global asteroid density</span>
+                    <span>Size toughness exponent</span>
                     <span class="tune-actions">
-                      <output id="tune-world-density-out">—</output>
+                      <output id="tune-fracture-sizeexp-out">—</output>
+                      <button id="tune-fracture-sizeexp-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-fracture-sizeexp" type="range" min="-1.5" max="0.6" step="0.05" />
+                  <div class="tune-note">
+                    How fracture toughness scales with asteroid size. Negative means larger asteroids are weaker (break easier); positive means tougher.
+                    <div class="tune-saved">Saved default: <span id="tune-fracture-sizeexp-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Chip damage</span>
+                    <span class="tune-actions">
+                      <output id="tune-fracture-chip-out">—</output>
+                      <button id="tune-fracture-chip-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-fracture-chip" type="range" min="0" max="3" step="0.05" />
+                  <div class="tune-note">
+                    Below-threshold impacts accumulate partial damage toward a break (higher = fewer hits to crack XL/XXL).
+                    <div class="tune-saved">Saved default: <span id="tune-fracture-chip-default">—</span></div>
+                  </div>
+
+                  <div class="tune-row">
+                    <span>Chip damage decay</span>
+                    <span class="tune-actions">
+                      <output id="tune-fracture-decay-out">—</output>
+                      <button id="tune-fracture-decay-save" class="btn-mini" type="button">Set default</button>
+                    </span>
+                  </div>
+                  <input id="tune-fracture-decay" type="range" min="0" max="12" step="0.25" />
+                  <div class="tune-note">
+                    How fast chip damage fades back to 0 (0 = never fades).
+                    <div class="tune-saved">Saved default: <span id="tune-fracture-decay-default">—</span></div>
+                  </div>
+
+	                  <div class="tune-row">
+	                    <span>Min chip speed</span>
+	                    <span class="tune-actions">
+	                      <output id="tune-fracture-minspeed-out">—</output>
+	                      <button id="tune-fracture-minspeed-save" class="btn-mini" type="button">Set default</button>
+	                    </span>
+	                  </div>
+	                  <input id="tune-fracture-minspeed" type="range" min="0" max="520" step="10" />
+	                  <div class="tune-note">
+	                    Impacts slower than this just bounce and do not add chip damage (useful to stop tiny bumps breaking small rocks).
+	                    <div class="tune-saved">Saved default: <span id="tune-fracture-minspeed-default">—</span></div>
+	                  </div>
+
+	                  <div class="tune-row">
+	                    <span>Glancing fracture (ship-launched)</span>
+	                    <span class="tune-actions">
+	                      <output id="tune-fracture-shear-out">—</output>
+	                      <button id="tune-fracture-shear-save" class="btn-mini" type="button">Set default</button>
+	                    </span>
+	                  </div>
+	                  <input id="tune-fracture-shear" type="range" min="0" max="1.6" step="0.05" />
+	                  <div class="tune-note">
+	                    Allows a ship-launched asteroid to contribute some tangential “shear” speed to fracture energy (helps big rocks crack on glancing hits).
+	                    <div class="tune-saved">Saved default: <span id="tune-fracture-shear-default">—</span></div>
+	                  </div>
+
+	                  <div class="tune-row">
+	                    <span>Shear normal ref speed</span>
+	                    <span class="tune-actions">
+	                      <output id="tune-fracture-shearref-out">—</output>
+	                      <button id="tune-fracture-shearref-save" class="btn-mini" type="button">Set default</button>
+	                    </span>
+	                  </div>
+	                  <input id="tune-fracture-shearref" type="range" min="20" max="320" step="10" />
+	                  <div class="tune-note">
+	                    How much normal closing speed is needed before tangential shear counts strongly (higher = more “head-on” required).
+	                    <div class="tune-saved">Saved default: <span id="tune-fracture-shearref-default">—</span></div>
+	                  </div>
+
+	                  <div class="tune-row">
+	                    <span>Global asteroid density</span>
+	                    <span class="tune-actions">
+	                      <output id="tune-world-density-out">—</output>
                       <button id="tune-world-density-save" class="btn-mini" type="button">Set default</button>
                     </span>
                   </div>

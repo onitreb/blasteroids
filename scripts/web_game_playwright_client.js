@@ -243,13 +243,12 @@ async function doChoreography(page, canvas, steps) {
     }
 
     const frames = step.frames || 1;
-    for (let i = 0; i < frames; i++) {
-      await page.evaluate(async () => {
-        if (typeof window.advanceTime === "function") {
-          await window.advanceTime(1000 / 60);
-        }
-      });
-    }
+    const ms = (1000 / 60) * frames;
+    await page.evaluate(async (dtMs) => {
+      if (typeof window.advanceTime === "function") {
+        await window.advanceTime(dtMs);
+      }
+    }, ms);
 
     for (const button of buttons) {
       if (button === "left_mouse_button" || button === "right_mouse_button") {

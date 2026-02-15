@@ -40,6 +40,12 @@ export const DEBUG_MENU_CONTROL_IDS = Object.freeze([
   "tune-exhaust-jets",
   "tune-dmg",
   "tune-fracture",
+  "tune-fracture-sizeexp",
+  "tune-fracture-chip",
+  "tune-fracture-decay",
+  "tune-fracture-minspeed",
+  "tune-fracture-shear",
+  "tune-fracture-shearref",
   "tune-world-density",
   "tune-spawn-rate",
   "tune-xl-radius",
@@ -180,6 +186,30 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneFractureOut = documentRef.getElementById("tune-fracture-out");
   const tuneFractureSave = documentRef.getElementById("tune-fracture-save");
   const tuneFractureDefault = documentRef.getElementById("tune-fracture-default");
+  const tuneFractureSizeExp = documentRef.getElementById("tune-fracture-sizeexp");
+  const tuneFractureSizeExpOut = documentRef.getElementById("tune-fracture-sizeexp-out");
+  const tuneFractureSizeExpSave = documentRef.getElementById("tune-fracture-sizeexp-save");
+  const tuneFractureSizeExpDefault = documentRef.getElementById("tune-fracture-sizeexp-default");
+  const tuneFractureChip = documentRef.getElementById("tune-fracture-chip");
+  const tuneFractureChipOut = documentRef.getElementById("tune-fracture-chip-out");
+  const tuneFractureChipSave = documentRef.getElementById("tune-fracture-chip-save");
+  const tuneFractureChipDefault = documentRef.getElementById("tune-fracture-chip-default");
+  const tuneFractureDecay = documentRef.getElementById("tune-fracture-decay");
+  const tuneFractureDecayOut = documentRef.getElementById("tune-fracture-decay-out");
+  const tuneFractureDecaySave = documentRef.getElementById("tune-fracture-decay-save");
+  const tuneFractureDecayDefault = documentRef.getElementById("tune-fracture-decay-default");
+  const tuneFractureMinSpeed = documentRef.getElementById("tune-fracture-minspeed");
+  const tuneFractureMinSpeedOut = documentRef.getElementById("tune-fracture-minspeed-out");
+  const tuneFractureMinSpeedSave = documentRef.getElementById("tune-fracture-minspeed-save");
+  const tuneFractureMinSpeedDefault = documentRef.getElementById("tune-fracture-minspeed-default");
+  const tuneFractureShear = documentRef.getElementById("tune-fracture-shear");
+  const tuneFractureShearOut = documentRef.getElementById("tune-fracture-shear-out");
+  const tuneFractureShearSave = documentRef.getElementById("tune-fracture-shear-save");
+  const tuneFractureShearDefault = documentRef.getElementById("tune-fracture-shear-default");
+  const tuneFractureShearRef = documentRef.getElementById("tune-fracture-shearref");
+  const tuneFractureShearRefOut = documentRef.getElementById("tune-fracture-shearref-out");
+  const tuneFractureShearRefSave = documentRef.getElementById("tune-fracture-shearref-save");
+  const tuneFractureShearRefDefault = documentRef.getElementById("tune-fracture-shearref-default");
   const tuneWorldDensity = documentRef.getElementById("tune-world-density");
   const tuneWorldDensityOut = documentRef.getElementById("tune-world-density-out");
   const tuneWorldDensitySave = documentRef.getElementById("tune-world-density-save");
@@ -558,6 +588,52 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
       suffix: " px/s",
     },
     {
+      key: "fractureSizeStrengthExp",
+      input: tuneFractureSizeExp,
+      saveBtn: tuneFractureSizeExpSave,
+      savedOut: tuneFractureSizeExpDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}`,
+    },
+    {
+      key: "fractureChipScale",
+      input: tuneFractureChip,
+      saveBtn: tuneFractureChipSave,
+      savedOut: tuneFractureChipDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "fractureChipDecaySec",
+      input: tuneFractureDecay,
+      saveBtn: tuneFractureDecaySave,
+      savedOut: tuneFractureDecayDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)} s`,
+    },
+    {
+      key: "fractureChipMinSpeed",
+      input: tuneFractureMinSpeed,
+      saveBtn: tuneFractureMinSpeedSave,
+      savedOut: tuneFractureMinSpeedDefault,
+      suffix: " px/s",
+    },
+    {
+      key: "fractureShearWeightLaunched",
+      input: tuneFractureShear,
+      saveBtn: tuneFractureShearSave,
+      savedOut: tuneFractureShearDefault,
+      suffix: "",
+      format: (v) => `${Number(v).toFixed(2)}x`,
+    },
+    {
+      key: "fractureShearNormalRefSpeed",
+      input: tuneFractureShearRef,
+      saveBtn: tuneFractureShearRefSave,
+      savedOut: tuneFractureShearRefDefault,
+      suffix: " px/s",
+    },
+    {
       key: "tier2UnlockGemScore",
       input: tuneTier2Unlock,
       saveBtn: tuneTier2UnlockSave,
@@ -739,6 +815,14 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.exhaustCoreScale = clamp(Number(p.exhaustCoreScale ?? 1), 0, 2.5);
     p.exhaustGlowScale = clamp(Number(p.exhaustGlowScale ?? 1), 0, 2.5);
     p.exhaustLegacyJets = clamp(Math.round(Number(p.exhaustLegacyJets ?? 0)), 0, 1);
+    p.projectileImpactScale = clamp(Number(p.projectileImpactScale ?? 1), 0.2, 4);
+    p.fractureImpactSpeed = clamp(Number(p.fractureImpactSpeed ?? 275), 150, 700);
+    p.fractureSizeStrengthExp = clamp(Number(p.fractureSizeStrengthExp ?? -0.8), -1.5, 0.6);
+    p.fractureChipScale = clamp(Number(p.fractureChipScale ?? 1), 0, 3);
+    p.fractureChipDecaySec = clamp(Number(p.fractureChipDecaySec ?? 3), 0, 12);
+    p.fractureChipMinSpeed = clamp(Number(p.fractureChipMinSpeed ?? 140), 0, 520);
+    p.fractureShearWeightLaunched = clamp(Number(p.fractureShearWeightLaunched ?? 0.85), 0, 1.6);
+    p.fractureShearNormalRefSpeed = clamp(Number(p.fractureShearNormalRefSpeed ?? 120), 20, 320);
     p.asteroidSpawnRateScale = clamp(Number(p.asteroidSpawnRateScale ?? 1), 0.25, 3);
     p.xlargeRadius = clamp(p.xlargeRadius, p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(p.xxlargeRadius, p.xlargeRadius + 6, 320);
@@ -812,6 +896,12 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (tuneXlCount) tuneXlCount.value = String(Math.round(p.xlargeCount));
     if (tuneXxlCount) tuneXxlCount.value = String(Math.round(p.xxlargeCount));
     if (tuneFracture) tuneFracture.value = String(Math.round(p.fractureImpactSpeed));
+    if (tuneFractureSizeExp) tuneFractureSizeExp.value = String(p.fractureSizeStrengthExp ?? 0);
+    if (tuneFractureChip) tuneFractureChip.value = String(p.fractureChipScale ?? 0);
+    if (tuneFractureDecay) tuneFractureDecay.value = String(p.fractureChipDecaySec ?? 0);
+    if (tuneFractureMinSpeed) tuneFractureMinSpeed.value = String(Math.round(p.fractureChipMinSpeed ?? 0));
+    if (tuneFractureShear) tuneFractureShear.value = String(p.fractureShearWeightLaunched ?? 0);
+    if (tuneFractureShearRef) tuneFractureShearRef.value = String(Math.round(p.fractureShearNormalRefSpeed ?? 120));
     if (tuneTier2Unlock) tuneTier2Unlock.value = String(Math.round(p.tier2UnlockGemScore));
     if (tuneTier3Unlock) tuneTier3Unlock.value = String(Math.round(p.tier3UnlockGemScore));
     if (tuneTier1Zoom) tuneTier1Zoom.value = String(p.tier1Zoom);
@@ -868,6 +958,20 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     setOut(tuneXlCountOut, readNum(tuneXlCount, p.xlargeCount));
     setOut(tuneXxlCountOut, readNum(tuneXxlCount, p.xxlargeCount));
     setOut(tuneFractureOut, readNum(tuneFracture, p.fractureImpactSpeed), " px/s");
+    if (tuneFractureSizeExpOut) {
+      tuneFractureSizeExpOut.textContent = `${readNum(tuneFractureSizeExp, p.fractureSizeStrengthExp ?? 0).toFixed(2)}`;
+    }
+    if (tuneFractureChipOut) {
+      tuneFractureChipOut.textContent = `${readNum(tuneFractureChip, p.fractureChipScale ?? 0).toFixed(2)}x`;
+    }
+    if (tuneFractureDecayOut) {
+      tuneFractureDecayOut.textContent = `${readNum(tuneFractureDecay, p.fractureChipDecaySec ?? 0).toFixed(2)} s`;
+    }
+    setOut(tuneFractureMinSpeedOut, readNum(tuneFractureMinSpeed, p.fractureChipMinSpeed ?? 0), " px/s");
+    if (tuneFractureShearOut) {
+      tuneFractureShearOut.textContent = `${readNum(tuneFractureShear, p.fractureShearWeightLaunched ?? 0).toFixed(2)}x`;
+    }
+    setOut(tuneFractureShearRefOut, readNum(tuneFractureShearRef, p.fractureShearNormalRefSpeed ?? 120), " px/s");
     setOut(tuneTier2UnlockOut, readNum(tuneTier2Unlock, p.tier2UnlockGemScore));
     setOut(tuneTier3UnlockOut, readNum(tuneTier3Unlock, p.tier3UnlockGemScore));
     if (tuneTier1ZoomOut) tuneTier1ZoomOut.textContent = `${readNum(tuneTier1Zoom, p.tier1Zoom).toFixed(2)}x`;
@@ -926,12 +1030,22 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     p.exhaustCoreScale = clamp(readNum(tuneExhaustCore, p.exhaustCoreScale), 0, 2.5);
     p.exhaustGlowScale = clamp(readNum(tuneExhaustGlow, p.exhaustGlowScale), 0, 2.5);
     p.exhaustLegacyJets = clamp(Math.round(readNum(tuneExhaustJets, p.exhaustLegacyJets)), 0, 1);
-    p.projectileImpactScale = readNum(tuneDmg, p.projectileImpactScale);
+    p.projectileImpactScale = clamp(readNum(tuneDmg, p.projectileImpactScale), 0.2, 4);
     p.xlargeRadius = clamp(readNum(tuneXlRadius, p.xlargeRadius), p.largeRadius + 6, 220);
     p.xxlargeRadius = clamp(readNum(tuneXxlRadius, p.xxlargeRadius), p.xlargeRadius + 6, 320);
     p.xlargeCount = clamp(Math.round(readNum(tuneXlCount, p.xlargeCount)), 0, 50);
     p.xxlargeCount = clamp(Math.round(readNum(tuneXxlCount, p.xxlargeCount)), 0, 50);
-    p.fractureImpactSpeed = readNum(tuneFracture, p.fractureImpactSpeed);
+    p.fractureImpactSpeed = clamp(readNum(tuneFracture, p.fractureImpactSpeed), 150, 700);
+    p.fractureSizeStrengthExp = clamp(readNum(tuneFractureSizeExp, p.fractureSizeStrengthExp ?? -0.8), -1.5, 0.6);
+    p.fractureChipScale = clamp(readNum(tuneFractureChip, p.fractureChipScale ?? 1), 0, 3);
+    p.fractureChipDecaySec = clamp(readNum(tuneFractureDecay, p.fractureChipDecaySec ?? 3), 0, 12);
+    p.fractureChipMinSpeed = clamp(Math.round(readNum(tuneFractureMinSpeed, p.fractureChipMinSpeed ?? 140)), 0, 520);
+    p.fractureShearWeightLaunched = clamp(readNum(tuneFractureShear, p.fractureShearWeightLaunched ?? 0.85), 0, 1.6);
+    p.fractureShearNormalRefSpeed = clamp(
+      Math.round(readNum(tuneFractureShearRef, p.fractureShearNormalRefSpeed ?? 120)),
+      20,
+      320
+    );
     p.tier2UnlockGemScore = clamp(Math.round(readNum(tuneTier2Unlock, p.tier2UnlockGemScore)), 1, 10000);
     p.tier3UnlockGemScore = clamp(Math.round(readNum(tuneTier3Unlock, p.tier3UnlockGemScore)), 1, 10000);
     if (p.tier3UnlockGemScore <= p.tier2UnlockGemScore) p.tier3UnlockGemScore = p.tier2UnlockGemScore + 50;

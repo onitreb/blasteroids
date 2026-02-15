@@ -517,3 +517,18 @@ Updates
     - `npm test`: `34 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - Playwright smoke artifacts: `output/web-game/arena-unbound-gate-sequence-pass/` (no `errors-*.json`).
+- 2026-02-14 asteroid fracture realism + gameplay knobs pass:
+  - Root-cause fixes:
+    - Fracture energy now uses *closing speed along the collision normal* instead of full relative speed, eliminating false fractures from tangential/glancing overlaps (`src/engine/createEngine.js`).
+    - Small asteroids now *bounce* on low-energy ship taps (instead of ghosting or instantly breaking).
+  - New tuning knobs (debug menu + engine params):
+    - `fractureSizeStrengthExp`: size-effect toughness scaling (negative makes larger asteroids weaker/easier to crack; also makes small tougher).
+    - `fractureChipScale`, `fractureChipDecaySec`, `fractureChipMinSpeed`: below-threshold “chip damage” accumulation with exponential decay to help XL/XXL break over repeated impacts while keeping tiny bumps harmless.
+  - Implementation details:
+    - Removed the prior per-size `tough` multipliers in the threshold and replaced with radius-based scaling relative to `medRadius`.
+    - Added `fractureDamage` per asteroid + decay in `updateAsteroids`.
+  - Test/validation:
+    - Added unit tests for tangential non-fracture and chip-damage accumulation (`test/engine.test.js`).
+    - `npm test`: `36 passed, 0 failed`.
+    - `npm run build`: success (`dist/blasteroids.js` regenerated).
+    - Playwright smoke artifacts: `output/web-game/fracture-check3/`.

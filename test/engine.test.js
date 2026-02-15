@@ -560,3 +560,276 @@ test("ship-launched impact boost enables fractures below ambient threshold", () 
   assert.equal(medLeftLaunched, 0, "expected launched small to fracture medium target");
   assert.equal(medLeftAmbient, 1, "expected ambient small to fail at the same relative speed");
 });
+
+test("glancing tangential overlaps do not trigger fracture energy", () => {
+  const engine = createEngine({ width: 1280, height: 720 });
+  engine.startGame();
+  engine.state.ship.pos = { x: -1000, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.gems = [];
+
+  const p = engine.state.params;
+  const mk = (id, size, x, y, vx, vy) => {
+    const radius = asteroidRadiusForSize(p, size);
+    return {
+      id,
+      size,
+      pos: { x, y },
+      vel: { x: vx, y: vy },
+      radius,
+      mass: asteroidMassForRadius(radius),
+      rot: 0,
+      rotVel: 0,
+      shape: [{ a: 0, r: radius }],
+      attached: false,
+      shipLaunched: false,
+      orbitA: 0,
+      fractureCooldownT: 0,
+      hitFxT: 0,
+      pullFx: 0,
+    };
+  };
+
+  // Overlap along +x so collision normal is horizontal, but velocity is purely tangential (y-axis).
+  // Old logic used full relative speed and would spuriously fracture here.
+  const a = mk("tan-a", "med", 0, 0, 0, 320);
+  const b = mk("tan-b", "med", 52, 0, 0, -320);
+  engine.state.asteroids = [a, b];
+
+  engine.update(0);
+  const medCount = engine.state.asteroids.filter((it) => it.size === "med").length;
+  assert.equal(medCount, 2, "expected tangential overlap to resolve without fracturing");
+  assert.equal(engine.state.gems.length, 0, "expected no gems spawned from a tangential overlap");
+});
+
+test("chip damage accumulates across repeated sub-threshold impacts", () => {
+  const engine = createEngine({ width: 1280, height: 720 });
+  engine.startGame();
+  engine.state.ship.pos = { x: -1000, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.gems = [];
+  // Keep the scenario isolated from population refills/spawns.
+  engine.state.params.maxAsteroids = 2;
+  engine.state.asteroidSpawnT = 1e9;
+  engine.state.round.techParts = [];
+  engine.state.round.carriedPartId = null;
+
+  const p = engine.state.params;
+  const mk = (id, size, x, y, vx, vy, launched) => {
+    const radius = asteroidRadiusForSize(p, size);
+    return {
+      id,
+      size,
+      pos: { x, y },
+      vel: { x: vx, y: vy },
+      radius,
+      mass: asteroidMassForRadius(radius),
+      rot: 0,
+      rotVel: 0,
+      shape: [{ a: 0, r: radius }],
+      attached: false,
+      shipLaunched: launched,
+      orbitA: 0,
+      fractureCooldownT: 0,
+      hitFxT: 0,
+      pullFx: 0,
+    };
+  };
+
+  const target = mk("target-xl", "xlarge", 0, 0, 0, 0, false);
+  const projRadius = asteroidRadiusForSize(p, "small");
+  const projMass = asteroidMassForRadius(projRadius);
+  const mu = (projMass * target.mass) / (projMass + target.mass);
+  const impactSpeed = 580;
+
+  const rank = asteroidSizeRank("xlarge");
+  const sizeBias = 1 + rank * 0.06;
+  const refR = asteroidRadiusForSize(p, "med");
+  const exp = Number(p.fractureSizeStrengthExp ?? 0);
+  const sizeStrength = (target.radius / refR) ** exp;
+  const thresholdEnergy = 0.25 * target.mass * (p.fractureImpactSpeed * sizeBias) ** 2 * sizeStrength;
+  const perHitEnergy = 0.5 * mu * impactSpeed * impactSpeed * p.projectileImpactScale;
+  assert.ok(perHitEnergy < thresholdEnergy, "expected per-hit impact energy below the fracture threshold");
+
+  const chipScale = Number(p.fractureChipScale ?? 0);
+  const chipAdd = (perHitEnergy / thresholdEnergy) * chipScale;
+  assert.ok(chipAdd > 0 && Number.isFinite(chipAdd), "expected positive chip damage per hit");
+  const hitsNeeded = Math.ceil(1 / chipAdd);
+  assert.ok(hitsNeeded >= 2, "expected to require multiple hits to fracture XL");
+
+  for (let i = 0; i < hitsNeeded; i++) {
+    const startX = -(target.radius + projRadius - 1);
+    const projectile = mk(`proj-${i}`, "small", startX, 0, impactSpeed, 0, true);
+    engine.state.asteroids = [projectile, target];
+    engine.update(0);
+    const stillXL = engine.state.asteroids.some((it) => it.size === "xlarge");
+    if (!stillXL) break;
+  }
+
+  const xlLeft = engine.state.asteroids.filter((it) => it.size === "xlarge").length;
+  const largeSpawned = engine.state.asteroids.filter((it) => it.size === "large").length;
+  assert.equal(xlLeft, 0, "expected XL to fracture after repeated chip-damage impacts");
+  assert.ok(largeSpawned >= 1, "expected fracture to spawn smaller asteroid fragments");
+});
+
+test("ship-launched large fractures xlarge targets on a head-on high-energy impact", () => {
+  const engine = createEngine({ width: 1280, height: 720 });
+  engine.startGame();
+  engine.state.ship.pos = { x: -1000, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.gems = [];
+  // Keep the scenario isolated from population refills/spawns.
+  engine.state.params.maxAsteroids = 8;
+  engine.state.asteroidSpawnT = 1e9;
+  engine.state.round.techParts = [];
+  engine.state.round.carriedPartId = null;
+
+  const p = engine.state.params;
+  const mk = (id, size, x, y, vx, vy, launched, fractureCooldownT = 0) => {
+    const radius = asteroidRadiusForSize(p, size);
+    return {
+      id,
+      size,
+      pos: { x, y },
+      vel: { x: vx, y: vy },
+      radius,
+      mass: asteroidMassForRadius(radius),
+      rot: 0,
+      rotVel: 0,
+      shape: [{ a: 0, r: radius }],
+      attached: false,
+      shipLaunched: launched,
+      orbitA: 0,
+      fractureCooldownT,
+      fractureDamage: 0,
+      hitFxT: 0,
+      pullFx: 0,
+    };
+  };
+
+  const projectile = mk("proj-large", "large", 0, 0, 0, 0, true);
+  const target = mk("target-xl", "xlarge", 0, 0, 0, 0, false);
+
+  // Choose a relative speed that exceeds the xlarge threshold (with shipLaunched boost).
+  const rank = asteroidSizeRank("xlarge");
+  const sizeBias = 1 + rank * 0.06;
+  const refR = asteroidRadiusForSize(p, "med");
+  const exp = Number(p.fractureSizeStrengthExp ?? 0);
+  const sizeStrength = (target.radius / refR) ** exp;
+  const thresholdEnergy = 0.25 * target.mass * (p.fractureImpactSpeed * sizeBias) ** 2 * sizeStrength;
+  const mu = (projectile.mass * target.mass) / (projectile.mass + target.mass);
+  const relSpeed = Math.sqrt((2 * thresholdEnergy) / (mu * p.projectileImpactScale)) * 1.08;
+
+  projectile.pos = { x: 0, y: 0 };
+  target.pos = { x: projectile.radius + target.radius - 1, y: 0 }; // slight overlap, normal points +x
+  projectile.vel = { x: relSpeed, y: 0 };
+  target.vel = { x: 0, y: 0 };
+  engine.state.asteroids = [projectile, target];
+
+  engine.update(0);
+
+  const xlLeft = engine.state.asteroids.filter((it) => it.size === "xlarge").length;
+  const largeCount = engine.state.asteroids.filter((it) => it.size === "large").length;
+  assert.equal(xlLeft, 0, "expected xlarge target to fracture from ship-launched large impact");
+  assert.ok(largeCount >= 2, "expected xlarge fracture to spawn large fragments");
+});
+
+test("ship-launched shear term allows glancing large impacts to fracture xlarge targets", () => {
+  const engine = createEngine({ width: 1280, height: 720 });
+  engine.startGame();
+  engine.state.ship.pos = { x: -1000, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.gems = [];
+  engine.state.params.maxAsteroids = 8;
+  engine.state.asteroidSpawnT = 1e9;
+  engine.state.round.techParts = [];
+  engine.state.round.carriedPartId = null;
+
+  const p = engine.state.params;
+  const mk = (id, size, x, y, vx, vy, launched) => {
+    const radius = asteroidRadiusForSize(p, size);
+    return {
+      id,
+      size,
+      pos: { x, y },
+      vel: { x: vx, y: vy },
+      radius,
+      mass: asteroidMassForRadius(radius),
+      rot: 0,
+      rotVel: 0,
+      shape: [{ a: 0, r: radius }],
+      attached: false,
+      shipLaunched: launched,
+      orbitA: 0,
+      fractureCooldownT: 0,
+      fractureDamage: 0,
+      hitFxT: 0,
+      pullFx: 0,
+    };
+  };
+
+  // Set up a glancing overlap: collision normal is +x, but most of the speed is tangential (y).
+  // With normal-only fracture, this would not break XL; with the ship-launched shear term it should.
+  const projectile = mk("proj-large", "large", 0, 0, 90, 1000, true);
+  const target = mk("target-xl", "xlarge", projectile.radius + asteroidRadiusForSize(p, "xlarge") - 1, 0, 0, 0, false);
+  engine.state.asteroids = [projectile, target];
+
+  engine.update(0);
+
+  const xlLeft = engine.state.asteroids.filter((it) => it.size === "xlarge").length;
+  assert.equal(xlLeft, 0, "expected xlarge to fracture from a fast glancing ship-launched large impact");
+});
+
+test("fracture cooldown blocks fracture attempts without consuming shipLaunched", () => {
+  const engine = createEngine({ width: 1280, height: 720 });
+  engine.startGame();
+  engine.state.ship.pos = { x: -1000, y: 0 };
+  engine.state.ship.vel = { x: 0, y: 0 };
+  engine.state.gems = [];
+  engine.state.params.maxAsteroids = 8;
+  engine.state.asteroidSpawnT = 1e9;
+  engine.state.round.techParts = [];
+  engine.state.round.carriedPartId = null;
+
+  const p = engine.state.params;
+  const mk = (id, size, x, y, vx, vy, launched, fractureCooldownT = 0) => {
+    const radius = asteroidRadiusForSize(p, size);
+    return {
+      id,
+      size,
+      pos: { x, y },
+      vel: { x: vx, y: vy },
+      radius,
+      mass: asteroidMassForRadius(radius),
+      rot: 0,
+      rotVel: 0,
+      shape: [{ a: 0, r: radius }],
+      attached: false,
+      shipLaunched: launched,
+      orbitA: 0,
+      fractureCooldownT,
+      fractureDamage: 0,
+      hitFxT: 0,
+      pullFx: 0,
+    };
+  };
+
+  const projectile = mk("proj-large", "large", 0, 0, 0, 0, true);
+  const target = mk("target-xl", "xlarge", 0, 0, 0, 0, false, 0.65);
+
+  // Use an intentionally huge speed to ensure we'd otherwise exceed threshold.
+  const relSpeed = 1200;
+  target.pos = { x: projectile.radius + target.radius - 1, y: 0 };
+  projectile.vel = { x: relSpeed, y: 0 };
+  engine.state.asteroids = [projectile, target];
+
+  engine.update(0);
+
+  const targetStillXL = engine.state.asteroids.some((it) => it.id === "target-xl" && it.size === "xlarge");
+  const projectileStillExists = engine.state.asteroids.some((it) => it.id === "proj-large");
+  const projectileStillLaunched = engine.state.asteroids.some((it) => it.id === "proj-large" && it.shipLaunched);
+  assert.ok(targetStillXL, "expected cooldown target to remain unfractured");
+  // The projectile itself might fracture under extreme speeds; but if it survives, cooldown should not
+  // consume its shipLaunched state via a blocked fracture attempt on the target.
+  assert.ok(!projectileStillExists || projectileStillLaunched, "expected shipLaunched to remain true if projectile survives a cooldown-blocked impact");
+});
