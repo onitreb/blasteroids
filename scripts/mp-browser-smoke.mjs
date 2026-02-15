@@ -60,7 +60,10 @@ try {
   await page.evaluate((endpoint) => window.Blasteroids.mpConnect({ endpoint }), wsUrl);
 
   const connected = await page.waitForFunction(
-    () => window.Blasteroids.mpStatus().connected && window.Blasteroids.mpStatus().snapshots > 0,
+    () =>
+      window.Blasteroids.mpStatus().connected &&
+      window.Blasteroids.mpStatus().snapshots > 0 &&
+      window.Blasteroids.getGame().state.asteroids.length > 0,
     null,
     { timeout: 8000 },
   );
@@ -72,4 +75,3 @@ try {
   await browser.close();
   await server.stop();
 }
-

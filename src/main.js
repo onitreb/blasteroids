@@ -2,6 +2,7 @@ import { createEngine } from "./engine/createEngine.js";
 import { createRenderer } from "./render/renderGame.js";
 import { createUiBindings } from "./ui/createUiBindings.js";
 import { createMpClient } from "./net/createMpClient.js";
+import { createMpWorldView } from "./net/createMpWorldView.js";
 
 (() => {
   const canvas = document.getElementById("game");
@@ -149,10 +150,19 @@ import { createMpClient } from "./net/createMpClient.js";
     accumulator += dtMs / 1000;
 
     ui.applyTouchControls?.();
+    const mpConnected = mp.isConnected();
     const pausedByMenu =
-      ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
+      !mpConnected &&
+      ui.isMenuVisible() &&
+      game.state.mode === "playing" &&
+      !!game.state.settings.pauseOnMenuOpen &&
+      !externalStepping;
 
-    if (!externalStepping) {
+    if (mpConnected) {
+      // Multiplayer: authoritative sim runs on server; client renders interpolated state.
+      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 40 });
+      accumulator = 0;
+    } else if (!externalStepping) {
       while (!pausedByMenu && accumulator >= fixedDt) {
         game.update(fixedDt);
         accumulator -= fixedDt;
@@ -178,6 +188,7 @@ import { createMpClient } from "./net/createMpClient.js";
   }
 
   function advanceTime(ms) {
+    if (mp.isConnected()) return;
     externalStepping = true;
     const steps = Math.max(1, Math.round(ms / (1000 / 60)));
     for (let i = 0; i < steps; i++) game.update(1 / 60);
@@ -191,6 +202,7 @@ import { createMpClient } from "./net/createMpClient.js";
     sendHz: 30,
     snapshotBufferSize: 32,
   });
+  const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 40 });
 
   const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
   window.Blasteroids = {
@@ -198,8 +210,23 @@ import { createMpClient } from "./net/createMpClient.js";
     renderGameToText,
     setShipSvgRenderer,
     advanceTime,
-    mpConnect: (opts = {}) => mp.connect(opts),
-    mpDisconnect: () => mp.disconnect(),
+    mpConnect: async (opts = {}) => {
+      const info = await mp.connect(opts);
+      const room = mp.getRoom();
+      mpWorld.attach({ room, localSessionId: info.sessionId });
+      room?.onLeave?.(() => mpWorld.detach());
+      game.state.mode = "playing";
+      ui.setMenuVisible(false);
+      return info;
+    },
+    mpDisconnect: async () => {
+      mpWorld.detach();
+      await mp.disconnect();
+      // Return to a safe singleplayer state.
+      game.resetWorld();
+      game.state.mode = "menu";
+      ui.setMenuVisible(true);
+    },
     mpStatus: () => mp.getStatus(),
     mpSnapshots: () => mp.getSnapshots(),
     mpRoom: () => mp.getRoom(),
