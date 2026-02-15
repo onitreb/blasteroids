@@ -115,6 +115,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 | MP-15 | M2 | Multiplayer perf HUD: snapshot Hz, bytes/sec, entities, tick drift | NET/UI (Codex) | DONE | MP-11 | manual | Notes:<br>- Added a minimal MP HUD line (client fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz).<br>- Telemetry is derived from `onStateChange` timings (no extra deps). Singleplayer HUD unchanged when not connected.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass; prints MP HUD stats). |
 | MP-17 | M1 | Renderer perf: cull offscreen asteroids/gems; avoid multi-pass counts | RENDER (Codex) | DONE | MP-11 | manual | Notes:<br>- Added world-space view culling for asteroids and gems (with margin) to reduce draw calls when many entities exist.<br>- Replaced multi-pass `filter().length` asteroid counts with a single pass in the HUD overlay.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass). |
 | MP-18 | M1 | MP smoothing: advance remote sim clock between snapshots | NET (Codex) | DONE | MP-11 | manual | Notes:<br>- Interpolation target time now uses an estimated advancing remote sim clock (`latestSimTimeMs + ageMs * simSpeed`) so motion stays smooth even at 10Hz patches.<br>- Exposes `remoteSimTimeMs` and `renderSimTimeMs` under `state._mp` for debugging.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass). |
+| MP-19 | M1 | LAN tuning knobs: patch rate override + adaptive interp delay | NET/SERVER (Codex) | DONE | MP-18 | manual | Notes:<br>- Server: allow overriding Room `patchRate` via `BLASTEROIDS_PATCH_RATE_MS` (default 100ms).<br>- Client: interpolation delay adapts to observed snapshot jitter (tracks `snapshotDtMaxMs`) so higher patch Hz reduces input lag automatically.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass). |
 | MP-16 | M2 | Online deployment doc: DIY TLS/WSS, env vars, ops checklist, rate limits | DOCS/SERVER | NOT_STARTED | MP-09 | n/a | Doc-only until LAN MVP stable. |
 
 ---
@@ -235,4 +236,10 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 
 ### 2026-02-15 (MP-18)
 - MP smoothing: interpolation now advances a remote sim clock between snapshots so motion stays smooth at 10Hz patch rate.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass).
+
+### 2026-02-15 (MP-19)
+- Added LAN tuning knobs:
+  - Server `patchRate` override via `BLASTEROIDS_PATCH_RATE_MS` (try `50` for ~20Hz).
+  - Client interpolation delay now adapts to observed snapshot jitter so higher patch Hz reduces input lag automatically.
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass).

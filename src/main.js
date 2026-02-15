@@ -144,6 +144,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
   let last = performance.now();
   let accumulator = 0;
   const fixedDt = 1 / 60;
+  let mpDelayMs = 120;
 
   function stepRealTime(ts) {
     const dtMs = Math.min(50, ts - last);
@@ -161,7 +162,11 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
     if (mpConnected) {
       // Multiplayer: authoritative sim runs on server; client renders interpolated state.
-      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 120 });
+      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
+      const mpHud = game.state?._mp;
+      const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
+      const targetDelay = dtMax != null ? Math.max(60, Math.min(220, dtMax + 20)) : 120;
+      mpDelayMs += (targetDelay - mpDelayMs) * 0.08;
       accumulator = 0;
     } else if (!externalStepping) {
       while (!pausedByMenu && accumulator >= fixedDt) {

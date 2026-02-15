@@ -34,9 +34,13 @@ function sortedKeys(obj) {
 
 export class BlasteroidsRoom extends Room {
   maxClients = 4;
-  patchRate = 100; // 10Hz snapshots (Schema patches can be large with many entities)
+  patchRate = 100; // default 10Hz (can override via BLASTEROIDS_PATCH_RATE_MS)
 
   onCreate(options = {}) {
+    // Allow tuning patch rate without code edits (useful for LAN profiling).
+    // NOTE: higher patch rates increase CPU/bandwidth sharply with many entities.
+    this.patchRate = clampNumber(process.env.BLASTEROIDS_PATCH_RATE_MS, 16, 500, this.patchRate);
+
     this.setState(new BlasteroidsState());
 
     const width = clampNumber(options.width, 200, 8192, 1280);

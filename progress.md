@@ -82,6 +82,7 @@ Updates
 - 2026-02-15 MP-15: added a minimal multiplayer perf HUD line (client fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz) to quickly distinguish render bottlenecks from server sim lag.
 - 2026-02-15 MP-17: renderer perf pass added view culling for asteroids/gems and removed multi-pass asteroid count filters to improve FPS with many entities.
 - 2026-02-15 MP-18: MP smoothing now advances an estimated remote sim clock between snapshots so motion stays smooth despite 10Hz server patch rate.
+- 2026-02-15 MP-19: added `BLASTEROIDS_PATCH_RATE_MS` server override and adaptive client interpolation delay so we can A/B 10/20/30Hz without code edits and reduce input lag when patch rate is higher.
 - 2026-02-15 multiplayer foundations (M0 MP-01..MP-06):
   - Refactored engine to support multiple players via `state.playersById` + `state.localPlayerId` while preserving singleplayer (`file://`) and deterministic hooks via legacy aliases.
   - Added deterministic co-op ownership rules (`attachedTo` / `pullOwnerId`) and per-player scoring/progression/cooldowns.
