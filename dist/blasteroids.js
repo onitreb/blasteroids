@@ -14385,6 +14385,16 @@ Schema instances may only have up to 64 fields.`);
       const tickHz = (last.tick - first.tick) * 1e3 / dtMs;
       return { hz, dtAvgMs, dtMinMs, dtMaxMs, simSpeed, tickHz };
     }
+    function estimateRemoteSimTimeMs({ atMs, recvStats } = {}) {
+      if (!latestSimTimeMs)
+        return 0;
+      const now2 = Number.isFinite(Number(atMs)) ? Number(atMs) : nowMs2();
+      const ageMsRaw = now2 - (Number(latestReceivedAtMs) || 0);
+      const ageMs = clamp(ageMsRaw, 0, 250);
+      const speed = recvStats && Number.isFinite(recvStats.simSpeed) ? recvStats.simSpeed : 1;
+      const remote = latestSimTimeMs + ageMs * clamp(speed, 0, 2);
+      return Math.min(latestSimTimeMs + 250, remote);
+    }
     function ensureEnginePlayers() {
       if (!state.playersById || typeof state.playersById !== "object")
         state.playersById = /* @__PURE__ */ Object.create(null);
@@ -14424,8 +14434,9 @@ Schema instances may only have up to 64 fields.`);
       if (!latestSimTimeMs)
         return false;
       ensureEnginePlayers();
-      const targetSimTime = latestSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
       const recvStats = computeRecvStats(atMs, 2e3);
+      const remoteSimTimeMs = estimateRemoteSimTimeMs({ atMs, recvStats });
+      const targetSimTime = remoteSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
       for (const [id, track] of playerTracks) {
         const player = state.playersById[id];
         if (!player?.ship)
@@ -14550,6 +14561,8 @@ Schema instances may only have up to 64 fields.`);
         latestSimTimeMs,
         latestReceivedAtMs,
         latestAgeMs: Math.max(0, Number(atMs) - latestReceivedAtMs),
+        remoteSimTimeMs,
+        renderSimTimeMs: targetSimTime,
         interpDelayMs: delayMs,
         asteroidCount: state.asteroids.length,
         gemCount: state.gems.length,

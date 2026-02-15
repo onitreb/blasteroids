@@ -285,6 +285,17 @@ export function createMpWorldView({
     return { hz, dtAvgMs, dtMinMs, dtMaxMs, simSpeed, tickHz };
   }
 
+  function estimateRemoteSimTimeMs({ atMs, recvStats } = {}) {
+    if (!latestSimTimeMs) return 0;
+    const now = Number.isFinite(Number(atMs)) ? Number(atMs) : nowMs();
+    const ageMsRaw = now - (Number(latestReceivedAtMs) || 0);
+    const ageMs = clamp(ageMsRaw, 0, 250); // prevent runaway on tab stalls
+    const speed = recvStats && Number.isFinite(recvStats.simSpeed) ? recvStats.simSpeed : 1;
+    const remote = latestSimTimeMs + ageMs * clamp(speed, 0, 2);
+    // allow a small lead so render time stays behind even at low patch rates
+    return Math.min(latestSimTimeMs + 250, remote);
+  }
+
   function ensureEnginePlayers() {
     if (!state.playersById || typeof state.playersById !== "object") state.playersById = Object.create(null);
 
@@ -324,8 +335,9 @@ export function createMpWorldView({
     if (!latestSimTimeMs) return false;
     ensureEnginePlayers();
 
-    const targetSimTime = latestSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
     const recvStats = computeRecvStats(atMs, 2000);
+    const remoteSimTimeMs = estimateRemoteSimTimeMs({ atMs, recvStats });
+    const targetSimTime = remoteSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
 
     // Players
     for (const [id, track] of playerTracks) {
@@ -458,6 +470,8 @@ export function createMpWorldView({
       latestSimTimeMs,
       latestReceivedAtMs,
       latestAgeMs: Math.max(0, Number(atMs) - latestReceivedAtMs),
+      remoteSimTimeMs,
+      renderSimTimeMs: targetSimTime,
       interpDelayMs: delayMs,
       asteroidCount: state.asteroids.length,
       gemCount: state.gems.length,
