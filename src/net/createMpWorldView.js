@@ -81,6 +81,9 @@ export function createMpWorldView({
   let latestSimTimeMs = 0;
   let latestReceivedAtMs = 0;
 
+  const recvSamples = []; // recent onStateChange arrivals (for telemetry)
+  const recvSampleCap = 64;
+
   const playerTracks = new Map(); // id -> { hist, tier, score, gemScore }
   const asteroidTracks = new Map(); // id -> { hist, static }
   const gemTracks = new Map(); // id -> { hist, static }
@@ -132,6 +135,10 @@ export function createMpWorldView({
     if (!schemaState) return;
     latestReceivedAtMs = nowMs();
     latestSimTimeMs = Number(schemaState.simTimeMs) || latestSimTimeMs || 0;
+    const tick = Number(schemaState.tick) || 0;
+
+    recvSamples.push({ receivedAtMs: latestReceivedAtMs, simTimeMs: latestSimTimeMs, tick });
+    if (recvSamples.length > recvSampleCap) recvSamples.splice(0, recvSamples.length - recvSampleCap);
 
     // Players
     const seenPlayers = new Set();
@@ -244,6 +251,40 @@ export function createMpWorldView({
     gemIdsSorted = Array.from(gemTracks.keys()).sort();
   }
 
+  function computeRecvStats(atMs, windowMs = 2000) {
+    const nTotal = recvSamples.length;
+    if (nTotal < 2) return null;
+
+    const now = Number(atMs) || nowMs();
+    let start = nTotal - 1;
+    while (start > 0 && now - recvSamples[start - 1].receivedAtMs <= windowMs) start--;
+    const n = nTotal - start;
+    if (n < 2) return null;
+
+    const first = recvSamples[start];
+    const last = recvSamples[nTotal - 1];
+    const dtMs = last.receivedAtMs - first.receivedAtMs;
+    if (!(dtMs > 0)) return null;
+
+    let dtMinMs = Infinity;
+    let dtMaxMs = 0;
+    let prev = first.receivedAtMs;
+    for (let i = start + 1; i < nTotal; i++) {
+      const cur = recvSamples[i].receivedAtMs;
+      const d = cur - prev;
+      if (d < dtMinMs) dtMinMs = d;
+      if (d > dtMaxMs) dtMaxMs = d;
+      prev = cur;
+    }
+
+    const hz = ((n - 1) * 1000) / dtMs;
+    const dtAvgMs = dtMs / (n - 1);
+    const simSpeed = (last.simTimeMs - first.simTimeMs) / dtMs;
+    const tickHz = ((last.tick - first.tick) * 1000) / dtMs;
+
+    return { hz, dtAvgMs, dtMinMs, dtMaxMs, simSpeed, tickHz };
+  }
+
   function ensureEnginePlayers() {
     if (!state.playersById || typeof state.playersById !== "object") state.playersById = Object.create(null);
 
@@ -284,6 +325,7 @@ export function createMpWorldView({
     ensureEnginePlayers();
 
     const targetSimTime = latestSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
+    const recvStats = computeRecvStats(atMs, 2000);
 
     // Players
     for (const [id, track] of playerTracks) {
@@ -415,10 +457,17 @@ export function createMpWorldView({
       connected: true,
       latestSimTimeMs,
       latestReceivedAtMs,
+      latestAgeMs: Math.max(0, Number(atMs) - latestReceivedAtMs),
       interpDelayMs: delayMs,
       asteroidCount: state.asteroids.length,
       gemCount: state.gems.length,
       playerCount: playerTracks.size,
+      snapshotHz: recvStats ? recvStats.hz : 0,
+      snapshotDtAvgMs: recvStats ? recvStats.dtAvgMs : null,
+      snapshotDtMinMs: recvStats ? recvStats.dtMinMs : null,
+      snapshotDtMaxMs: recvStats ? recvStats.dtMaxMs : null,
+      serverSimSpeed: recvStats ? recvStats.simSpeed : null, // 1.0 ~= real-time sim
+      serverTickHz: recvStats ? recvStats.tickHz : null, // ~=60Hz when sim keeps up
     };
     return true;
   }
@@ -440,4 +489,3 @@ export function createMpWorldView({
     }),
   };
 }
-

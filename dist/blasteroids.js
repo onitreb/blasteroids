@@ -5282,6 +5282,7 @@
   function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
     const menu = documentRef.getElementById("menu");
     const hudScore = documentRef.getElementById("hud-score");
+    const hudMp = documentRef.getElementById("hud-mp");
     const debugToggleBtn = documentRef.getElementById("debug-toggle");
     const startBtn = documentRef.getElementById("start-btn");
     const dbgAttract = documentRef.getElementById("dbg-attract");
@@ -5503,6 +5504,12 @@
     const tuneTechPingCooldownSave = documentRef.getElementById("tune-tech-ping-cooldown-save");
     const tuneTechPingCooldownDefault = documentRef.getElementById("tune-tech-ping-cooldown-default");
     const nf = new Intl.NumberFormat();
+    function nowMs3() {
+      if (windowRef?.performance && typeof windowRef.performance.now === "function")
+        return windowRef.performance.now();
+      return Date.now();
+    }
+    const hudPerf = { t0: nowMs3(), frames: 0, fps: 0 };
     const touch = {
       active: false,
       pointerId: null,
@@ -6407,6 +6414,27 @@
     function updateHudScore() {
       if (hudScore)
         hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
+      if (!hudMp)
+        return;
+      const mp = game.state?._mp;
+      if (!mp?.connected) {
+        hudMp.textContent = "";
+        return;
+      }
+      hudPerf.frames++;
+      const t = nowMs3();
+      const elapsed = t - hudPerf.t0;
+      if (elapsed >= 500) {
+        hudPerf.fps = hudPerf.frames * 1e3 / Math.max(1, elapsed);
+        hudPerf.frames = 0;
+        hudPerf.t0 = t;
+      }
+      const hz = Number.isFinite(mp.snapshotHz) ? mp.snapshotHz.toFixed(1) : "?";
+      const dtAvg = Number.isFinite(mp.snapshotDtAvgMs) ? `${Math.round(mp.snapshotDtAvgMs)}ms` : "?";
+      const age = Number.isFinite(mp.latestAgeMs) ? `${Math.round(mp.latestAgeMs)}ms` : "?";
+      const sim = Number.isFinite(mp.serverSimSpeed) ? `${mp.serverSimSpeed.toFixed(2)}x` : "?";
+      const tickHz = Number.isFinite(mp.serverTickHz) ? `${mp.serverTickHz.toFixed(1)}Hz` : "?";
+      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g`;
     }
     function isMenuVisible() {
       if (!menu)
@@ -14131,6 +14159,8 @@ Schema instances may only have up to 64 fields.`);
     let onStateChangeHandler = null;
     let latestSimTimeMs = 0;
     let latestReceivedAtMs = 0;
+    const recvSamples = [];
+    const recvSampleCap = 64;
     const playerTracks = /* @__PURE__ */ new Map();
     const asteroidTracks = /* @__PURE__ */ new Map();
     const gemTracks = /* @__PURE__ */ new Map();
@@ -14174,6 +14204,10 @@ Schema instances may only have up to 64 fields.`);
         return;
       latestReceivedAtMs = nowMs2();
       latestSimTimeMs = Number(schemaState.simTimeMs) || latestSimTimeMs || 0;
+      const tick = Number(schemaState.tick) || 0;
+      recvSamples.push({ receivedAtMs: latestReceivedAtMs, simTimeMs: latestSimTimeMs, tick });
+      if (recvSamples.length > recvSampleCap)
+        recvSamples.splice(0, recvSamples.length - recvSampleCap);
       const seenPlayers = /* @__PURE__ */ new Set();
       const players = schemaState.players;
       if (players && typeof players.forEach === "function") {
@@ -14283,6 +14317,40 @@ Schema instances may only have up to 64 fields.`);
       asteroidIdsSorted = Array.from(asteroidTracks.keys()).sort();
       gemIdsSorted = Array.from(gemTracks.keys()).sort();
     }
+    function computeRecvStats(atMs, windowMs = 2e3) {
+      const nTotal = recvSamples.length;
+      if (nTotal < 2)
+        return null;
+      const now2 = Number(atMs) || nowMs2();
+      let start = nTotal - 1;
+      while (start > 0 && now2 - recvSamples[start - 1].receivedAtMs <= windowMs)
+        start--;
+      const n = nTotal - start;
+      if (n < 2)
+        return null;
+      const first = recvSamples[start];
+      const last = recvSamples[nTotal - 1];
+      const dtMs = last.receivedAtMs - first.receivedAtMs;
+      if (!(dtMs > 0))
+        return null;
+      let dtMinMs = Infinity;
+      let dtMaxMs = 0;
+      let prev = first.receivedAtMs;
+      for (let i = start + 1; i < nTotal; i++) {
+        const cur = recvSamples[i].receivedAtMs;
+        const d = cur - prev;
+        if (d < dtMinMs)
+          dtMinMs = d;
+        if (d > dtMaxMs)
+          dtMaxMs = d;
+        prev = cur;
+      }
+      const hz = (n - 1) * 1e3 / dtMs;
+      const dtAvgMs = dtMs / (n - 1);
+      const simSpeed = (last.simTimeMs - first.simTimeMs) / dtMs;
+      const tickHz = (last.tick - first.tick) * 1e3 / dtMs;
+      return { hz, dtAvgMs, dtMinMs, dtMaxMs, simSpeed, tickHz };
+    }
     function ensureEnginePlayers() {
       if (!state.playersById || typeof state.playersById !== "object")
         state.playersById = /* @__PURE__ */ Object.create(null);
@@ -14323,6 +14391,7 @@ Schema instances may only have up to 64 fields.`);
         return false;
       ensureEnginePlayers();
       const targetSimTime = latestSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
+      const recvStats = computeRecvStats(atMs, 2e3);
       for (const [id, track] of playerTracks) {
         const player = state.playersById[id];
         if (!player?.ship)
@@ -14446,10 +14515,19 @@ Schema instances may only have up to 64 fields.`);
         connected: true,
         latestSimTimeMs,
         latestReceivedAtMs,
+        latestAgeMs: Math.max(0, Number(atMs) - latestReceivedAtMs),
         interpDelayMs: delayMs,
         asteroidCount: state.asteroids.length,
         gemCount: state.gems.length,
-        playerCount: playerTracks.size
+        playerCount: playerTracks.size,
+        snapshotHz: recvStats ? recvStats.hz : 0,
+        snapshotDtAvgMs: recvStats ? recvStats.dtAvgMs : null,
+        snapshotDtMinMs: recvStats ? recvStats.dtMinMs : null,
+        snapshotDtMaxMs: recvStats ? recvStats.dtMaxMs : null,
+        serverSimSpeed: recvStats ? recvStats.simSpeed : null,
+        // 1.0 ~= real-time sim
+        serverTickHz: recvStats ? recvStats.tickHz : null
+        // ~=60Hz when sim keeps up
       };
       return true;
     }

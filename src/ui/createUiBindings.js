@@ -66,6 +66,7 @@ export const DEBUG_MENU_CONTROL_IDS = Object.freeze([
 export function createUiBindings({ game, canvas, documentRef = document, windowRef = window }) {
   const menu = documentRef.getElementById("menu");
   const hudScore = documentRef.getElementById("hud-score");
+  const hudMp = documentRef.getElementById("hud-mp");
   const debugToggleBtn = documentRef.getElementById("debug-toggle");
   const startBtn = documentRef.getElementById("start-btn");
   const dbgAttract = documentRef.getElementById("dbg-attract");
@@ -288,6 +289,13 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const tuneTechPingCooldownDefault = documentRef.getElementById("tune-tech-ping-cooldown-default");
 
   const nf = new Intl.NumberFormat();
+
+  function nowMs() {
+    if (windowRef?.performance && typeof windowRef.performance.now === "function") return windowRef.performance.now();
+    return Date.now();
+  }
+
+  const hudPerf = { t0: nowMs(), frames: 0, fps: 0 };
 
   const touch = {
     active: false,
@@ -1119,6 +1127,31 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
 
   function updateHudScore() {
     if (hudScore) hudScore.textContent = `Score: ${nf.format(game.state.score)}`;
+
+    if (!hudMp) return;
+    const mp = game.state?._mp;
+    if (!mp?.connected) {
+      hudMp.textContent = "";
+      return;
+    }
+
+    // Lightweight client FPS estimate (render loop cadence).
+    hudPerf.frames++;
+    const t = nowMs();
+    const elapsed = t - hudPerf.t0;
+    if (elapsed >= 500) {
+      hudPerf.fps = (hudPerf.frames * 1000) / Math.max(1, elapsed);
+      hudPerf.frames = 0;
+      hudPerf.t0 = t;
+    }
+
+    const hz = Number.isFinite(mp.snapshotHz) ? mp.snapshotHz.toFixed(1) : "?";
+    const dtAvg = Number.isFinite(mp.snapshotDtAvgMs) ? `${Math.round(mp.snapshotDtAvgMs)}ms` : "?";
+    const age = Number.isFinite(mp.latestAgeMs) ? `${Math.round(mp.latestAgeMs)}ms` : "?";
+    const sim = Number.isFinite(mp.serverSimSpeed) ? `${mp.serverSimSpeed.toFixed(2)}x` : "?";
+    const tickHz = Number.isFinite(mp.serverTickHz) ? `${mp.serverTickHz.toFixed(1)}Hz` : "?";
+
+    hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g`;
   }
 
   function isMenuVisible() {

@@ -93,7 +93,8 @@ try {
   }
 
   const status = await page.evaluate(() => window.Blasteroids.mpStatus());
-  console.log("[mp-browser-smoke] ok", status);
+  const mpHud = await page.evaluate(() => window.Blasteroids.getGame().state._mp || null);
+  console.log("[mp-browser-smoke] ok", { status, mpHud });
 } finally {
   await browser.close();
   await server.stop();

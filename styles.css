@@ -50,6 +50,21 @@ body {
     0 1px 0 rgba(0, 0, 0, 0.25);
 }
 
+#hud-mp {
+  position: absolute;
+  top: 38px;
+  left: 18px;
+  z-index: 2;
+  pointer-events: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(231, 240, 255, 0.74);
+  text-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.65),
+    0 1px 0 rgba(0, 0, 0, 0.25);
+  white-space: pre;
+}
+
 canvas {
   width: min(92vw, 980px);
   height: min(86vh, 740px);
