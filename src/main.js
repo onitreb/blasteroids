@@ -161,7 +161,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
     if (mpConnected) {
       // Multiplayer: authoritative sim runs on server; client renders interpolated state.
-      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 40 });
+      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 120 });
       accumulator = 0;
     } else if (!externalStepping) {
       while (!pausedByMenu && accumulator >= fixedDt) {
@@ -200,10 +200,15 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
   const mp = createMpClient({
     getInput: () => game.state.input,
+    consumeInput: (inputRef, msg) => {
+      if (!inputRef || typeof inputRef !== "object") return;
+      if (msg?.burst) inputRef.burst = false;
+      if (msg?.ping) inputRef.ping = false;
+    },
     sendHz: 30,
     snapshotBufferSize: 32,
   });
-  const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 40 });
+  const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
 
   const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
   window.Blasteroids = {

@@ -66,6 +66,7 @@ function readPlayersSnapshot(schemaState) {
 
 export function createMpClient({
   getInput = null,
+  consumeInput = null,
   sendHz = 30,
   snapshotBufferSize = 32,
 } = {}) {
@@ -84,9 +85,10 @@ export function createMpClient({
   }
 
   function sampleInput() {
-    const input = typeof getInput === "function" ? getInput() : null;
-    const i = input && typeof input === "object" ? input : {};
+    const inputRef = typeof getInput === "function" ? getInput() : null;
+    const i = inputRef && typeof inputRef === "object" ? inputRef : {};
     return {
+      inputRef,
       left: !!i.left,
       right: !!i.right,
       up: !!i.up,
@@ -129,6 +131,14 @@ export function createMpClient({
       lastInputSample = sample;
       try {
         room.send("input", msg);
+        if (typeof consumeInput === "function") consumeInput(sample.inputRef, msg);
+        else if (sample.inputRef && typeof sample.inputRef === "object") {
+          // When running in multiplayer mode, the local engine simulation is paused,
+          // so impulse inputs must be cleared on send (otherwise edge-triggered messages
+          // become permanently "stuck" after the first press).
+          if (msg.burst) sample.inputRef.burst = false;
+          if (msg.ping) sample.inputRef.ping = false;
+        }
       } catch {
         // ignore (room may be closing)
       }
@@ -226,4 +236,3 @@ export function createMpClient({
     getRoom,
   };
 }
-

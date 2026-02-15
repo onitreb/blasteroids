@@ -13870,6 +13870,7 @@ Schema instances may only have up to 64 fields.`);
   }
   function createMpClient({
     getInput = null,
+    consumeInput = null,
     sendHz = 30,
     snapshotBufferSize = 32
   } = {}) {
@@ -13884,9 +13885,10 @@ Schema instances may only have up to 64 fields.`);
       return !!(room && room.connection && room.connection.isOpen);
     }
     function sampleInput() {
-      const input = typeof getInput === "function" ? getInput() : null;
-      const i = input && typeof input === "object" ? input : {};
+      const inputRef = typeof getInput === "function" ? getInput() : null;
+      const i = inputRef && typeof inputRef === "object" ? inputRef : {};
       return {
+        inputRef,
         left: !!i.left,
         right: !!i.right,
         up: !!i.up,
@@ -13928,6 +13930,14 @@ Schema instances may only have up to 64 fields.`);
         lastInputSample = sample;
         try {
           room.send("input", msg);
+          if (typeof consumeInput === "function")
+            consumeInput(sample.inputRef, msg);
+          else if (sample.inputRef && typeof sample.inputRef === "object") {
+            if (msg.burst)
+              sample.inputRef.burst = false;
+            if (msg.ping)
+              sample.inputRef.ping = false;
+          }
         } catch {
         }
       }, intervalMs);
@@ -14573,7 +14583,7 @@ Schema instances may only have up to 64 fields.`);
       const mpConnected = mp.isConnected();
       const pausedByMenu = !mpConnected && ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (mpConnected) {
-        mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 40 });
+        mpWorld.applyInterpolatedState({ atMs: ts, delayMs: 120 });
         accumulator = 0;
       } else if (!externalStepping) {
         while (!pausedByMenu && accumulator >= fixedDt) {
@@ -14610,10 +14620,18 @@ Schema instances may only have up to 64 fields.`);
     }
     const mp = createMpClient({
       getInput: () => game.state.input,
+      consumeInput: (inputRef, msg) => {
+        if (!inputRef || typeof inputRef !== "object")
+          return;
+        if (msg?.burst)
+          inputRef.burst = false;
+        if (msg?.ping)
+          inputRef.ping = false;
+      },
       sendHz: 30,
       snapshotBufferSize: 32
     });
-    const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 40 });
+    const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
     const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
     window.Blasteroids = {
       ...existingApi,

@@ -213,3 +213,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 ### 2026-02-15 (MP-11 follow-up)
 - Fixed multiplayer input wiring bug: `src/main.js` no longer captures a stale `input` object at startup (local player id changes in MP); key/mouse handlers now read `game.state.input` dynamically so the active local player can control their ship.
 - Hardened `scripts/mp-browser-smoke.mjs` to assert the ship actually moves while connected.
+- Stability/perf tweaks after manual testing:
+  - Increased `@colyseus/schema` `Encoder.BUFFER_SIZE` to 1MB to avoid buffer overflows when syncing many entities.
+  - Reduced server patch rate to 10Hz (`patchRate = 100ms`) to cut patch bandwidth/CPU.
+  - Cleared impulse inputs (`burst`/`ping`) on the client after sending so repeated bursts keep working while local sim is paused.

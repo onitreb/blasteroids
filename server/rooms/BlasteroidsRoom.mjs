@@ -1,7 +1,12 @@
 import { Room } from "@colyseus/core";
+import { Encoder } from "@colyseus/schema";
 
 import { createEngine } from "../../src/engine/createEngine.js";
 import { BlasteroidsState, AsteroidState, GemState, PlayerState } from "../schema/BlasteroidsState.mjs";
+
+// Default BUFFER_SIZE can overflow quickly when syncing many entities.
+// Keep this intentionally generous for LAN MVP; revisit with interest management.
+Encoder.BUFFER_SIZE = 1024 * 1024; // 1MB
 
 function clampNumber(n, min, max, fallback = 0) {
   const v = Number(n);
@@ -29,7 +34,7 @@ function sortedKeys(obj) {
 
 export class BlasteroidsRoom extends Room {
   maxClients = 4;
-  patchRate = 50; // 20Hz snapshots
+  patchRate = 100; // 10Hz snapshots (Schema patches can be large with many entities)
 
   onCreate(options = {}) {
     this.setState(new BlasteroidsState());
