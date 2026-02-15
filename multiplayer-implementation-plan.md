@@ -217,3 +217,8 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
   - Increased `@colyseus/schema` `Encoder.BUFFER_SIZE` to 1MB to avoid buffer overflows when syncing many entities.
   - Reduced server patch rate to 10Hz (`patchRate = 100ms`) to cut patch bandwidth/CPU.
   - Cleared impulse inputs (`burst`/`ping`) on the client after sending so repeated bursts keep working while local sim is paused.
+
+### 2026-02-15 (MP-11 follow-up 2)
+- Correctness: fixed ship-vs-asteroid collisions to run for **all players** (not just the local-player alias), in deterministic order.
+- Stability: LAN server now starts the authoritative engine with `features: { roundLoop: false, saucer: false }` so MP rooms don’t end unexpectedly due to red giant / gate / saucer events (core co-op only for LAN MVP).
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass); `node scripts/mp-lan-smoke.mjs ws://localhost:<port>` (pass).

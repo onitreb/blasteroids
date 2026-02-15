@@ -43,7 +43,14 @@ export class BlasteroidsRoom extends Room {
     const height = clampNumber(options.height, 200, 8192, 720);
     const seed = String(options.seed ?? "");
 
-    this._engine = createEngine({ role: "server", width, height, seed: seed ? Number(seed) : undefined });
+    this._engine = createEngine({
+      role: "server",
+      width,
+      height,
+      seed: seed ? Number(seed) : undefined,
+      // LAN MVP core co-op only (no round loop hazards / saucer) to avoid invisible authoritative events.
+      features: { roundLoop: false, saucer: false },
+    });
 
     // Remove the singleplayer placeholder player. Multiplayer server will populate real players on join.
     const placeholderId = this._engine.state.localPlayerId;

@@ -554,11 +554,15 @@
       progression
     };
   }
-  function createEngine({ width, height, seed, role = "client" } = {}) {
+  function createEngine({ width, height, seed, role = "client", features = null } = {}) {
     const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 3737844653;
     const baseSeed = baseSeedRaw >>> 0 || 3737844653;
     const engineRole = role === "server" ? "server" : "client";
     const isServer = engineRole === "server";
+    const effFeatures = {
+      roundLoop: !(features && typeof features === "object" && features.roundLoop === false),
+      saucer: !(features && typeof features === "object" && features.saucer === false)
+    };
     let sessionSeed = baseSeed;
     let rng = seededRng(baseSeed);
     const starRng = seededRng(1369960461);
@@ -567,6 +571,7 @@
     const exhaustPool = [];
     const state = {
       role: engineRole,
+      features: effFeatures,
       mode: "menu",
       // menu | playing | gameover
       time: 0,
@@ -1650,6 +1655,20 @@
       }
     }
     function resetRoundState() {
+      if (!state.features?.roundLoop) {
+        state.round.durationSec = roundDurationSec();
+        state.round.elapsedSec = 0;
+        state.round.outcome = null;
+        state.round.carriedPartId = null;
+        state.round.techPing = null;
+        state.round.techPingCooldownSec = 0;
+        state.round.starExposureSec = 0;
+        state.round.escape = null;
+        state.round.star = null;
+        state.round.gate = null;
+        state.round.techParts = [];
+        return;
+      }
       state.round.durationSec = roundDurationSec();
       state.round.elapsedSec = 0;
       state.round.outcome = null;
@@ -3389,57 +3408,69 @@
         return;
       const shipRemovals = /* @__PURE__ */ new Set();
       const shipAdds = [];
-      for (const a of state.asteroids) {
-        if (a.attached)
+      const ids = sortedPlayerIds();
+      for (let pi = 0; pi < ids.length; pi++) {
+        const player = state.playersById[ids[pi]];
+        const ship = player?.ship;
+        if (!ship)
           continue;
-        const shipHit = circleCollide(state.ship, a);
-        if (!shipHit)
-          continue;
-        const impactSpeedN = closingSpeedAlongNormal(state.ship, a, shipHit.n);
-        const impactSpeedF = fractureImpactSpeed(a, state.ship, mul(shipHit.n, -1));
-        if (a.shipLaunched) {
-          if (a.size === "small") {
-            breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          } else {
-            const energy = impactEnergy(a, state.ship, impactSpeedF);
-            const threshold = fractureEnergyThreshold(a);
-            if (energy >= threshold) {
-              const frags = fractureAsteroid(a, norm(a.vel), impactSpeedN);
-              if (frags) {
+        for (const a of state.asteroids) {
+          if (!a || a.attached)
+            continue;
+          if (shipRemovals.has(a.id))
+            continue;
+          const shipHit = circleCollide(ship, a);
+          if (!shipHit)
+            continue;
+          const impactSpeedN = closingSpeedAlongNormal(ship, a, shipHit.n);
+          const impactSpeedF = fractureImpactSpeed(a, ship, mul(shipHit.n, -1));
+          if (a.shipLaunched) {
+            if (a.size === "small") {
+              breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+            } else {
+              const energy = impactEnergy(a, ship, impactSpeedF);
+              const threshold = fractureEnergyThreshold(a);
+              if (energy >= threshold) {
+                const frags = fractureAsteroid(a, norm(a.vel), impactSpeedN);
+                if (frags) {
+                  if (a.techPartId)
+                    dropTechPartFromAsteroid(a);
+                  shipRemovals.add(a.id);
+                  const room = Math.max(
+                    0,
+                    state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size)
+                  );
+                  shipAdds.push(...frags.slice(0, room));
+                }
+              } else {
                 if (a.techPartId)
                   dropTechPartFromAsteroid(a);
                 shipRemovals.add(a.id);
-                const room = Math.max(0, state.params.maxAsteroids - (state.asteroids.length + shipAdds.length - shipRemovals.size));
-                shipAdds.push(...frags.slice(0, room));
+                spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
               }
-            } else {
-              if (a.techPartId)
-                dropTechPartFromAsteroid(a);
-              shipRemovals.add(a.id);
-              spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
             }
+            continue;
           }
-          continue;
-        }
-        if (a.size === "small") {
-          const energy = impactEnergy(a, state.ship, impactSpeedF);
-          const threshold = fractureEnergyThreshold(a);
-          const shouldBreak = applyFractureChipDamage(a, energy, threshold, impactSpeedF);
-          if (shouldBreak) {
-            breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
-          } else {
-            resolveElasticCollision(state.ship, a, shipHit.n, shipHit.penetration);
+          if (a.size === "small") {
+            const energy = impactEnergy(a, ship, impactSpeedF);
+            const threshold = fractureEnergyThreshold(a);
+            const shouldBreak = applyFractureChipDamage(a, energy, threshold, impactSpeedF);
+            if (shouldBreak) {
+              breakSmallAsteroid(a, { velHint: a.vel, removeSet: shipRemovals });
+            } else {
+              resolveElasticCollision(ship, a, shipHit.n, shipHit.penetration);
+            }
+            continue;
           }
-          continue;
+          if (state.settings.shipExplodesOnImpact && state.features?.roundLoop) {
+            endRound("lose", "ship_impact");
+            return;
+          }
+          resolveElasticCollision(ship, a, shipHit.n, shipHit.penetration);
         }
-        if (state.settings.shipExplodesOnImpact) {
-          endRound("lose", "ship_impact");
-          return;
-        }
-        resolveElasticCollision(state.ship, a, shipHit.n, shipHit.penetration);
       }
       if (shipRemovals.size) {
-        state.asteroids = state.asteroids.filter((a) => !shipRemovals.has(a.id));
+        state.asteroids = state.asteroids.filter((a) => a && !shipRemovals.has(a.id));
       }
       if (shipAdds.length)
         state.asteroids.push(...shipAdds);
@@ -3545,9 +3576,11 @@
         syncCameraToShip();
         return;
       }
-      updateRound(dt);
-      if (state.mode !== "playing")
-        return;
+      if (state.features?.roundLoop) {
+        updateRound(dt);
+        if (state.mode !== "playing")
+          return;
+      }
       state.time += dt;
       forEachPlayer((p) => {
         p.burstCooldown = Math.max(0, (Number(p.burstCooldown) || 0) - dt);
@@ -3572,33 +3605,42 @@
         p.input.burst = false;
         burstAttachedForPlayer(p);
       });
-      if (state.input.ping) {
+      if (state.features?.roundLoop && state.input.ping) {
         state.input.ping = false;
         tryStartTechPing();
       }
       forEachPlayer((p) => updateShip(dt, p));
-      updateShipStarExposure(dt);
-      if (state.mode !== "playing")
-        return;
+      if (state.features?.roundLoop) {
+        updateShipStarExposure(dt);
+        if (state.mode !== "playing")
+          return;
+      }
       updateExhaust(dt);
       syncCameraToShip();
       updateAsteroids(dt);
       updateGems(dt);
-      updateSaucer(dt);
-      updateSaucerLasers(dt);
-      applyRedGiantHazard();
-      if (state.mode !== "playing")
-        return;
-      handleSaucerAsteroidCollisions();
+      if (state.features?.saucer) {
+        updateSaucer(dt);
+        updateSaucerLasers(dt);
+        handleSaucerAsteroidCollisions();
+      }
+      if (state.features?.roundLoop) {
+        applyRedGiantHazard();
+        if (state.mode !== "playing")
+          return;
+      }
       handleGemShipCollisions();
-      handleSaucerLaserShipCollisions();
+      if (state.features?.saucer)
+        handleSaucerLaserShipCollisions();
       handleCollisions();
       if (state.mode !== "playing")
         return;
-      updateTechPing(dt);
-      updateTechParts(dt);
-      if (state.mode !== "playing")
-        return;
+      if (state.features?.roundLoop) {
+        updateTechPing(dt);
+        updateTechParts(dt);
+        if (state.mode !== "playing")
+          return;
+      }
       rebuildWorldCellIndex();
       maintainAsteroidPopulation(dt);
     }
