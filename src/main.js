@@ -1,6 +1,7 @@
 import { createEngine } from "./engine/createEngine.js";
 import { createRenderer } from "./render/renderGame.js";
 import { createUiBindings } from "./ui/createUiBindings.js";
+import { createMpClient } from "./net/createMpClient.js";
 
 (() => {
   const canvas = document.getElementById("game");
@@ -185,12 +186,23 @@ import { createUiBindings } from "./ui/createUiBindings.js";
     ui.syncRuntimeDebugUi();
   }
 
+  const mp = createMpClient({
+    getInput: () => game.state.input,
+    sendHz: 30,
+    snapshotBufferSize: 32,
+  });
+
   const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
   window.Blasteroids = {
     ...existingApi,
     renderGameToText,
     setShipSvgRenderer,
     advanceTime,
+    mpConnect: (opts = {}) => mp.connect(opts),
+    mpDisconnect: () => mp.disconnect(),
+    mpStatus: () => mp.getStatus(),
+    mpSnapshots: () => mp.getSnapshots(),
+    mpRoom: () => mp.getRoom(),
     // Debug helpers for visual iteration (intentionally undocumented).
     getGame: () => game,
     debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 * 1.1 } = {}) => {

@@ -74,3 +74,7 @@ Run the LAN server (serves static client + Colyseus websocket on the same port):
 
 Options:
 - `npm run lan:server -- --port 2567` (default port is 2567)
+
+Smoke scripts (Node / headless browser):
+- Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
+- Browser connect + snapshots: `node scripts/mp-browser-smoke.mjs`
