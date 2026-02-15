@@ -68,6 +68,13 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
 - Bundle output: `dist/blasteroids.js`.
 - Runtime HTML shell: `index.html` loads `styles.css` and `dist/blasteroids.js`.
 
+## Multiplayer (Served Mode)
+
+Multiplayer runs in a separate “served” mode and must not break the `file://` workflow:
+- LAN server entrypoint: `server/lan-server.mjs` (serves static client + hosts Colyseus websocket on the same port)
+- Colyseus Room(s): `server/rooms/*`
+- Schema state definitions: `server/schema/*`
+
 ## Testing and Validation
 
 - Automated tests: `npm test` (`node --test`), currently covering util helpers and deterministic engine behavior.

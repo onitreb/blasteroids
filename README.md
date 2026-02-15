@@ -68,9 +68,11 @@ Open the in-game menu to tweak sliders/switches and click **Set default** to sav
 - Star accent chance / twinkle chance / twinkle strength / twinkle speed
 
 ## Multiplayer Status
-- The simulation is still **single-client authoritative** today.
-- The spawn model is global within one client, but there is no networked server authority yet.
-- Future multiplayer should move asteroid spawning/simulation authority to a shared server (or deterministic lockstep authority) so all players see the same asteroid state.
+- Singleplayer remains **file://-first** and runs by double-clicking `index.html` (offline, no server).
+- LAN multiplayer is in progress:
+  - A Colyseus LAN server exists (`npm run lan:server`) and hosts an authoritative room (`blasteroids`) with Schema state sync.
+  - Browser client integration (connect/Quick Play, input send loop, snapshot interpolation, UI) is not complete yet.
+- Quick smoke (Node only): `npm run lan:server` then `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
 
 ## GitHub Pages
 Once Pages is enabled, the game will be available at:

@@ -538,3 +538,12 @@ Updates
     - `npm test`: `36 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).
     - Playwright smoke artifacts: `output/web-game/fracture-check3/`.
+
+- 2026-02-15 multiplayer LAN MVP kickoff (MP-07..MP-09):
+  - MP-07: Pinned Colyseus 0.17+ packages/versions and decided baseline state transport strategy (Schema patches for authoritative state; messages for input).
+  - MP-08: Added LAN server entrypoint that serves the static client and hosts Colyseus websocket on the same port (`npm run lan:server`).
+  - MP-09: Implemented `blasteroids` Room with 60Hz authoritative sim tick and ~20Hz Schema patch rate; join/leave adds/removes players and applies per-player input.
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - Local 2-client join smoke: `node scripts/mp-lan-smoke.mjs ws://localhost:<port>` (pass)
