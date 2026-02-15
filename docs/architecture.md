@@ -37,6 +37,10 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
   - `renderGameToText`
   - helpers for renderer/UI (`getCurrentShipTier`, forcefield/attract helpers)
 - Must remain DOM-free (no direct `document`/`window`/canvas access).
+- Multiplayer foundations:
+  - Canonical per-player state lives under `state.playersById` with `state.localPlayerId`.
+  - Legacy top-level fields (`state.ship`, `state.input`, `state.score`, etc.) are maintained as aliases to the local player for singleplayer/back-compat.
+  - `createEngine({ role })` supports `client` (default) vs `server` (skip camera/VFX work; gameplay RNG remains deterministic).
 
 ### Renderer (`src/render/renderGame.js`)
 

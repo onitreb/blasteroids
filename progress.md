@@ -78,6 +78,12 @@ Updates
   - Added `src/ui/createUiBindings.js` and moved browser UI concerns there: menu/tuning bindings, localStorage tuning defaults, HUD updates, and debug toggle/start-or-resume flows.
   - Simplified `src/main.js` into composition glue for engine + renderer + UI plus main loop/input/fullscreen/debug hook exports.
   - Rebuilt bundle via `npm run build`.
+- 2026-02-15 multiplayer foundations (M0 MP-01..MP-06):
+  - Refactored engine to support multiple players via `state.playersById` + `state.localPlayerId` while preserving singleplayer (`file://`) and deterministic hooks via legacy aliases.
+  - Added deterministic co-op ownership rules (`attachedTo` / `pullOwnerId`) and per-player scoring/progression/cooldowns.
+  - Updated renderer to draw multiple ships/forcefield rings and derive deterministic asteroid shapes client-side when missing.
+  - Added engine `role` option (`client` vs `server`) and split VFX RNG from gameplay RNG for authoritative server parity.
+  - Validation: `npm test` pass; `npm run build` pass; manual `file://` smoke pass.
   - DevTools `file://` smoke validation passed with no console errors: Start flow, deterministic hooks (`render_game_to_text`, `advanceTime`), movement via scripted `KeyW`, debug menu toggle (`KeyM`/`Escape`), and restart (`KeyR`).
 - 2026-02-10 RF-09 pass (public debug/test API stabilization):
   - Added a single `window.Blasteroids` namespace in `src/main.js` with `renderGameToText`, `advanceTime`, and `setShipSvgRenderer`.
