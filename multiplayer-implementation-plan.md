@@ -209,3 +209,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 - Client now renders the authoritative multiplayer world by applying interpolated Schema state into engine render state (`src/net/createMpWorldView.js`) and following the local player with the camera.
 - While MP is connected, `src/main.js` skips local simulation (`game.update`) and renders from the interpolated world view (singleplayer `file://` unchanged unless MP is explicitly connected).
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); browser smoke `node scripts/mp-browser-smoke.mjs` (pass; verifies snapshots + non-empty asteroids render state).
+
+### 2026-02-15 (MP-11 follow-up)
+- Fixed multiplayer input wiring bug: `src/main.js` no longer captures a stale `input` object at startup (local player id changes in MP); key/mouse handlers now read `game.state.input` dynamically so the active local player can control their ship.
+- Hardened `scripts/mp-browser-smoke.mjs` to assert the ship actually moves while connected.

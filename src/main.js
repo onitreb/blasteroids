@@ -63,7 +63,6 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
   resizeCanvasToCss();
   applyAndroidZoomCompensation();
 
-  const input = game.state.input;
   function restartGame() {
     ui.applyAllFromMenu();
     game.resetWorld();
@@ -72,6 +71,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
   }
   function setKey(e, isDown) {
     const menuOpen = ui.isMenuVisible();
+    const input = game.state.input;
     switch (e.code) {
       case "ArrowLeft":
       case "KeyA":
@@ -130,6 +130,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
   canvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
+    const input = game.state.input;
     if (game.state.mode === "playing") {
       if (!ui.isMenuVisible()) input.burst = true;
       return;

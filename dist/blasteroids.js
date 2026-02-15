@@ -14476,7 +14476,6 @@ Schema instances may only have up to 64 fields.`);
     window.addEventListener("orientationchange", () => applyAndroidZoomCompensation());
     resizeCanvasToCss();
     applyAndroidZoomCompensation();
-    const input = game.state.input;
     function restartGame() {
       ui.applyAllFromMenu();
       game.resetWorld();
@@ -14485,6 +14484,7 @@ Schema instances may only have up to 64 fields.`);
     }
     function setKey(e, isDown) {
       const menuOpen = ui.isMenuVisible();
+      const input = game.state.input;
       switch (e.code) {
         case "ArrowLeft":
         case "KeyA":
@@ -14550,6 +14550,7 @@ Schema instances may only have up to 64 fields.`);
     canvas.addEventListener("mousedown", (e) => {
       if (e.button !== 0)
         return;
+      const input = game.state.input;
       if (game.state.mode === "playing") {
         if (!ui.isMenuVisible())
           input.burst = true;

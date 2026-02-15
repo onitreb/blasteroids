@@ -69,6 +69,29 @@ try {
   );
   if (!connected) throw new Error("mpConnect did not produce snapshots");
 
+  // Basic movement sanity: press thrust briefly and ensure ship position changes.
+  await page.click("#game");
+  const p0 = await page.evaluate(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    const ship = g.state.playersById?.[pid]?.ship;
+    return { pid, x: ship?.pos?.x ?? 0, y: ship?.pos?.y ?? 0 };
+  });
+  await page.keyboard.down("w");
+  await page.waitForTimeout(250);
+  await page.keyboard.up("w");
+  await page.waitForTimeout(250);
+  const p1 = await page.evaluate(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    const ship = g.state.playersById?.[pid]?.ship;
+    return { pid, x: ship?.pos?.x ?? 0, y: ship?.pos?.y ?? 0 };
+  });
+  const moved = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+  if (!(moved > 0.5)) {
+    throw new Error(`Expected ship to move while connected. moved=${moved.toFixed(3)} p0=${JSON.stringify(p0)} p1=${JSON.stringify(p1)}`);
+  }
+
   const status = await page.evaluate(() => window.Blasteroids.mpStatus());
   console.log("[mp-browser-smoke] ok", status);
 } finally {
