@@ -80,6 +80,7 @@ Updates
   - Rebuilt bundle via `npm run build`.
 - 2026-02-15 multiplayer follow-up: fixed server-authoritative ship-vs-asteroid collisions for all players (not just local alias), and disabled round loop + saucer features for LAN MP rooms to avoid invisible authoritative hazards ending the session. Validation: `npm test`, `npm run build`, `node scripts/mp-browser-smoke.mjs`, `node scripts/mp-lan-smoke.mjs`.
 - 2026-02-15 MP-15: added a minimal multiplayer perf HUD line (client fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz) to quickly distinguish render bottlenecks from server sim lag.
+- 2026-02-15 MP-17: renderer perf pass added view culling for asteroids/gems and removed multi-pass asteroid count filters to improve FPS with many entities.
 - 2026-02-15 multiplayer foundations (M0 MP-01..MP-06):
   - Refactored engine to support multiple players via `state.playersById` + `state.localPlayerId` while preserving singleplayer (`file://`) and deterministic hooks via legacy aliases.
   - Added deterministic co-op ownership rules (`attachedTo` / `pullOwnerId`) and per-player scoring/progression/cooldowns.

@@ -1281,6 +1281,13 @@ export function createRenderer(engine) {
     ctx.scale(zoom, zoom);
     ctx.translate(-state.camera.x, -state.camera.y);
 
+    // View culling (world-space): reduces draw calls dramatically when many entities exist.
+    const camX = state.camera.x;
+    const camY = state.camera.y;
+    const halfViewW = (w * 0.5) / zoom;
+    const halfViewH = (h * 0.5) / zoom;
+    const cullMargin = 160;
+
     drawRedGiantUnderlay(ctx);
     drawTechPing(ctx);
 
@@ -1288,6 +1295,9 @@ export function createRenderer(engine) {
     // then attached asteroids so the "trapped" rocks always read as in front.
     for (const a of state.asteroids) {
       if (a.attached) continue;
+      const r = (Number(a.radius) || 0) + cullMargin;
+      if (Math.abs(a.pos.x - camX) > halfViewW + r) continue;
+      if (Math.abs(a.pos.y - camY) > halfViewH + r) continue;
       const ownerId = a.pullOwnerId || localId;
       const owner = playerInfoById[ownerId] || localInfo;
       if (!owner) continue;
@@ -1298,6 +1308,9 @@ export function createRenderer(engine) {
 
     for (const a of state.asteroids) {
       if (!a.attached) continue;
+      const r = (Number(a.radius) || 0) + cullMargin;
+      if (Math.abs(a.pos.x - camX) > halfViewW + r) continue;
+      if (Math.abs(a.pos.y - camY) > halfViewH + r) continue;
       const ownerId = a.attachedTo || localId;
       const owner = playerInfoById[ownerId] || localInfo;
       if (!owner) continue;
@@ -1308,6 +1321,9 @@ export function createRenderer(engine) {
 
     // Gems (dropped from broken small asteroids).
     for (const g of state.gems) {
+      const rCull = (Number(g.radius) || 0) + cullMargin;
+      if (Math.abs(g.pos.x - camX) > halfViewW + rCull) continue;
+      if (Math.abs(g.pos.y - camY) > halfViewH + rCull) continue;
       const [rr, gg, bb] = gemRgb(g.kind);
       const r = g.radius;
       const pulseA = clamp(g.pulseAlpha ?? 1, 0.25, 1);
@@ -1486,12 +1502,20 @@ export function createRenderer(engine) {
     ctx.save();
     ctx.fillStyle = "rgba(231,240,255,0.85)";
     ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-    const attached = state.asteroids.filter((a) => a.attached).length;
-    const xxlarge = state.asteroids.filter((a) => a.size === "xxlarge").length;
-    const xlarge = state.asteroids.filter((a) => a.size === "xlarge").length;
-    const large = state.asteroids.filter((a) => a.size === "large").length;
-    const med = state.asteroids.filter((a) => a.size === "med").length;
-    const small = state.asteroids.filter((a) => a.size === "small").length;
+    let attached = 0;
+    let xxlarge = 0;
+    let xlarge = 0;
+    let large = 0;
+    let med = 0;
+    let small = 0;
+    for (const a of state.asteroids) {
+      if (a.attached) attached++;
+      if (a.size === "xxlarge") xxlarge++;
+      else if (a.size === "xlarge") xlarge++;
+      else if (a.size === "large") large++;
+      else if (a.size === "med") med++;
+      else if (a.size === "small") small++;
+    }
     if (state.mode === "playing") {
       const gate = state.round?.gate;
       const star = state.round?.star;

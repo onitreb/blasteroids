@@ -113,6 +113,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 | MP-13 | M1 | Automated tests for multiplayer engine invariants (2p determinism, ownership rules) | TEST | NOT_STARTED | MP-03 | `npm test` | Unit tests only (no network). |
 | MP-14 | M1 | Optional Playwright LAN sanity: 2 sessions capture screenshots + state | TEST | NOT_STARTED | MP-11 | scripted run output | Don’t break existing harness. |
 | MP-15 | M2 | Multiplayer perf HUD: snapshot Hz, bytes/sec, entities, tick drift | NET/UI (Codex) | DONE | MP-11 | manual | Notes:<br>- Added a minimal MP HUD line (client fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz).<br>- Telemetry is derived from `onStateChange` timings (no extra deps). Singleplayer HUD unchanged when not connected.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass; prints MP HUD stats). |
+| MP-17 | M1 | Renderer perf: cull offscreen asteroids/gems; avoid multi-pass counts | RENDER (Codex) | DONE | MP-11 | manual | Notes:<br>- Added world-space view culling for asteroids and gems (with margin) to reduce draw calls when many entities exist.<br>- Replaced multi-pass `filter().length` asteroid counts with a single pass in the HUD overlay.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass). |
 | MP-16 | M2 | Online deployment doc: DIY TLS/WSS, env vars, ops checklist, rate limits | DOCS/SERVER | NOT_STARTED | MP-09 | n/a | Doc-only until LAN MVP stable. |
 
 ---
@@ -226,3 +227,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 ### 2026-02-15 (MP-15)
 - Added a minimal MP HUD line (fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz) to help diagnose “abysmal FPS” vs server lag.
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass; prints HUD stats).
+
+### 2026-02-15 (MP-17)
+- Renderer perf pass: added view culling for asteroids/gems and removed multi-pass asteroid count filters in the HUD overlay.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass).
