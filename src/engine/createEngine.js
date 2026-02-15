@@ -289,15 +289,64 @@ function shipForward(ship) {
   return angleToVec(ship.angle);
 }
 
-export function createEngine({ width, height, seed } = {}) {
+function makePlayerInput() {
+  return {
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    burst: false,
+    ping: false,
+    turnAnalog: 0, // [-1,1] optional analog turn input (UI/touch)
+    thrustAnalog: 0, // [0,1] optional analog thrust input (UI/touch)
+  };
+}
+
+function makePlayerProgression() {
+  return {
+    gemScore: 0,
+    currentTier: "small",
+    tierShiftT: 0,
+  };
+}
+
+function makePlayer(
+  id,
+  {
+    ship = makeShip("small"),
+    input = makePlayerInput(),
+    score = 0,
+    gemsCollected = { diamond: 0, ruby: 0, emerald: 0, gold: 0 },
+    burstCooldown = 0,
+    blastPulseT = 0,
+    progression = makePlayerProgression(),
+  } = {},
+) {
+  return {
+    id: String(id ?? ""),
+    ship,
+    input,
+    score,
+    gemsCollected,
+    burstCooldown,
+    blastPulseT,
+    progression,
+  };
+}
+
+export function createEngine({ width, height, seed, role = "client" } = {}) {
   const baseSeedRaw = Number.isFinite(Number(seed)) ? Number(seed) : 0xdecafbad;
   const baseSeed = (baseSeedRaw >>> 0) || 0xdecafbad;
+  const engineRole = role === "server" ? "server" : "client";
+  const isServer = engineRole === "server";
   let sessionSeed = baseSeed;
   let rng = seededRng(baseSeed);
   const starRng = seededRng(0x51a7f00d);
+  let fxRng = seededRng(deriveSeed(baseSeed, "fx"));
   let exhaustRng = seededRng(0x1ee7beef);
   const exhaustPool = [];
   const state = {
+    role: engineRole,
     mode: "menu", // menu | playing | gameover
     time: 0,
     round: {
@@ -511,11 +560,66 @@ export function createEngine({ width, height, seed } = {}) {
   const worldCellActiveKeys = new Set();
   ensureAttractRadiusCoversForcefield(state.params);
 
+  // Multiplayer foundation: canonical per-player state lives under `playersById`.
+  // For now we keep all existing singleplayer call sites intact by aliasing
+  // legacy top-level fields (`state.ship`, `state.input`, `state.score`, etc.)
+  // to the default local player.
+  state.localPlayerId = "local";
+  state.playersById = Object.create(null);
+  state.playersById[state.localPlayerId] = makePlayer(state.localPlayerId, {
+    ship: state.ship,
+    input: state.input,
+    score: state.score,
+    gemsCollected: state.gemsCollected,
+    burstCooldown: state.burstCooldown,
+    blastPulseT: state.blastPulseT,
+    progression: state.progression,
+  });
+
+  function localPlayer() {
+    return state.playersById[state.localPlayerId];
+  }
+
+  function sortedPlayerIds() {
+    // Deterministic iteration order (important once multiplayer uses >1 player).
+    return Object.keys(state.playersById).sort();
+  }
+
+  function forEachPlayer(fn) {
+    const ids = sortedPlayerIds();
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      fn(state.playersById[id], id, i);
+    }
+  }
+
+  function aliasLocalPlayerField(field) {
+    Object.defineProperty(state, field, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return localPlayer()[field];
+      },
+      set(value) {
+        localPlayer()[field] = value;
+      },
+    });
+  }
+
+  aliasLocalPlayerField("ship");
+  aliasLocalPlayerField("input");
+  aliasLocalPlayerField("score");
+  aliasLocalPlayerField("gemsCollected");
+  aliasLocalPlayerField("burstCooldown");
+  aliasLocalPlayerField("blastPulseT");
+  aliasLocalPlayerField("progression");
+
   function setGameplaySeed(nextSeed) {
     const raw = Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : 0xdecafbad;
     const s = (raw >>> 0) || 0xdecafbad;
     state.round.seed = s;
     rng = seededRng(s);
+    fxRng = seededRng(deriveSeed(s, "fx"));
   }
 
   // Public: sets the session seed (and resets the round index). The next `resetWorld()` will
@@ -543,42 +647,55 @@ export function createEngine({ width, height, seed } = {}) {
     return seededRng(deriveSeed(state.round.seed, tag));
   }
 
-  function shipTierForProgression() {
+  function shipTierForProgression(player = localPlayer()) {
     if (state.settings.tierOverrideEnabled) {
       const idx = clamp(Math.round(state.settings.tierOverrideIndex || 1), 1, SHIP_BASE_BY_TIER_INDEX.length);
       return SHIP_BASE_BY_TIER_INDEX[idx - 1];
     }
-    if (state.score >= state.params.tier3UnlockGemScore) return "large";
-    if (state.score >= state.params.tier2UnlockGemScore) return "medium";
+    const score = Number(player?.score) || 0;
+    if (score >= state.params.tier3UnlockGemScore) return "large";
+    if (score >= state.params.tier2UnlockGemScore) return "medium";
     return "small";
   }
 
-  function currentShipTier() {
-    return shipTierByKey(state.ship.tier);
+  function currentShipTier(player = localPlayer()) {
+    return shipTierByKey(player?.ship?.tier);
   }
 
-  function currentForceFieldRadius() {
-    const tier = currentShipTier();
+  function forceFieldRadiusForPlayer(player = localPlayer()) {
+    const tier = currentShipTier(player);
     return requiredForceFieldRadiusForTier(state.params, tier.key);
   }
 
-  function currentAttractRadius() {
-    const tier = currentShipTier();
+  function currentForceFieldRadius() {
+    return forceFieldRadiusForPlayer(localPlayer());
+  }
+
+  function attractRadiusForPlayer(player = localPlayer()) {
+    const tier = currentShipTier(player);
     return state.params.attractRadius * tier.attractScale;
   }
 
-  function currentBurstSpeed() {
-    const tier = currentShipTier();
+  function currentAttractRadius() {
+    return attractRadiusForPlayer(localPlayer());
+  }
+
+  function burstSpeedForPlayer(player = localPlayer()) {
+    const tier = currentShipTier(player);
     const scale = Math.max(0.2, Number(tier.burstForceScale) || 1);
     return state.params.burstSpeed * scale;
   }
 
-  function currentShipAttractSizes() {
-    return currentShipTier().attractSizes;
+  function currentBurstSpeed() {
+    return burstSpeedForPlayer(localPlayer());
   }
 
-  function shipCanAttractSize(size) {
-    return sizeSetHas(currentShipAttractSizes(), size);
+  function currentShipAttractSizes(player = localPlayer()) {
+    return currentShipTier(player).attractSizes;
+  }
+
+  function shipCanAttractSize(size, player = localPlayer()) {
+    return sizeSetHas(currentShipAttractSizes(player), size);
   }
 
   function cameraZoomForTier(tierKey) {
@@ -593,6 +710,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function beginCameraZoomTo(targetZoom, animate = true) {
+    if (isServer) return;
     const z = clamp(targetZoom, 0.35, 1.25);
     if (!animate) {
       state.camera.zoom = z;
@@ -609,6 +727,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function updateCameraZoom(dt) {
+    if (isServer) return;
     if (state.camera.zoomAnimDur <= 0) return;
     state.camera.zoomAnimElapsed += dt;
     const t = clamp(state.camera.zoomAnimElapsed / state.camera.zoomAnimDur, 0, 1);
@@ -620,29 +739,46 @@ export function createEngine({ width, height, seed } = {}) {
     }
   }
 
-  function applyShipTier(nextTierKey, { animateZoom = true } = {}) {
+  function applyShipTierForPlayer(player, nextTierKey, { animateZoom = true, affectCamera = false } = {}) {
     const next = shipTierByKey(nextTierKey);
-    if (state.ship.tier === next.key && state.progression.currentTier === next.key) return false;
-    state.ship.tier = next.key;
-    state.progression.currentTier = next.key;
-    state.ship.radius = next.radius;
-    state.ship.mass = next.mass;
-    state.progression.tierShiftT = 0.7;
-    beginCameraZoomTo(cameraZoomForTier(next.key), animateZoom);
+    const ship = player?.ship;
+    const prog = player?.progression;
+    if (!ship || !prog) return false;
+    if (ship.tier === next.key && prog.currentTier === next.key) return false;
+    ship.tier = next.key;
+    prog.currentTier = next.key;
+    ship.radius = next.radius;
+    ship.mass = next.mass;
+    prog.tierShiftT = 0.7;
+    if (affectCamera) beginCameraZoomTo(cameraZoomForTier(next.key), animateZoom);
     return true;
   }
 
-  function refreshShipTierProgression(options = {}) {
-    const desired = shipTierForProgression();
-    const changed = applyShipTier(desired, options);
+  function applyShipTier(nextTierKey, { animateZoom = true } = {}) {
+    return applyShipTierForPlayer(localPlayer(), nextTierKey, { animateZoom, affectCamera: true });
+  }
+
+  function refreshShipTierProgressionForPlayer(player, options = {}) {
+    const desired = shipTierForProgression(player);
+    const changed = applyShipTierForPlayer(player, desired, {
+      ...options,
+      affectCamera: player?.id === state.localPlayerId,
+    });
     // Detach out-of-tier asteroids if tier was reduced by override toggles.
     for (const a of state.asteroids) {
       if (!a.attached) continue;
-      if (shipCanAttractSize(a.size)) continue;
+      const attachedTo = a.attachedTo ?? state.localPlayerId;
+      if (attachedTo !== player?.id) continue;
+      if (shipCanAttractSize(a.size, player)) continue;
       a.attached = false;
+      a.attachedTo = null;
       a.shipLaunched = false;
     }
     return changed;
+  }
+
+  function refreshShipTierProgression(options = {}) {
+    return refreshShipTierProgressionForPlayer(localPlayer(), options);
   }
 
   function makeAsteroid(size, pos, vel, rngFn = null) {
@@ -662,6 +798,7 @@ export function createEngine({ width, height, seed } = {}) {
       rotVel: (rr() * 2 - 1) * rotVelMax,
       shape,
       attached: false,
+      attachedTo: null,
       shipLaunched: false,
 	      orbitA: 0, // ship-local angle (radians) when attached
 	      fractureCooldownT: 0,
@@ -1029,19 +1166,35 @@ export function createEngine({ width, height, seed } = {}) {
     const rr = typeof rngFn === "function" ? rngFn : rng;
     let fallback = null;
     let fallbackScore = -Infinity;
+    const views = avoidViews ? currentSpawnExclusionViews() : [];
 
     for (let attempt = 0; attempt < 200; attempt++) {
       const raw = randomPointInRect(rect, rr);
       const cand = clampPointInsideWorld(raw, edgeMarginWanted);
-      const insideView = avoidViews && pointInsideAnyView(cand, asteroidRadius, viewMarginPx);
+      let insideView = false;
+      if (views.length) {
+        for (let vi = 0; vi < views.length; vi++) {
+          if (isInsideViewRect(cand, asteroidRadius, views[vi], viewMarginPx)) {
+            insideView = true;
+            break;
+          }
+        }
+      }
       const tooClose = pointTooCloseToList(cand, existingPoints, minSeparation);
 
       if (!insideView && !tooClose) return cand;
 
-      const dx = Number(state.camera.x) - Number(cand.x);
-      const dy = Number(state.camera.y) - Number(cand.y);
-      const camDist = Math.hypot(dx, dy);
-      const score = camDist - (insideView ? 1e6 : 0) - (tooClose ? 1e5 : 0);
+      let nearestViewDist = 0;
+      if (views.length) {
+        nearestViewDist = Infinity;
+        for (let vi = 0; vi < views.length; vi++) {
+          const dx = Number(views[vi].x) - Number(cand.x);
+          const dy = Number(views[vi].y) - Number(cand.y);
+          nearestViewDist = Math.min(nearestViewDist, Math.hypot(dx, dy));
+        }
+        if (!Number.isFinite(nearestViewDist)) nearestViewDist = 0;
+      }
+      const score = nearestViewDist - (insideView ? 1e6 : 0) - (tooClose ? 1e5 : 0);
       if (score > fallbackScore) {
         fallback = cand;
         fallbackScore = score;
@@ -1621,6 +1774,13 @@ export function createEngine({ width, height, seed } = {}) {
       counts.set(key, (counts.get(key) || 0) + 1);
     }
 
+    state.worldCells.indexedAsteroidCells = counts.size;
+    if (isServer) {
+      worldCellActiveKeys.clear();
+      state.worldCells.activeCount = 0;
+      return;
+    }
+
     const s = Math.max(64, state.worldCells.sizePx || 320);
     const zoom = Math.max(0.1, state.camera.zoom || 1);
     const radiusX = Math.ceil((state.view.w * 0.5) / (s * zoom)) + 1;
@@ -1632,7 +1792,6 @@ export function createEngine({ width, height, seed } = {}) {
         worldCellActiveKeys.add(worldCellKey(center.cx + dx, center.cy + dy));
       }
     }
-    state.worldCells.indexedAsteroidCells = counts.size;
     state.worldCells.activeCount = worldCellActiveKeys.size;
   }
 
@@ -1665,16 +1824,29 @@ export function createEngine({ width, height, seed } = {}) {
     return Math.abs(pos.x - view.x) <= halfW && Math.abs(pos.y - view.y) <= halfH;
   }
 
+  function spawnExclusionZoomForPlayer(player) {
+    if (!player?.ship) return Math.max(0.1, state.camera.zoom || 1);
+    const tierKey = player.ship.tier;
+    const base = cameraZoomForTier(tierKey === "medium" || tierKey === "large" ? tierKey : "small");
+    if (player.id === state.localPlayerId) return Math.max(0.1, state.camera.zoom || base || 1);
+    return Math.max(0.1, base || 1);
+  }
+
   function currentSpawnExclusionViews() {
-    const zoom = Math.max(0.1, state.camera.zoom || 1);
-    return [
-      {
-        x: state.camera.x,
-        y: state.camera.y,
+    const views = [];
+    forEachPlayer((p) => {
+      if (!p?.ship) return;
+      const zoom = spawnExclusionZoomForPlayer(p);
+      views.push({
+        x: p.ship.pos.x,
+        y: p.ship.pos.y,
         halfW: state.view.w * 0.5 / zoom,
         halfH: state.view.h * 0.5 / zoom,
-      },
-    ];
+      });
+    });
+    if (views.length) return views;
+    const zoom = Math.max(0.1, state.camera.zoom || 1);
+    return [{ x: state.camera.x, y: state.camera.y, halfW: state.view.w * 0.5 / zoom, halfH: state.view.h * 0.5 / zoom }];
   }
 
   function pickSpawnAsteroidSize() {
@@ -1746,7 +1918,17 @@ export function createEngine({ width, height, seed } = {}) {
       const cellCount = worldCellAsteroidCounts.get(cellKey) || 0;
       if (cellCount >= maxCellCount) continue;
 
-      const shipClear = len2(sub(p, state.ship.pos)) > minDistFromShip * minDistFromShip;
+      const minD2 = minDistFromShip * minDistFromShip;
+      let shipClear = true;
+      const ids = sortedPlayerIds();
+      for (let pi = 0; pi < ids.length; pi++) {
+        const ship = state.playersById[ids[pi]]?.ship;
+        if (!ship) continue;
+        if (len2(sub(p, ship.pos)) <= minD2) {
+          shipClear = false;
+          break;
+        }
+      }
       if (!shipClear) continue;
 
       let overlap = false;
@@ -1788,22 +1970,34 @@ export function createEngine({ width, height, seed } = {}) {
     const burst = clamp(Math.ceil(deficit / 120), 1, urgent ? 56 : 20);
     const excludeViews = currentSpawnExclusionViews();
     let spawned = false;
-    const zoom = Math.max(0.1, state.camera.zoom || 1);
-    const halfViewW = state.view.w * 0.5 / zoom;
-    const halfViewH = state.view.h * 0.5 / zoom;
-    const viewDiag = Math.hypot(halfViewW, halfViewH);
+    let maxViewDiag = 0;
+    for (let vi = 0; vi < excludeViews.length; vi++) {
+      const v = excludeViews[vi];
+      maxViewDiag = Math.max(maxViewDiag, Math.hypot(v.halfW, v.halfH));
+    }
     const worldHalfMin = Math.min(state.world.w, state.world.h) * 0.5;
-    const nearPos = vec(state.camera.x, state.camera.y);
+    const ids = sortedPlayerIds();
+    let focusPlayer = null;
+    if (ids.length) {
+      const pick = Math.floor(rng() * ids.length);
+      focusPlayer = state.playersById[ids[pick]];
+    }
+    const focusShip = focusPlayer?.ship;
+    const focusZoom = focusPlayer ? spawnExclusionZoomForPlayer(focusPlayer) : Math.max(0.1, state.camera.zoom || 1);
+    const halfViewW = state.view.w * 0.5 / focusZoom;
+    const halfViewH = state.view.h * 0.5 / focusZoom;
+    const viewDiag = Math.hypot(halfViewW, halfViewH);
+    const nearPos = focusShip ? vec(focusShip.pos.x, focusShip.pos.y) : vec(state.camera.x, state.camera.y);
     const nearRadius = Math.min(worldHalfMin, viewDiag + 520);
     const minDistFromShip = clamp(Math.max(260, viewDiag * 0.82), 120, Math.max(140, nearRadius - 60));
-    const canSpawnNearCamera = nearRadius > minDistFromShip + 40;
-    const spawnExcludeViews = worldHalfMin <= viewDiag + 140 ? [] : excludeViews;
+    const canSpawnNearPlayers = nearRadius > minDistFromShip + 40;
+    const spawnExcludeViews = worldHalfMin <= maxViewDiag + 140 ? [] : excludeViews;
     for (let i = 0; i < burst && state.asteroids.length < max; i++) {
-      const preferNearCamera = urgent || rng() < 0.75;
-      const useNearCamera = canSpawnNearCamera && preferNearCamera;
+      const preferNearPlayers = urgent || rng() < 0.75;
+      const useNearPlayers = canSpawnNearPlayers && preferNearPlayers;
       if (
         !trySpawnAmbientAsteroid(
-          useNearCamera
+          useNearPlayers
             ? {
                 nearPos,
                 nearRadius,
@@ -2069,6 +2263,7 @@ export function createEngine({ width, height, seed } = {}) {
 		  }
 
   function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
+    if (isServer) return;
     state.effects.push({
       kind,
       x: pos.x,
@@ -2078,11 +2273,12 @@ export function createEngine({ width, height, seed } = {}) {
       r0,
       r1,
       rgb,
-      seed: Math.floor(rng() * 1e9),
+      seed: Math.floor(fxRng() * 1e9),
     });
   }
 
   function spawnBurstWavelets({ pos, angle, speed, ttl = 0.55 * 1.1, rgb = [255, 221, 88] }) {
+    if (isServer) return;
     state.effects.push({
       kind: "wavelets",
       x: pos.x,
@@ -2092,7 +2288,7 @@ export function createEngine({ width, height, seed } = {}) {
       t: 0,
       ttl,
       rgb,
-      seed: Math.floor(rng() * 1e9),
+      seed: Math.floor(fxRng() * 1e9),
     });
   }
 
@@ -2177,12 +2373,26 @@ export function createEngine({ width, height, seed } = {}) {
   function resetWorld() {
     advanceToNextRoundSeed();
     state.time = 0;
-    state.score = 0;
-    state.progression.gemScore = 0;
-    state.progression.currentTier = "small";
-    state.progression.tierShiftT = 0;
-    state.burstCooldown = 0;
-    state.blastPulseT = 0;
+    forEachPlayer((p) => {
+      p.score = 0;
+      if (!p.progression) p.progression = makePlayerProgression();
+      p.progression.gemScore = 0;
+      p.progression.currentTier = "small";
+      p.progression.tierShiftT = 0;
+      p.burstCooldown = 0;
+      p.blastPulseT = 0;
+      p.gemsCollected = { diamond: 0, ruby: 0, emerald: 0, gold: 0 };
+      if (!p.input) p.input = makePlayerInput();
+      p.input.left = false;
+      p.input.right = false;
+      p.input.up = false;
+      p.input.down = false;
+      p.input.burst = false;
+      p.input.ping = false;
+      p.input.turnAnalog = 0;
+      p.input.thrustAnalog = 0;
+      p.ship = makeShip("small");
+    });
     state.effects = [];
     state.exhaust = [];
     exhaustRng = seededRng(0x1ee7beef);
@@ -2192,16 +2402,6 @@ export function createEngine({ width, height, seed } = {}) {
     state.saucerLasers = [];
     scheduleNextSaucerSpawn();
     scheduleNextAsteroidSpawn(false);
-    state.gemsCollected = { diamond: 0, ruby: 0, emerald: 0, gold: 0 };
-    state.input.left = false;
-    state.input.right = false;
-    state.input.up = false;
-    state.input.down = false;
-    state.input.burst = false;
-    state.input.ping = false;
-    state.input.turnAnalog = 0;
-    state.input.thrustAnalog = 0;
-    state.ship = makeShip("small");
     state.camera.zoom = cameraZoomForTier("small");
     state.camera.zoomFrom = state.camera.zoom;
     state.camera.zoomTo = state.camera.zoom;
@@ -2261,42 +2461,59 @@ export function createEngine({ width, height, seed } = {}) {
     state.mode = "playing";
   }
 
-  function orbitRadiusForAsteroid(a) {
-    const base = currentForceFieldRadius();
+  function orbitRadiusForAsteroidForPlayer(a, player = localPlayer()) {
+    const base = forceFieldRadiusForPlayer(player);
     return base + Math.max(0, a.radius - state.params.smallRadius * 0.7) + state.params.attachPadding;
   }
 
-  function orbitPosFor(a) {
-    const r = orbitRadiusForAsteroid(a);
-    const wAngle = state.ship.angle + a.orbitA;
-    return add(state.ship.pos, mul(angleToVec(wAngle), r));
+  function orbitRadiusForAsteroid(a) {
+    return orbitRadiusForAsteroidForPlayer(a, localPlayer());
   }
 
-  function tryAttachAsteroid(a) {
-    if (!shipCanAttractSize(a.size) || a.attached || a.shipLaunched) return false;
-    const toShip = sub(a.pos, state.ship.pos);
+  function orbitPosForAsteroidForPlayer(a, player = localPlayer()) {
+    const ship = player?.ship;
+    if (!ship) return vec(0, 0);
+    const r = orbitRadiusForAsteroidForPlayer(a, player);
+    const wAngle = ship.angle + a.orbitA;
+    return add(ship.pos, mul(angleToVec(wAngle), r));
+  }
+
+  function orbitPosFor(a) {
+    return orbitPosForAsteroidForPlayer(a, localPlayer());
+  }
+
+  function tryAttachAsteroidForPlayer(a, player = localPlayer()) {
+    if (!player?.ship) return false;
+    if (!shipCanAttractSize(a.size, player) || a.attached || a.shipLaunched) return false;
+    const toShip = sub(a.pos, player.ship.pos);
     const d = len(toShip);
-    const targetR = orbitRadiusForAsteroid(a);
+    const targetR = orbitRadiusForAsteroidForPlayer(a, player);
     const err = Math.abs(d - targetR);
     const spd = len(a.vel);
     if (err <= state.params.attachBand && spd <= state.params.attachSpeedMax) {
       a.attached = true;
+      a.attachedTo = player.id;
       a.shipLaunched = false;
       a.vel = vec(0, 0);
-      a.orbitA = wrapAngle(angleOf(toShip) - state.ship.angle);
-      a.pos = orbitPosFor(a);
+      a.orbitA = wrapAngle(angleOf(toShip) - player.ship.angle);
+      a.pos = orbitPosForAsteroidForPlayer(a, player);
       return true;
     }
     return false;
   }
 
-  function burstAttached() {
+  function tryAttachAsteroid(a) {
+    return tryAttachAsteroidForPlayer(a, localPlayer());
+  }
+
+  function burstAttachedForPlayer(player = localPlayer()) {
     if (state.mode !== "playing") return;
-    if (state.burstCooldown > 0) return;
-    state.burstCooldown = state.params.burstCooldownSec;
-    state.blastPulseT = 0.22;
-    const fieldR = currentForceFieldRadius();
-    spawnExplosion(state.ship.pos, {
+    if (!player?.ship) return;
+    if (player.burstCooldown > 0) return;
+    player.burstCooldown = state.params.burstCooldownSec;
+    player.blastPulseT = 0.22;
+    const fieldR = forceFieldRadiusForPlayer(player);
+    spawnExplosion(player.ship.pos, {
       kind: "ring",
       rgb: [255, 255, 255],
       r0: fieldR - 2,
@@ -2306,7 +2523,9 @@ export function createEngine({ width, height, seed } = {}) {
 
     let attachedCount = 0;
     for (const a of state.asteroids) {
-      if (a.attached) attachedCount++;
+      if (!a.attached) continue;
+      const ownerId = a.attachedTo ?? state.localPlayerId;
+      if (ownerId === player.id) attachedCount++;
     }
 
     // Perf guard: when many rocks burst at once, spawn wavelets for a bounded subset.
@@ -2315,15 +2534,18 @@ export function createEngine({ width, height, seed } = {}) {
     const strideOffset = stride > 1 ? Math.floor(rng() * stride) : 0;
     const waveletTtl = attachedCount >= 16 ? 0.42 * 1.1 : 0.55 * 1.1;
 
-    const shipV = state.ship.vel;
+    const shipV = player.ship.vel;
     let attachedIndex = 0;
     for (const a of state.asteroids) {
       if (!a.attached) continue;
+      const ownerId = a.attachedTo ?? state.localPlayerId;
+      if (ownerId !== player.id) continue;
       a.attached = false;
+      a.attachedTo = null;
       a.shipLaunched = true;
-      a.pos = orbitPosFor(a);
-      const dir = norm(sub(a.pos, state.ship.pos));
-      const base = mul(dir, currentBurstSpeed());
+      a.pos = orbitPosForAsteroidForPlayer(a, player);
+      const dir = norm(sub(a.pos, player.ship.pos));
+      const base = mul(dir, burstSpeedForPlayer(player));
       a.vel = add(base, mul(shipV, 0.55));
       a.rotVel += (rng() * 2 - 1) * 1.8;
 
@@ -2332,13 +2554,17 @@ export function createEngine({ width, height, seed } = {}) {
       const shouldSpawnWavelets = stride === 1 || (attachedIndex + strideOffset) % stride === 0;
       if (shouldSpawnWavelets) {
         const vDir = len(a.vel) > 1e-6 ? norm(a.vel) : dir;
-        const ringP = add(state.ship.pos, mul(vDir, fieldR));
+        const ringP = add(player.ship.pos, mul(vDir, fieldR));
         const ang = angleOf(vDir);
         const spd = len(a.vel);
         spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, ttl: waveletTtl, rgb: [255, 221, 88] });
       }
       attachedIndex++;
     }
+  }
+
+  function burstAttached() {
+    return burstAttachedForPlayer(localPlayer());
   }
 
   function clampCameraToWorld() {
@@ -2360,6 +2586,7 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function syncCameraToShip() {
+    if (isServer) return;
     const zoom = Math.max(0.1, state.camera.zoom || 1);
     if (state.camera.mode === "deadzone") {
       const ship = state.ship;
@@ -2384,6 +2611,11 @@ export function createEngine({ width, height, seed } = {}) {
 
   function confineShipToWorld() {
     const ship = state.ship;
+    return confineBodyToWorld(ship);
+  }
+
+  function confineBodyToWorld(ship) {
+    if (!ship) return;
     const halfW = state.world.w / 2;
     const halfH = state.world.h / 2;
     const minX = -halfW + ship.radius;
@@ -2408,6 +2640,10 @@ export function createEngine({ width, height, seed } = {}) {
     }
   }
 
+  function confineAllShipsToWorld() {
+    forEachPlayer((p) => confineBodyToWorld(p.ship));
+  }
+
   function isOutsideWorld(body, pad = 0) {
     const halfW = state.world.w / 2;
     const halfH = state.world.h / 2;
@@ -2427,7 +2663,7 @@ export function createEngine({ width, height, seed } = {}) {
     const baseViewH = Math.max(Number(state.view.h) || 0, WORLD_BASE_MIN_H);
     state.world.w = baseViewW * s;
     state.world.h = baseViewH * s;
-    confineShipToWorld();
+    confineAllShipsToWorld();
     clampCameraToWorld();
   }
 
@@ -2452,19 +2688,21 @@ export function createEngine({ width, height, seed } = {}) {
     applyWorldScale(state.world.scale);
   }
 
-  function updateShip(dt) {
-    const ship = state.ship;
-    const turnDigital = (state.input.right ? 1 : 0) - (state.input.left ? 1 : 0);
-    const turnAnalog = clamp(Number(state.input.turnAnalog ?? 0), -1, 1);
+  function updateShip(dt, player = localPlayer()) {
+    const ship = player?.ship;
+    const input = player?.input;
+    if (!ship || !input) return;
+    const turnDigital = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const turnAnalog = clamp(Number(input.turnAnalog ?? 0), -1, 1);
     const turn = clamp(turnDigital + turnAnalog, -1, 1);
     if (Math.abs(turn) > 1e-6) ship.angle += turn * state.params.shipTurnRate * dt;
 
     const fwd = shipForward(ship);
-    const thrustDigital = state.input.up ? 1 : 0;
-    const thrustAnalog = clamp(Number(state.input.thrustAnalog ?? 0), 0, 1);
+    const thrustDigital = input.up ? 1 : 0;
+    const thrustAnalog = clamp(Number(input.thrustAnalog ?? 0), 0, 1);
     const thrust = Math.max(thrustDigital, thrustAnalog);
     if (thrust > 1e-6) ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * thrust * dt));
-    if (state.input.down) {
+    if (input.down) {
       const v = ship.vel;
       const vLen = len(v);
       if (vLen > 1e-6) {
@@ -2482,7 +2720,7 @@ export function createEngine({ width, height, seed } = {}) {
     }
 
     ship.pos = add(ship.pos, mul(ship.vel, dt));
-    confineShipToWorld();
+    confineBodyToWorld(ship);
   }
 
   function exhaustShipScaleAndMirror(tier, ship) {
@@ -2517,6 +2755,11 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function updateExhaust(dt) {
+    if (isServer) {
+      state.exhaust.length = 0;
+      exhaustPool.length = 0;
+      return;
+    }
     const particles = state.exhaust;
     let w = 0;
     for (let i = 0; i < particles.length; i++) {
@@ -2621,26 +2864,33 @@ export function createEngine({ width, height, seed } = {}) {
     }
   }
 
-	  function updateAsteroids(dt) {
-	    const ship = state.ship;
-	    const attractRadius = currentAttractRadius();
-	    const forceFieldRadius = currentForceFieldRadius();
-	    const attractRadius2 = attractRadius * attractRadius;
-	    const star = state.round?.star;
-	    const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
-	    const chipDecaySec = Math.max(0, Number(state.params.fractureChipDecaySec ?? 0));
+  function updateAsteroids(dt) {
+    const star = state.round?.star;
+    const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
+    const chipDecaySec = Math.max(0, Number(state.params.fractureChipDecaySec ?? 0));
 
-    // Keep attached asteroids distributed around the ring.
+    // Keep attached asteroids distributed around each owner's ring.
     // Simple angular repulsion so they don't overlap.
-    const attached = state.asteroids.filter((a) => a.attached);
-    if (attached.length >= 2) {
+    const attachedByOwner = new Map();
+    for (let i = 0; i < state.asteroids.length; i++) {
+      const a = state.asteroids[i];
+      if (!a.attached) continue;
+      const ownerId = a.attachedTo ?? state.localPlayerId;
+      const arr = attachedByOwner.get(ownerId);
+      if (arr) arr.push(a);
+      else attachedByOwner.set(ownerId, [a]);
+    }
+    for (const [ownerId, attached] of attachedByOwner.entries()) {
+      if (attached.length < 2) continue;
+      const owner = state.playersById[ownerId];
+      if (!owner?.ship) continue;
       const iters = 3;
       for (let it = 0; it < iters; it++) {
         for (let i = 0; i < attached.length; i++) {
           for (let j = i + 1; j < attached.length; j++) {
             const a = attached[i];
             const b = attached[j];
-            const r = Math.max(20, Math.min(orbitRadiusForAsteroid(a), orbitRadiusForAsteroid(b)));
+            const r = Math.max(20, Math.min(orbitRadiusForAsteroidForPlayer(a, owner), orbitRadiusForAsteroidForPlayer(b, owner)));
             const delta = wrapAngle(a.orbitA - b.orbitA);
             const minSep = (a.radius + b.radius + 6) / r;
             if (Math.abs(delta) >= minSep) continue;
@@ -2653,69 +2903,102 @@ export function createEngine({ width, height, seed } = {}) {
       }
     }
 
-	    for (let i = state.asteroids.length - 1; i >= 0; i--) {
-	      const a = state.asteroids[i];
-	      if (!Number.isFinite(a.fractureDamage)) a.fractureDamage = 0;
-	      if (chipDecaySec > 0 && a.fractureDamage > 0) {
-	        a.fractureDamage *= Math.exp(-dt / Math.max(1e-3, chipDecaySec));
-	        if (a.fractureDamage < 1e-4) a.fractureDamage = 0;
-	      }
-	      if (a.attached) {
-	        a.pos = orbitPosFor(a);
-	        a.rot += a.rotVel * dt;
-	        continue;
-	      }
+    for (let i = state.asteroids.length - 1; i >= 0; i--) {
+      const a = state.asteroids[i];
+      if (!Number.isFinite(a.fractureDamage)) a.fractureDamage = 0;
+      if (chipDecaySec > 0 && a.fractureDamage > 0) {
+        a.fractureDamage *= Math.exp(-dt / Math.max(1e-3, chipDecaySec));
+        if (a.fractureDamage < 1e-4) a.fractureDamage = 0;
+      }
+
+      if (a.attached) {
+        const ownerId = a.attachedTo ?? state.localPlayerId;
+        const owner = state.playersById[ownerId];
+        if (!owner?.ship) {
+          a.attached = false;
+          a.attachedTo = null;
+          a.shipLaunched = false;
+          a.pullOwnerId = null;
+        } else {
+          a.pullOwnerId = ownerId;
+          a.pos = orbitPosForAsteroidForPlayer(a, owner);
+          a.rot += a.rotVel * dt;
+          continue;
+        }
+      }
+
       a.fractureCooldownT = Math.max(0, a.fractureCooldownT - dt);
       a.hitFxT = Math.max(0, a.hitFxT - dt);
       if (!Number.isFinite(a.pullFx)) a.pullFx = 0;
+      if (a.shipLaunched) a.pullOwnerId = null;
       const pullEaseIn = 1 - Math.exp(-dt * 10);
       const pullEaseOut = 1 - Math.exp(-dt * 6);
       let pullTarget = 0;
 
-      if (shipCanAttractSize(a.size) && !a.shipLaunched) {
-        const toShip = sub(ship.pos, a.pos);
+      let owner = null;
+      let ownerAttractRadius = 0;
+      let ownerForceFieldRadius = 0;
+      if (!a.shipLaunched) {
+        let bestD2 = Infinity;
+        forEachPlayer((p) => {
+          if (!p?.ship) return;
+          if (!shipCanAttractSize(a.size, p)) return;
+          const ar = attractRadiusForPlayer(p);
+          const toShip = sub(p.ship.pos, a.pos);
+          const d2 = len2(toShip);
+          if (d2 > ar * ar) return;
+          if (d2 < bestD2) {
+            bestD2 = d2;
+            owner = p;
+            ownerAttractRadius = ar;
+            ownerForceFieldRadius = forceFieldRadiusForPlayer(p);
+          }
+        });
+      }
+
+      if (owner) {
+        a.pullOwnerId = owner.id;
+        const toShip = sub(owner.ship.pos, a.pos);
         const d2 = len2(toShip);
-        if (d2 < attractRadius2) {
-          const d = Math.max(10, Math.sqrt(d2));
-          const dirIn = mul(toShip, 1 / d); // toward ship
+        const d = Math.max(10, Math.sqrt(d2));
+        const dirIn = mul(toShip, 1 / d); // toward ship
 
-          // Gravity well: stronger as you get closer (1 / (d^2 + soft^2)).
-          const soft = state.params.gravitySoftening;
-          const grav = state.params.gravityK / (d2 + soft * soft);
-          const insideRing = d < forceFieldRadius;
-          const innerMult = insideRing ? state.params.innerGravityMult : 1;
-          const innerT = insideRing ? clamp(1 - d / Math.max(1, forceFieldRadius), 0, 1) : 0;
-          a.vel = add(a.vel, mul(dirIn, grav * innerMult * dt));
+        // Gravity well: stronger as you get closer (1 / (d^2 + soft^2)).
+        const soft = state.params.gravitySoftening;
+        const grav = state.params.gravityK / (d2 + soft * soft);
+        const insideRing = d < ownerForceFieldRadius;
+        const innerMult = insideRing ? state.params.innerGravityMult : 1;
+        const innerT = insideRing ? clamp(1 - d / Math.max(1, ownerForceFieldRadius), 0, 1) : 0;
+        a.vel = add(a.vel, mul(dirIn, grav * innerMult * dt));
 
-          // Extra damping inside the ring to help captures settle and reduce slingshot escapes.
-          if (innerT > 0) {
-            a.vel = mul(a.vel, Math.max(0, 1 - state.params.innerDrag * innerT * dt));
-          }
-
-          // Forcefield surface: pull toward r = forceFieldRadius and repel inside it.
-          const targetRingRadius = orbitRadiusForAsteroid(a);
-          const err = d - targetRingRadius; // + outside, - inside
-          const spd = len(a.vel);
-          const capV = Math.max(1, state.params.captureSpeed);
-          const captureFactor = clamp(1 - spd / capV, 0, 1);
-          const ring = clamp(err, -140, 140) * state.params.ringK * captureFactor;
-          a.vel = add(a.vel, mul(dirIn, ring * dt));
-
-          // Radial damping near the ring so captured rocks settle instead of oscillating forever.
-          if (Math.abs(err) < 70 && captureFactor > 0) {
-            const vRad = dot(a.vel, dirIn);
-            a.vel = sub(a.vel, mul(dirIn, vRad * state.params.ringRadialDamp * captureFactor * dt));
-          }
-
-          // Attraction visualization: show pull strength for any attractable, non-launched asteroid.
-          if (!a.shipLaunched) {
-            const denom = Math.max(1, attractRadius - forceFieldRadius);
-            pullTarget = clamp(1 - (d - forceFieldRadius) / denom, 0, 1);
-            if (d < forceFieldRadius) pullTarget = 1;
-          }
+        // Extra damping inside the ring to help captures settle and reduce slingshot escapes.
+        if (innerT > 0) {
+          a.vel = mul(a.vel, Math.max(0, 1 - state.params.innerDrag * innerT * dt));
         }
 
-        tryAttachAsteroid(a);
+        // Forcefield surface: pull toward r = forceFieldRadius and repel inside it.
+        const targetRingRadius = orbitRadiusForAsteroidForPlayer(a, owner);
+        const err = d - targetRingRadius; // + outside, - inside
+        const spd = len(a.vel);
+        const capV = Math.max(1, state.params.captureSpeed);
+        const captureFactor = clamp(1 - spd / capV, 0, 1);
+        const ring = clamp(err, -140, 140) * state.params.ringK * captureFactor;
+        a.vel = add(a.vel, mul(dirIn, ring * dt));
+
+        // Radial damping near the ring so captured rocks settle instead of oscillating forever.
+        if (Math.abs(err) < 70 && captureFactor > 0) {
+          const vRad = dot(a.vel, dirIn);
+          a.vel = sub(a.vel, mul(dirIn, vRad * state.params.ringRadialDamp * captureFactor * dt));
+        }
+
+        // Attraction visualization: show pull strength for any attractable, non-launched asteroid.
+        const denom = Math.max(1, ownerAttractRadius - ownerForceFieldRadius);
+        pullTarget = clamp(1 - (d - ownerForceFieldRadius) / denom, 0, 1);
+        if (d < ownerForceFieldRadius) pullTarget = 1;
+
+        tryAttachAsteroidForPlayer(a, owner);
+      } else if (!a.shipLaunched) {
+        a.pullOwnerId = null;
       }
 
       const blend = pullTarget > a.pullFx ? pullEaseIn : pullEaseOut;
@@ -2751,8 +3034,6 @@ export function createEngine({ width, height, seed } = {}) {
   }
 
   function updateGems(dt) {
-    const ship = state.ship;
-
     for (let i = state.gems.length - 1; i >= 0; i--) {
       const g = state.gems[i];
       g.ageSec += dt;
@@ -2771,12 +3052,27 @@ export function createEngine({ width, height, seed } = {}) {
       const minAlpha = lerp(0.6, 0.3, lifeT);
       g.pulseAlpha = lerp(minAlpha, 1, wave);
 
-      const toShip = sub(ship.pos, g.pos);
+      let owner = null;
+      let bestD2 = Infinity;
+      forEachPlayer((p) => {
+        if (!p?.ship) return;
+        const d2 = len2(sub(p.ship.pos, g.pos));
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          owner = p;
+        }
+      });
+      if (!owner?.ship) {
+        g.spin += g.spinVel * dt;
+        continue;
+      }
+
+      const toShip = sub(owner.ship.pos, g.pos);
       const d2 = len2(toShip);
       const d = Math.max(8, Math.sqrt(d2));
       const dirIn = mul(toShip, 1 / d);
       const soft = Math.max(16, state.params.gravitySoftening * 0.55);
-      const core = Math.max(1, state.ship.radius + g.radius + 30);
+      const core = Math.max(1, owner.ship.radius + g.radius + 30);
       const coreBoost = 1 + (core * core) / (d2 + core * core);
       const grav = (state.params.gravityK * coreBoost) / (d2 + soft * soft);
       g.vel = add(g.vel, mul(dirIn, grav * dt));
@@ -2798,15 +3094,28 @@ export function createEngine({ width, height, seed } = {}) {
     if (state.mode !== "playing") return;
     for (let i = state.gems.length - 1; i >= 0; i--) {
       const g = state.gems[i];
-      const pickR = state.ship.radius + g.radius + 20;
-      if (len2(sub(g.pos, state.ship.pos)) > pickR * pickR) continue;
+      let collector = null;
+      let bestD2 = Infinity;
+      forEachPlayer((p) => {
+        if (!p?.ship) return;
+        const pickR = p.ship.radius + g.radius + 20;
+        const d2 = len2(sub(g.pos, p.ship.pos));
+        if (d2 > pickR * pickR) return;
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          collector = p;
+        }
+      });
+      if (!collector) continue;
       state.gems.splice(i, 1);
-      state.gemsCollected[g.kind] = (state.gemsCollected[g.kind] || 0) + 1;
+      if (!collector.gemsCollected) collector.gemsCollected = { diamond: 0, ruby: 0, emerald: 0, gold: 0 };
+      collector.gemsCollected[g.kind] = (collector.gemsCollected[g.kind] || 0) + 1;
       const pts = gemPoints(g.kind);
-      state.score += pts;
-      state.progression.gemScore += pts;
-      refreshShipTierProgression({ animateZoom: true });
-      spawnExplosion(state.ship.pos, { kind: "tiny", rgb: gemRgb(g.kind), r0: 4, r1: 16, ttl: 0.14 });
+      collector.score += pts;
+      if (!collector.progression) collector.progression = makePlayerProgression();
+      collector.progression.gemScore += pts;
+      refreshShipTierProgressionForPlayer(collector, { animateZoom: true });
+      spawnExplosion(collector.ship.pos, { kind: "tiny", rgb: gemRgb(g.kind), r0: 4, r1: 16, ttl: 0.14 });
     }
   }
 
@@ -3100,9 +3409,12 @@ export function createEngine({ width, height, seed } = {}) {
     if (state.mode !== "playing") return;
     if (state.round.escape?.active) {
       state.time += dt;
-      state.burstCooldown = Math.max(0, state.burstCooldown - dt);
-      state.blastPulseT = Math.max(0, state.blastPulseT - dt);
-      state.progression.tierShiftT = Math.max(0, state.progression.tierShiftT - dt);
+      forEachPlayer((p) => {
+        p.burstCooldown = Math.max(0, (Number(p.burstCooldown) || 0) - dt);
+        p.blastPulseT = Math.max(0, (Number(p.blastPulseT) || 0) - dt);
+        if (!p.progression) p.progression = makePlayerProgression();
+        p.progression.tierShiftT = Math.max(0, (Number(p.progression.tierShiftT) || 0) - dt);
+      });
       updateCameraZoom(dt);
       for (let i = state.effects.length - 1; i >= 0; i--) {
         const e = state.effects[i];
@@ -3116,25 +3428,30 @@ export function createEngine({ width, height, seed } = {}) {
     updateRound(dt);
     if (state.mode !== "playing") return;
     state.time += dt;
-    state.burstCooldown = Math.max(0, state.burstCooldown - dt);
-    state.blastPulseT = Math.max(0, state.blastPulseT - dt);
-    state.progression.tierShiftT = Math.max(0, state.progression.tierShiftT - dt);
-    refreshShipTierProgression({ animateZoom: true });
+    forEachPlayer((p) => {
+      p.burstCooldown = Math.max(0, (Number(p.burstCooldown) || 0) - dt);
+      p.blastPulseT = Math.max(0, (Number(p.blastPulseT) || 0) - dt);
+      if (!p.progression) p.progression = makePlayerProgression();
+      p.progression.tierShiftT = Math.max(0, (Number(p.progression.tierShiftT) || 0) - dt);
+    });
+    forEachPlayer((p) => refreshShipTierProgressionForPlayer(p, { animateZoom: true }));
     updateCameraZoom(dt);
     for (let i = state.effects.length - 1; i >= 0; i--) {
       const e = state.effects[i];
       e.t += dt;
       if (e.t >= e.ttl) state.effects.splice(i, 1);
     }
-    if (state.input.burst) {
-      state.input.burst = false;
-      burstAttached();
-    }
+    forEachPlayer((p) => {
+      if (!p?.input) p.input = makePlayerInput();
+      if (!p.input.burst) return;
+      p.input.burst = false;
+      burstAttachedForPlayer(p);
+    });
     if (state.input.ping) {
       state.input.ping = false;
       tryStartTechPing();
     }
-    updateShip(dt);
+    forEachPlayer((p) => updateShip(dt, p));
     updateShipStarExposure(dt);
     if (state.mode !== "playing") return;
     updateExhaust(dt);
@@ -3181,6 +3498,7 @@ export function createEngine({ width, height, seed } = {}) {
     const sample = state.asteroids.slice(0, 10).map((a) => ({
       size: a.size,
       attached: a.attached,
+      attached_to: a.attachedTo ?? null,
       x: Math.round(a.pos.x),
       y: Math.round(a.pos.y),
       r: Math.round(a.radius),

@@ -5,6 +5,14 @@ import { polygonHullRadius } from "../util/ship.js";
 import { add, len, mul, sub } from "../util/vec2.js";
 import { SHIP_TIERS } from "../engine/createEngine.js";
 
+const ASTEROID_VERTS = {
+  small: 9,
+  med: 11,
+  large: 12,
+  xlarge: 13,
+  xxlarge: 14,
+};
+
 function drawPolyline(ctx, pts, x, y, angle, color, lineWidth = 2, fillColor = null) {
   ctx.save();
   ctx.translate(x, y);
@@ -234,6 +242,51 @@ function randSigned(seed) {
   return (s / 0xffffffff) * 2 - 1;
 }
 
+function shipTierByKey(key) {
+  return SHIP_TIERS[key] || SHIP_TIERS.small;
+}
+
+function forceFieldScaleForTierKey(params, tierKey) {
+  if (tierKey === "large") return clamp(Number(params?.tier3ForceFieldScale ?? SHIP_TIERS.large.forcefieldScale), 0.2, 6);
+  if (tierKey === "medium") return clamp(Number(params?.tier2ForceFieldScale ?? SHIP_TIERS.medium.forcefieldScale), 0.2, 6);
+  return clamp(Number(params?.tier1ForceFieldScale ?? SHIP_TIERS.small.forcefieldScale), 0.2, 6);
+}
+
+function shipHullRadiusForTierKey(tierKey) {
+  const tier = shipTierByKey(tierKey);
+  const renderer = tier.renderer || {};
+  if (renderer.type === "svg") {
+    const svgScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+    const hullR = Number(renderer.hullRadius);
+    if (Number.isFinite(hullR) && hullR > 0) return Math.max(tier.radius, tier.radius * svgScale);
+  }
+  const points = Array.isArray(renderer.points) ? renderer.points : null;
+  const baseR = points ? polygonHullRadius(points) : 0;
+  return Math.max(tier.radius, baseR || 0);
+}
+
+function requiredForceFieldRadiusForTier(params, tierKey) {
+  const base = Number(params?.forceFieldRadius ?? 0);
+  const scale = forceFieldScaleForTierKey(params, tierKey);
+  const desired = base * scale;
+  const gap = clamp(Number(params?.forceFieldHullGap ?? 14), 0, 200);
+  const hullR = shipHullRadiusForTierKey(tierKey);
+  return Math.max(desired, hullR + gap);
+}
+
+function makeAsteroidShapeFromSeed(seedU32, radius, verts) {
+  let s = (seedU32 >>> 0) || 0xdecafbad;
+  const pts = [];
+  const step = (Math.PI * 2) / Math.max(3, verts | 0);
+  for (let i = 0; i < verts; i++) {
+    s = xorshift32(s);
+    const u = s / 0xffffffff;
+    const jitter = 0.62 + u * 0.54;
+    pts.push({ a: i * step, r: radius * jitter });
+  }
+  return pts;
+}
+
 function drawElectricTether(
   ctx,
   from,
@@ -400,12 +453,34 @@ function installedCountFromSlots(slots) {
 
 export function createRenderer(engine) {
   const state = engine.state;
-  const currentShipTier = () => engine.getCurrentShipTier();
-  const currentForceFieldRadius = () => engine.getCurrentForceFieldRadius();
-  const currentAttractRadius = () => engine.getCurrentAttractRadius();
   const svgPathCache = new Map();
+  const asteroidShapeCache = new Map();
   let exhaustSpritesCacheKey = "";
   let exhaustSpritesCache = null;
+
+  function sortedPlayerIds() {
+    const obj = state.playersById && typeof state.playersById === "object" ? state.playersById : {};
+    return Object.keys(obj).sort();
+  }
+
+  function getLocalPlayerId() {
+    return state.localPlayerId || "local";
+  }
+
+  function getAsteroidShape(a) {
+    const shape = a?.shape;
+    if (Array.isArray(shape) && shape.length) return shape;
+    const id = String(a?.id ?? "");
+    const radius = Math.max(0, Number(a?.radius) || 0);
+    const size = String(a?.size ?? "small");
+    const verts = ASTEROID_VERTS[size] || 10;
+    const prev = asteroidShapeCache.get(id);
+    if (prev && prev.verts === verts && Math.abs(prev.radius - radius) <= 1e-6) return prev.shape;
+    const seed = fnv1aSeed(id || `${size}:${radius.toFixed(2)}`);
+    const next = makeAsteroidShapeFromSeed(seed, radius, verts);
+    asteroidShapeCache.set(id, { radius, verts, shape: next });
+    return next;
+  }
   function getExhaustSprites() {
     try {
       if (typeof document === "undefined") return null;
@@ -900,70 +975,75 @@ export function createRenderer(engine) {
     }
   }
 
-  function drawForcefieldRings(ctx) {
+  function drawForcefieldRings(ctx, playerInfos, localPlayerId) {
     if (state.mode !== "playing") return;
     if (state.round?.escape?.active) return;
+    const localId = localPlayerId || getLocalPlayerId();
 
-    // Force field ring (where collected asteroids stick).
-    const tier = currentShipTier();
-    const fieldR = currentForceFieldRadius();
-    const attractR = currentAttractRadius();
-    const pulse = clamp(state.blastPulseT / 0.22, 0, 1);
-    const tierShift = clamp(state.progression.tierShiftT / 0.7, 0, 1);
+    for (let i = 0; i < playerInfos.length; i++) {
+      const p = playerInfos[i];
+      if (!p?.ship || !p?.tier) continue;
 
-    ctx.save();
-    ctx.strokeStyle = tier.ringColor;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
-    ctx.stroke();
+      const tier = p.tier;
+      const fieldR = p.fieldR;
+      const attractR = p.attractR;
+      const pulse = clamp(p.pulse / 0.22, 0, 1);
+      const tierShift = clamp(p.tierShift / 0.7, 0, 1);
 
-    if (pulse > 0) {
-      // Quick KISS blast feedback: white-hot ring + faint red ring.
-      ctx.strokeStyle = `rgba(255,255,255,${lerp(0.0, 0.85, pulse).toFixed(3)})`;
-      ctx.lineWidth = lerp(2, 6, pulse);
-      ctx.beginPath();
-      ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = `rgba(255,89,100,${lerp(0.0, 0.55, pulse).toFixed(3)})`;
-      ctx.lineWidth = lerp(1, 4, pulse);
-      ctx.beginPath();
-      ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 10, pulse), 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    if (tierShift > 0) {
-      ctx.strokeStyle = `rgba(255,255,255,${(tierShift * 0.9).toFixed(3)})`;
-      ctx.lineWidth = lerp(2, 8, tierShift);
-      ctx.beginPath();
-      ctx.arc(state.ship.pos.x, state.ship.pos.y, fieldR + lerp(0, 34, 1 - tierShift), 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // Debug-only attraction radius.
-    if (state.settings.showAttractRadius) {
       ctx.save();
-      ctx.strokeStyle = "rgba(86,183,255,0.12)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([10, 10]);
-      ctx.lineDashOffset = 0;
+      ctx.strokeStyle = tier.ringColor;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(state.ship.pos.x, state.ship.pos.y, attractR, 0, Math.PI * 2);
+      ctx.arc(p.ship.pos.x, p.ship.pos.y, fieldR, 0, Math.PI * 2);
       ctx.stroke();
+
+      if (pulse > 0) {
+        // Quick KISS blast feedback: white-hot ring + faint red ring.
+        ctx.strokeStyle = `rgba(255,255,255,${lerp(0.0, 0.85, pulse).toFixed(3)})`;
+        ctx.lineWidth = lerp(2, 6, pulse);
+        ctx.beginPath();
+        ctx.arc(p.ship.pos.x, p.ship.pos.y, fieldR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = `rgba(255,89,100,${lerp(0.0, 0.55, pulse).toFixed(3)})`;
+        ctx.lineWidth = lerp(1, 4, pulse);
+        ctx.beginPath();
+        ctx.arc(p.ship.pos.x, p.ship.pos.y, fieldR + lerp(0, 10, pulse), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (tierShift > 0) {
+        ctx.strokeStyle = `rgba(255,255,255,${(tierShift * 0.9).toFixed(3)})`;
+        ctx.lineWidth = lerp(2, 8, tierShift);
+        ctx.beginPath();
+        ctx.arc(p.ship.pos.x, p.ship.pos.y, fieldR + lerp(0, 34, 1 - tierShift), 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
+
+      // Debug-only attraction radius (local player only).
+      if (p.id === localId && state.settings.showAttractRadius) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(86,183,255,0.12)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 10]);
+        ctx.lineDashOffset = 0;
+        ctx.beginPath();
+        ctx.arc(p.ship.pos.x, p.ship.pos.y, attractR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 
-  function drawAsteroid(ctx, a, { tier, ship }) {
+  function drawAsteroid(ctx, a, { tier, ship, fieldR }) {
     const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
     const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
     const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+    const shape = getAsteroidShape(a);
 
     if (pullFx > 0.01) {
       const visScale = pullFxVisualScaleForTier(tier.key);
-      const fieldR = currentForceFieldRadius();
       const outward = sub(a.pos, ship.pos);
       const outwardLen = Math.max(1e-6, len(outward));
       const ringPoint = add(ship.pos, mul(outward, fieldR / outwardLen));
@@ -996,7 +1076,7 @@ export function createRenderer(engine) {
       ctx.lineWidth = lerp(2, 7, pullFx) * stackScale * visScale.thickness;
       ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
       ctx.shadowBlur = lerp(3, 14, pullFx) * stackScale * visScale.thickness;
-      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+      drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
       ctx.restore();
     }
 
@@ -1010,7 +1090,7 @@ export function createRenderer(engine) {
       ctx.globalCompositeOperation = "lighter";
       ctx.shadowColor = "rgba(215,150,255,0.95)";
       ctx.shadowBlur = lerp(8, 22, intensity);
-      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, `rgba(215,150,255,${alpha.toFixed(3)})`, lerp(4, 9, intensity));
+      drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, `rgba(215,150,255,${alpha.toFixed(3)})`, lerp(4, 9, intensity));
       ctx.restore();
     }
 
@@ -1025,7 +1105,7 @@ export function createRenderer(engine) {
       ctx.shadowBlur = lerp(6, 24, starHeat);
       ctx.strokeStyle = rgbToRgba(hotRgb, 0.06 + 0.22 * starHeat);
       ctx.lineWidth = lerp(2, 9, starHeat);
-      drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
+      drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
       ctx.restore();
     }
 
@@ -1051,11 +1131,11 @@ export function createRenderer(engine) {
       const mixed = lerpRgb([231, 240, 255], hotRgb, clamp(starHeat * 0.9, 0, 1));
       color = rgbToRgba(mixed, 0.88);
     }
-    drawPolyline(ctx, a.shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
+    drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
   }
 
-  function drawShipModel(ctx, ship, thrusting) {
-    const tier = currentShipTier();
+  function drawShipModel(ctx, ship, thrusting, tierOverride = null) {
+    const tier = tierOverride || shipTierByKey(ship?.tier);
     const renderer = tier.renderer || {};
     const shipRadius = Math.max(1, Number(ship.radius) || Number(tier.radius) || 1);
     const escapeScale = clamp(Number(ship.escapeScale) || 0, 0, 1);
@@ -1135,6 +1215,26 @@ export function createRenderer(engine) {
     const h = state.view.h;
     ctx.clearRect(0, 0, w, h);
 
+    const localId = getLocalPlayerId();
+    const ids = sortedPlayerIds();
+    const playerInfos = [];
+    const playerInfoById = Object.create(null);
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const player = state.playersById?.[id];
+      const ship = player?.ship;
+      if (!ship) continue;
+      const tier = shipTierByKey(ship.tier);
+      const fieldR = requiredForceFieldRadiusForTier(state.params, tier.key);
+      const attractR = Number(state.params?.attractRadius ?? 0) * Number(tier.attractScale || 1);
+      const pulse = Number(player?.blastPulseT) || 0;
+      const tierShift = Number(player?.progression?.tierShiftT) || 0;
+      const info = { id, player, ship, tier, fieldR, attractR, pulse, tierShift };
+      playerInfos.push(info);
+      playerInfoById[id] = info;
+    }
+    const localInfo = playerInfoById[localId] || (playerInfos.length ? playerInfos[0] : null);
+
     ctx.save();
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);
@@ -1186,18 +1286,22 @@ export function createRenderer(engine) {
 
     // Asteroid sorting: draw non-attached first (behind), then the forcefield ring,
     // then attached asteroids so the "trapped" rocks always read as in front.
-    const tier = currentShipTier();
-    const ship = state.ship;
     for (const a of state.asteroids) {
       if (a.attached) continue;
-      drawAsteroid(ctx, a, { tier, ship });
+      const ownerId = a.pullOwnerId || localId;
+      const owner = playerInfoById[ownerId] || localInfo;
+      if (!owner) continue;
+      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR });
     }
 
-    drawForcefieldRings(ctx);
+    drawForcefieldRings(ctx, playerInfos, localId);
 
     for (const a of state.asteroids) {
       if (!a.attached) continue;
-      drawAsteroid(ctx, a, { tier, ship });
+      const ownerId = a.attachedTo || localId;
+      const owner = playerInfoById[ownerId] || localInfo;
+      if (!owner) continue;
+      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR });
     }
 
     drawJumpGate(ctx);
@@ -1368,9 +1472,14 @@ export function createRenderer(engine) {
     }
 
     drawExhaustParticles(ctx, state.exhaust, getExhaustSprites(), state.time);
-    const thrusting =
+    const localThrusting =
       state.mode === "playing" && (state.input.up || (Number(state.input?.thrustAnalog ?? 0) > 0.02));
-    drawShipModel(ctx, state.ship, thrusting);
+    for (let i = 0; i < playerInfos.length; i++) {
+      const p = playerInfos[i];
+      if (p.id === localId) continue;
+      drawShipModel(ctx, p.ship, false, p.tier);
+    }
+    if (localInfo?.ship) drawShipModel(ctx, localInfo.ship, localThrusting, localInfo.tier);
 
     ctx.restore();
 
@@ -1395,7 +1504,7 @@ export function createRenderer(engine) {
           : "";
       const starLine = star ? `Star: ${String(star.edge).toUpperCase()}` : "";
       ctx.fillText(
-        `Tier: ${currentShipTier().label}   Attached: ${attached}   S:${small} M:${med} L:${large} XL:${xlarge} XXL:${xxlarge}   Gems: ${state.progression.gemScore}   Score: ${state.score}`,
+        `Tier: ${(localInfo?.tier?.label || shipTierByKey(state.ship?.tier).label)}   Attached: ${attached}   S:${small} M:${med} L:${large} XL:${xlarge} XXL:${xxlarge}   Gems: ${state.progression.gemScore}   Score: ${state.score}`,
         14,
         18,
       );

@@ -11,6 +11,25 @@ Related docs:
 
 ---
 
+## Official Docs Baseline (no-assumptions rule)
+
+Before implementing any **SERVER/NET** steps, confirm we are following the *current* official docs for the exact versions we install. Record pinned versions + commands in MP-07 Notes.
+
+### Colyseus (target: current stable at time of MP-07)
+- Migration guide (0.17+): https://docs.colyseus.io/migrating/0.17
+- Getting started (JavaScript SDK): https://docs.colyseus.io/getting-started/javascript
+- Client SDK API reference: https://docs.colyseus.io/sdk
+- Rooms API (`setSimulationInterval`, `patchRate` / `setPatchRate` deprecation, message handling): https://docs.colyseus.io/room
+- State Sync overview (Schema-based patches): https://docs.colyseus.io/state
+- Schema reference: https://docs.colyseus.io/state/schema
+- WebSocket transport options: https://docs.colyseus.io/server/transport/ws
+- Server API (listen, shutdown hooks, etc.): https://docs.colyseus.io/server
+
+### Implementation choice that must be made explicitly (and documented in MP-07)
+- **State transport strategy:** Colyseus Schema/patches for room state vs custom snapshot messages (`room.send` / `room.sendBytes`). Prefer the official “State Sync (Schema)” path unless profiling shows we need custom binary snapshots.
+
+---
+
 ## How Fresh Agents Use This Doc (Required Workflow)
 
 This file is the source of truth for multiplayer progress. Use it as an execution tracker, not a design scratchpad.
@@ -79,13 +98,13 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 | ID | Milestone | Step | Owner | Status | Depends On | Validation | Notes |
 |---|---|---|---|---|---|---|---|
 | MP-00 | M0 | Add multiplayer PRD + this plan to repo; link from README | DOCS | DONE | — | n/a | Created `multiplayer-prd.md` + `multiplayer-implementation-plan.md`. |
-| MP-01 | M0 | Define multiplayer engine data model (players, per-player score/progression, `attachedTo`) | ENGINE | NOT_STARTED | MP-00 | `npm test` | Keep singleplayer default player. |
-| MP-02 | M0 | Multi-ship update loop (updateShips, per-player tier/progression, per-player burst cooldowns) | ENGINE | NOT_STARTED | MP-01 | `npm test` | Preserve determinism. |
-| MP-03 | M0 | Multi-ship entity interactions (asteroid influence ownership, gem pickup ownership, attachment rules) | ENGINE | NOT_STARTED | MP-02 | `npm test` | Deterministic “nearest eligible ship wins.” |
-| MP-04 | M0 | Decouple authoritative spawns from camera (spawn near players, avoid all players) | ENGINE | NOT_STARTED | MP-03 | `npm test` | Remove camera-based authority bias. |
-| MP-05 | M0 | Add engine `role` option (`server` vs `client`) to skip VFX/camera on server | ENGINE | NOT_STARTED | MP-04 | `npm test` | Physics identical; perf-only skips. |
-| MP-06 | M0 | Renderer supports multiple ships + `attachedTo`; renders without requiring `shape` (derive render-only) | RENDER | NOT_STARTED | MP-03 | `npm test` + manual `file://` smoke | Ensure singleplayer visuals remain correct. |
-| MP-07 | M1 | Choose/lock Colyseus version + packages; record exact commands here | SERVER | NOT_STARTED | MP-00 | n/a | Update Notes with chosen versions. |
+| MP-01 | M0 | Define multiplayer engine data model (players, per-player score/progression, `attachedTo`) | ENGINE (Codex) | DONE | MP-00 | `npm test` | Plan:<br>- Add `playersById` + `localPlayerId` while keeping legacy `state.ship` + `state.score` aliases<br>- Move score/progression/cooldowns under player model (local player by default)<br>- Add `asteroid.attachedTo` (keep legacy `asteroid.attached` boolean for now) |
+| MP-02 | M0 | Multi-ship update loop (updateShips, per-player tier/progression, per-player burst cooldowns) | ENGINE (Codex) | DONE | MP-01 | `npm test` | Plan:<br>- Add deterministic per-player update loop (`updatePlayers`) for cooldowns + tierShift timers + ship movement<br>- Make tier/progression logic player-aware (score thresholds per player; camera zoom only for local player)<br>- Keep singleplayer behavior + tests unchanged |
+| MP-03 | M0 | Multi-ship entity interactions (asteroid influence ownership, gem pickup ownership, attachment rules) | ENGINE (Codex) | DONE | MP-02 | `npm test` | Plan:<br>- Pick a single “influence owner” per asteroid per tick (nearest eligible ship; deterministic tie-break by player id)<br>- Attached asteroids orbit their owner ship (`attachedTo`) and burst only affects owner’s attached rocks<br>- Gems award points/progression to the nearest colliding player (deterministic tie-break) |
+| MP-04 | M0 | Decouple authoritative spawns from camera (spawn near players, avoid all players) | ENGINE (Codex) | DONE | MP-03 | `npm test` | Plan:<br>- Make spawn exclusion views derive from player ships (not camera)<br>- Spawn ambient asteroids near a selected player ship; keep minimum distance from all ships<br>- Keep tech part respawn avoidance based on player views (singleplayer behavior unchanged) |
+| MP-05 | M0 | Add engine `role` option (`server` vs `client`) to skip VFX/camera on server | ENGINE (Codex) | DONE | MP-04 | `npm test` | Plan:<br>- Add `role` option to `createEngine` (`client` default, `server` skips camera + VFX updates)<br>- Ensure gameplay RNG is unaffected by VFX (split fx RNG stream; server skipping VFX must not change sim)<br>- Keep singleplayer hooks + tests unchanged |
+| MP-06 | M0 | Renderer supports multiple ships + `attachedTo`; renders without requiring `shape` (derive render-only) | RENDER (Codex) | DONE | MP-03 | `npm test` + manual `file://` smoke | Render ships + forcefield rings for all `playersById` (local camera unchanged for now). Color attached asteroids by owner (`attachedTo`) and pull VFX by `pullOwnerId`. Derive asteroid shapes client-side when `shape` missing (cache by id). |
+| MP-07 | M1 | Choose/lock Colyseus version + packages; record exact commands here | SERVER | NOT_STARTED | MP-00 | n/a | Use Colyseus 0.17+ docs. Client SDK is `@colyseus/sdk` (not legacy `colyseus.js`). Prefer `defineServer()` structure per migration guide. Record pinned versions for: `colyseus`, `@colyseus/core`, `@colyseus/ws-transport`, `@colyseus/schema`, `@colyseus/sdk`. |
 | MP-08 | M1 | Node LAN server serves static client + hosts ws endpoint (same port) | SERVER | NOT_STARTED | MP-07 | manual LAN open | Provide “copy/paste LAN URL” output. |
 | MP-09 | M1 | Colyseus Room wrapper: authoritative tick, join/leave, player spawns, input apply, snapshot broadcast | SERVER/ENGINE | NOT_STARTED | MP-05, MP-08 | manual 2-client join | Max clients = 4. |
 | MP-10 | M1 | Client net module: connect, Quick Play, input send loop, snapshot buffer | NET | NOT_STARTED | MP-09 | manual LAN join | Keep it small and observable. |
@@ -131,3 +150,36 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 - Added `multiplayer-prd.md` and `multiplayer-implementation-plan.md`.
 - Validation: n/a (docs only).
 
+### 2026-02-15 (MP-01)
+- Implemented engine multiplayer data model: `state.playersById` + `state.localPlayerId`, with legacy top-level aliases to the local player to keep singleplayer behavior intact.
+- Added `asteroid.attachedTo` (kept legacy `asteroid.attached` boolean for now).
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).
+
+### 2026-02-15 (MP-02)
+- Implemented deterministic multi-player update scaffolding: per-player cooldowns + tierShift timers + ship movement iterate over `playersById` in sorted id order.
+- Made tier/progression evaluation player-aware (thresholds based on each player's score); camera zoom transitions still apply only to the local player.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).
+
+### 2026-02-15 (MP-03)
+- Implemented deterministic ownership rules for core interactions:
+  - Each asteroid selects a single influence owner per tick (nearest eligible ship; deterministic tie-break by player id order).
+  - Attached asteroids orbit their owner ship (`attachedTo`) and burst only affects the owner’s attached asteroids.
+  - Gem attraction + pickup awards points/progression to the nearest colliding player (deterministic tie-break).
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).
+
+### 2026-02-15 (MP-04)
+- Decoupled authoritative spawn avoidance from camera:
+  - Spawn exclusion views now derive from player ships (per-player zoom estimate), not `state.camera`.
+  - Ambient asteroid spawns choose a focus player and spawn near them while enforcing minimum distance from *all* ships.
+  - Tech part respawn fallback scoring now maximizes distance from the nearest player view.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).
+
+### 2026-02-15 (MP-05)
+- Added `createEngine({ role })` option (`client` default, `server` for authoritative sim without render-only work).
+- Decoupled VFX RNG from gameplay RNG (`fxRng`) and made server role skip camera + VFX/exhaust updates without affecting gameplay RNG.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).
+
+### 2026-02-15 (MP-06)
+- Updated renderer to support multiple players: draws ships + rings for all `playersById`, and renders asteroids using `attachedTo` / `pullOwnerId` ownership.
+- Renderer no longer requires authoritative asteroid `shape`; derives a deterministic shape from asteroid id when missing (cached client-side).
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); manual `file://` smoke (pass; 2 ships visible).
