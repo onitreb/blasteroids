@@ -246,3 +246,8 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
   - Server `patchRate` override via `BLASTEROIDS_PATCH_RATE_MS` (try `50` for ~20Hz).
   - Client interpolation delay now adapts to observed snapshot jitter so higher patch Hz reduces input lag automatically.
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass).
+
+### 2026-02-15 (LAN MP follow-up: world scale)
+- Fixed authoritative arena sizing for multiplayer rooms: LAN server now applies `worldScale` on the server engine (`setArenaConfig`) and the client applies the same `worldScale` before attaching MP camera clamping.
+- Run: `BLASTEROIDS_WORLD_SCALE=10 npm run lan:server` or pass `joinOptions.worldScale` in `window.Blasteroids.mpConnect(...)`.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`).

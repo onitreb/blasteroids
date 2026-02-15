@@ -74,6 +74,11 @@ Run the LAN server (serves static client + Colyseus websocket on the same port):
 
 Options:
 - `npm run lan:server -- --port 2567` (default port is 2567)
+- `BLASTEROIDS_PATCH_RATE_MS=33 npm run lan:server` (override Colyseus Room `patchRate`; defaults to 100ms)
+- `BLASTEROIDS_WORLD_SCALE=10 npm run lan:server` (override authoritative world scale; defaults to engine default)
+
+Client join options (DevTools):
+- `await window.Blasteroids.mpConnect({ endpoint: "ws://localhost:2567", joinOptions: { worldScale: 10 } })`
 
 Smoke scripts (Node / headless browser):
 - Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
