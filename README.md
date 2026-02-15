@@ -87,3 +87,5 @@ Once Pages is enabled, the game will be available at:
 - Architecture: `docs/architecture.md`
 - Module ownership map: `docs/module-map.md`
 - Refactor review checklist: `docs/review-checklist.md`
+- Multiplayer PRD: `multiplayer-prd.md`
+- Multiplayer implementation plan (tracker): `multiplayer-implementation-plan.md`
