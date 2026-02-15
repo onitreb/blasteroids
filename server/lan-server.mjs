@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import express from "express";
 
-import { defineServer } from "@colyseus/core";
+import { defineRoom, defineServer } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
+
+import { BlasteroidsRoom } from "./rooms/BlasteroidsRoom.mjs";
 
 function parseArgs(argv) {
   const args = {};
@@ -43,7 +45,9 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 
 const gameServer = defineServer({
-  rooms: {},
+  rooms: {
+    blasteroids: defineRoom(BlasteroidsRoom),
+  },
   transport: new WebSocketTransport(),
   express: (app) => {
     app.disable("x-powered-by");

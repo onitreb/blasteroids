@@ -2370,6 +2370,60 @@ export function createEngine({ width, height, seed, role = "client" } = {}) {
     return true;
   }
 
+  function spawnShipAtForPlayer(playerId, pos) {
+    const pid = String(playerId ?? "");
+    if (!pid) return false;
+    const player = state.playersById?.[pid];
+    if (!player?.ship) return false;
+    if (!pos || typeof pos !== "object") return false;
+    const ship = player.ship;
+    const halfW = state.world.w / 2;
+    const halfH = state.world.h / 2;
+    const r = Math.max(1, Number(ship.radius) || 1);
+    ship.pos.x = clamp(Number(pos.x) || 0, -halfW + r, halfW - r);
+    ship.pos.y = clamp(Number(pos.y) || 0, -halfH + r, halfH - r);
+    ship.vel.x = 0;
+    ship.vel.y = 0;
+    ship.escapeScale = 1;
+    if (player.id === state.localPlayerId) syncCameraToShip();
+    return true;
+  }
+
+  function addPlayer(playerId, { tierKey = "small", makeLocalIfFirst = true } = {}) {
+    const pid = String(playerId ?? "");
+    if (!pid) return null;
+    if (!state.playersById) state.playersById = Object.create(null);
+    if (state.playersById[pid]) return state.playersById[pid];
+    const tier = tierKey === "medium" || tierKey === "large" ? tierKey : "small";
+    const p = makePlayer(pid, { ship: makeShip(tier) });
+    state.playersById[pid] = p;
+
+    if (makeLocalIfFirst) {
+      const current = String(state.localPlayerId ?? "");
+      const currentExists = !!(current && state.playersById[current]);
+      if (!currentExists) state.localPlayerId = pid;
+    }
+
+    return p;
+  }
+
+  function removePlayer(playerId) {
+    const pid = String(playerId ?? "");
+    if (!pid || !state.playersById || !state.playersById[pid]) return false;
+    delete state.playersById[pid];
+    if (state.localPlayerId === pid) {
+      const nextIds = Object.keys(state.playersById).sort();
+      if (nextIds.length) {
+        state.localPlayerId = nextIds[0];
+      } else {
+        // Keep legacy local-player aliases safe even if all players are removed.
+        state.localPlayerId = "local";
+        state.playersById[state.localPlayerId] = makePlayer(state.localPlayerId, { ship: makeShip("small") });
+      }
+    }
+    return true;
+  }
+
   function resetWorld() {
     advanceToNextRoundSeed();
     state.time = 0;
@@ -3675,5 +3729,8 @@ export function createEngine({ width, height, seed, role = "client" } = {}) {
     setRoundSeed,
     generateSpawnPoints,
     spawnShipAt,
+    spawnShipAtForPlayer,
+    addPlayer,
+    removePlayer,
   };
 }
