@@ -56,6 +56,16 @@ export class BlasteroidsRoom extends Room {
       features: { roundLoop: false, saucer: false },
     });
 
+    // IMPORTANT: createEngine initializes `state.world.scale` but does not apply it unless `setArenaConfig/resize`
+    // runs. Ensure the authoritative world size is actually scaled for LAN MP runs.
+    const worldScale = clampNumber(
+      options.worldScale ?? process.env.BLASTEROIDS_WORLD_SCALE,
+      1,
+      10,
+      this._engine.state.world?.scale ?? 3,
+    );
+    this._engine.setArenaConfig({ worldScale });
+
     // Remove the singleplayer placeholder player. Multiplayer server will populate real players on join.
     const placeholderId = this._engine.state.localPlayerId;
     if (placeholderId && this._engine.state.playersById?.[placeholderId]) {

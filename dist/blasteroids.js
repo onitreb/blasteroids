@@ -14811,6 +14811,10 @@ Schema instances may only have up to 64 fields.`);
       setShipSvgRenderer,
       advanceTime,
       mpConnect: async (opts = {}) => {
+        const joinOpts = opts && typeof opts === "object" ? opts.joinOptions : null;
+        const requestedWorldScale = joinOpts && Object.prototype.hasOwnProperty.call(joinOpts, "worldScale") ? Number(joinOpts.worldScale) : Number.NaN;
+        const worldScale = Number.isFinite(requestedWorldScale) ? requestedWorldScale : Number(game.state.world?.scale) || 3;
+        game.setArenaConfig({ worldScale });
         const info = await mp.connect(opts);
         const room = mp.getRoom();
         mpWorld.attach({ room, localSessionId: info.sessionId });

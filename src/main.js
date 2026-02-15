@@ -222,6 +222,13 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
     setShipSvgRenderer,
     advanceTime,
     mpConnect: async (opts = {}) => {
+      // Ensure client world is scaled before attaching MP camera clamping.
+      // (Server should use the same `joinOptions.worldScale` / env var.)
+      const joinOpts = opts && typeof opts === "object" ? opts.joinOptions : null;
+      const requestedWorldScale = joinOpts && Object.prototype.hasOwnProperty.call(joinOpts, "worldScale") ? Number(joinOpts.worldScale) : Number.NaN;
+      const worldScale = Number.isFinite(requestedWorldScale) ? requestedWorldScale : Number(game.state.world?.scale) || 3;
+      game.setArenaConfig({ worldScale });
+
       const info = await mp.connect(opts);
       const room = mp.getRoom();
       mpWorld.attach({ room, localSessionId: info.sessionId });
