@@ -1,6 +1,6 @@
 # Multiplayer PRD — Blasteroids (LAN MVP → Online)
 
-Last updated: 2026-02-15  
+Last updated: 2026-02-16  
 Status: DRAFT  
 Owners: Product (Paul), Engineering (Paul + Codex agents)  
 
@@ -165,13 +165,13 @@ Multiplayer adds an additional “served” mode:
 
 ### Known risks
 - Bandwidth blow-up if we snapshot too much asteroid state too frequently.
-- Server CPU load if we do expensive multi-ship influence checks naively.
+- Server CPU load if we do expensive multi-ship influence checks naively (mitigate with interest management + server sim scaling).
 - Keeping the singleplayer `file://` experience intact while adding server code.
 
 ### Explicitly deferred decisions
 - Competitive mode ruleset definition (damage, stealing, win condition).
 - Round-loop multiplayer integration order.
-- Interest management (global vs per-client snapshots) if bandwidth becomes a problem.
+- Whether to migrate asteroids/gems off Schema patches into custom snapshot messages if `StateView` filtering is still too heavy at very large entity counts.
 
 ---
 
@@ -185,4 +185,3 @@ Multiplayer adds an additional “served” mode:
 - `npm test` passes.
 - `npm run build` passes and `dist/blasteroids.js` is updated for any runtime changes.
 - Singleplayer still runs via `file://` with no console errors.
-

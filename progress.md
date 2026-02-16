@@ -198,6 +198,11 @@ Updates
   - Scaled large-tier mass consistently with radius-area logic (`4160 -> 16640`).
   - Kept tier camera zoom-out defaults unchanged (`tier2Zoom=0.78`, `tier3Zoom=0.58`).
   - Synced docs for current hull-size defaults and growth scale notes.
+
+- 2026-02-16 LAN multiplayer scaling + UX updates:
+  - MP-20: interest management (per-client asteroid/gem visibility using Schema `@view()` + `StateView` driven by client view rect updates).
+  - MP-21 (in progress): server sim scaling (far asteroids skip expensive pull/attach + collision broadphase work outside the union of player view rects + margin).
+  - MP UX: deterministic per-player pastel palette tint (ship/forcefield/owned asteroids).
   - Validation:
     - `npm test`: `11 passed, 0 failed`.
     - `npm run build`: success (`dist/blasteroids.js` regenerated).

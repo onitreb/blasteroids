@@ -41,6 +41,7 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
   - Canonical per-player state lives under `state.playersById` with `state.localPlayerId`.
   - Legacy top-level fields (`state.ship`, `state.input`, `state.score`, etc.) are maintained as aliases to the local player for singleplayer/back-compat.
   - `createEngine({ role })` supports `client` (default) vs `server` (skip camera/VFX work; gameplay RNG remains deterministic).
+  - Server-only helpers may exist under `state._mpSim` (not synced) to support LAN multiplayer scaling (e.g. `setMpViewRects(...)` and view-driven sim scaling).
 
 ### Renderer (`src/render/renderGame.js`)
 
@@ -48,6 +49,7 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
 - Handles visuals only (background, ship, asteroids, effects, HUD overlays on canvas).
 - Must not change gameplay rules/state.
 - Uses renderer-local cache (for parsed SVG paths) only.
+- Multiplayer visuals may apply per-player color palettes (ship/forcefield/owned asteroid tint) without affecting simulation.
 
 ### UI Bindings (`src/ui/createUiBindings.js`)
 
@@ -74,6 +76,7 @@ Multiplayer runs in a separate “served” mode and must not break the `file://
 - LAN server entrypoint: `server/lan-server.mjs` (serves static client + hosts Colyseus websocket on the same port)
 - Colyseus Room(s): `server/rooms/*`
 - Schema state definitions: `server/schema/*`
+- Interest management uses Schema `@view()` + per-client `StateView` (clients receive only in-view asteroids/gems + margin).
 
 ## Testing and Validation
 
