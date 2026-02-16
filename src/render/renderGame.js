@@ -207,6 +207,13 @@ function rgbToRgba(rgb, a) {
   return `rgba(${r},${g},${b},${clamp(a, 0, 1).toFixed(3)})`;
 }
 
+const PLAYER_COLOR_PALETTES = [
+  { key: "yellow", lightRgb: [255, 234, 138], darkRgb: [255, 196, 62] },
+  { key: "pink", lightRgb: [255, 182, 216], darkRgb: [255, 96, 166] },
+  { key: "blue", lightRgb: [170, 221, 255], darkRgb: [76, 156, 255] },
+  { key: "green", lightRgb: [176, 255, 212], darkRgb: [72, 214, 132] },
+];
+
 function lerpRgb(a, b, t) {
   const tt = clamp(t, 0, 1);
   return [
@@ -224,6 +231,19 @@ function fnv1aSeed(str) {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+function paletteForPlayerId(id) {
+  const key = String(id ?? "");
+  const idx = PLAYER_COLOR_PALETTES.length ? fnv1aSeed(key) % PLAYER_COLOR_PALETTES.length : 0;
+  const base = PLAYER_COLOR_PALETTES[idx] || PLAYER_COLOR_PALETTES[0];
+  return {
+    key: base?.key || "custom",
+    lightRgb: base?.lightRgb || [255, 221, 88],
+    darkRgb: base?.darkRgb || [231, 240, 255],
+    ringColor: rgbToRgba(base?.lightRgb || [255, 221, 88], 0.4),
+    shipStroke: rgbToRgba(base?.darkRgb || [231, 240, 255], 0.95),
+  };
 }
 
 function xorshift32(seed) {
@@ -991,7 +1011,7 @@ export function createRenderer(engine) {
       const tierShift = clamp(p.tierShift / 0.7, 0, 1);
 
       ctx.save();
-      ctx.strokeStyle = tier.ringColor;
+      ctx.strokeStyle = p.palette?.ringColor || tier.ringColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(p.ship.pos.x, p.ship.pos.y, fieldR, 0, Math.PI * 2);
@@ -1024,7 +1044,8 @@ export function createRenderer(engine) {
       // Debug-only attraction radius (local player only).
       if (p.id === localId && state.settings.showAttractRadius) {
         ctx.save();
-        ctx.strokeStyle = "rgba(86,183,255,0.12)";
+        const rgb = p.palette?.lightRgb || [86, 183, 255];
+        ctx.strokeStyle = rgbToRgba(rgb, 0.12);
         ctx.lineWidth = 2;
         ctx.setLineDash([10, 10]);
         ctx.lineDashOffset = 0;
@@ -1036,7 +1057,8 @@ export function createRenderer(engine) {
     }
   }
 
-  function drawAsteroid(ctx, a, { tier, ship, fieldR }) {
+  function drawAsteroid(ctx, a, { tier, ship, fieldR, ringRgb = null }) {
+    const ring = Array.isArray(ringRgb) ? ringRgb : tier?.ringRgb;
     const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
     const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
     const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
@@ -1061,7 +1083,7 @@ export function createRenderer(engine) {
         const to = add(ringPoint, mul(perp, offset));
         const edgeT = half > 0 ? Math.abs(i - half) / half : 0;
         const lineFx = pullFx * lerp(1, 0.84, edgeT);
-        drawElectricTether(ctx, from, to, tier.ringRgb, lineFx, state.time, seed + i * 1013, {
+        drawElectricTether(ctx, from, to, ring, lineFx, state.time, seed + i * 1013, {
           thicknessScale: visScale.thickness,
           alphaScale: visScale.alpha,
           wobbleScale: visScale.wobble,
@@ -1072,9 +1094,9 @@ export function createRenderer(engine) {
       const stackScale = lineCount > 1 ? lerp(1, 0.7, Math.min(1, (lineCount - 1) / 4)) : 1;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = rgbToRgba(tier.ringRgb, lerp(0.05, 0.35, pullFx) * stackScale * visScale.alpha);
+      ctx.strokeStyle = rgbToRgba(ring, lerp(0.05, 0.35, pullFx) * stackScale * visScale.alpha);
       ctx.lineWidth = lerp(2, 7, pullFx) * stackScale * visScale.thickness;
-      ctx.shadowColor = rgbToRgba(tier.ringRgb, 0.9);
+      ctx.shadowColor = rgbToRgba(ring, 0.9);
       ctx.shadowBlur = lerp(3, 14, pullFx) * stackScale * visScale.thickness;
       drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, ctx.strokeStyle, ctx.lineWidth);
       ctx.restore();
@@ -1119,10 +1141,10 @@ export function createRenderer(engine) {
             : a.size === "med"
               ? "rgba(231,240,255,0.80)"
               : "rgba(231,240,255,0.88)";
-    let color = a.attached ? attachedAsteroidColorForTierRgb(tier.ringRgb) : base;
+    let color = a.attached ? attachedAsteroidColorForTierRgb(ring) : base;
     if (pullFx > 0.01) {
       const baseRgb = [231, 240, 255];
-      const mixed = lerpRgb(baseRgb, tier.ringRgb, pullFx);
+      const mixed = lerpRgb(baseRgb, ring, pullFx);
       const aAlpha = lerp(0.78, 0.98, pullFx);
       color = rgbToRgba(mixed, aAlpha);
     }
@@ -1134,7 +1156,7 @@ export function createRenderer(engine) {
     drawPolyline(ctx, shape, a.pos.x, a.pos.y, a.rot, color, 2, "rgba(0,0,0,0.92)");
   }
 
-  function drawShipModel(ctx, ship, thrusting, tierOverride = null) {
+  function drawShipModel(ctx, ship, thrusting, tierOverride = null, palette = null) {
     const tier = tierOverride || shipTierByKey(ship?.tier);
     const renderer = tier.renderer || {};
     const shipRadius = Math.max(1, Number(ship.radius) || Number(tier.radius) || 1);
@@ -1144,7 +1166,7 @@ export function createRenderer(engine) {
     ctx.translate(ship.pos.x, ship.pos.y);
     ctx.rotate(ship.angle);
     ctx.scale(escapeScale, escapeScale);
-    ctx.strokeStyle = "rgba(231,240,255,0.95)";
+    ctx.strokeStyle = palette?.shipStroke || "rgba(231,240,255,0.95)";
     ctx.lineWidth = 2;
 
     const engines = Array.isArray(renderer.engines) ? renderer.engines : SHIP_TIERS.small.renderer.engines;
@@ -1166,6 +1188,7 @@ export function createRenderer(engine) {
       ctx.save();
       ctx.scale(drawScale, drawScale);
       if (mirrorX) ctx.scale(-1, 1);
+      ctx.strokeStyle = palette?.shipStroke || ctx.strokeStyle;
       ctx.stroke(path);
       const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
       const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
@@ -1186,6 +1209,7 @@ export function createRenderer(engine) {
         else ctx.lineTo(p.x, p.y);
       }
       ctx.closePath();
+      ctx.strokeStyle = palette?.shipStroke || ctx.strokeStyle;
       ctx.stroke();
       const legacyJets = Number(state.params?.exhaustLegacyJets ?? 0) >= 0.5;
       const particlesOn = Number(state.params?.exhaustIntensity ?? 1) > 1e-3 || Number(state.params?.exhaustSparkScale ?? 1) > 1e-3;
@@ -1216,6 +1240,7 @@ export function createRenderer(engine) {
     ctx.clearRect(0, 0, w, h);
 
     const localId = getLocalPlayerId();
+    const mpConnected = !!state._mp?.connected;
     const ids = sortedPlayerIds();
     const playerInfos = [];
     const playerInfoById = Object.create(null);
@@ -1229,7 +1254,8 @@ export function createRenderer(engine) {
       const attractR = Number(state.params?.attractRadius ?? 0) * Number(tier.attractScale || 1);
       const pulse = Number(player?.blastPulseT) || 0;
       const tierShift = Number(player?.progression?.tierShiftT) || 0;
-      const info = { id, player, ship, tier, fieldR, attractR, pulse, tierShift };
+      const palette = mpConnected ? paletteForPlayerId(id) : null;
+      const info = { id, player, ship, tier, fieldR, attractR, pulse, tierShift, palette };
       playerInfos.push(info);
       playerInfoById[id] = info;
     }
@@ -1301,7 +1327,7 @@ export function createRenderer(engine) {
       const ownerId = a.pullOwnerId || localId;
       const owner = playerInfoById[ownerId] || localInfo;
       if (!owner) continue;
-      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR });
+      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR, ringRgb: owner.palette?.lightRgb });
     }
 
     drawForcefieldRings(ctx, playerInfos, localId);
@@ -1314,7 +1340,7 @@ export function createRenderer(engine) {
       const ownerId = a.attachedTo || localId;
       const owner = playerInfoById[ownerId] || localInfo;
       if (!owner) continue;
-      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR });
+      drawAsteroid(ctx, a, { tier: owner.tier, ship: owner.ship, fieldR: owner.fieldR, ringRgb: owner.palette?.lightRgb });
     }
 
     drawJumpGate(ctx);
@@ -1493,9 +1519,9 @@ export function createRenderer(engine) {
     for (let i = 0; i < playerInfos.length; i++) {
       const p = playerInfos[i];
       if (p.id === localId) continue;
-      drawShipModel(ctx, p.ship, false, p.tier);
+      drawShipModel(ctx, p.ship, false, p.tier, p.palette);
     }
-    if (localInfo?.ship) drawShipModel(ctx, localInfo.ship, localThrusting, localInfo.tier);
+    if (localInfo?.ship) drawShipModel(ctx, localInfo.ship, localThrusting, localInfo.tier, localInfo.palette);
 
     ctx.restore();
 
