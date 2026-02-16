@@ -8,6 +8,7 @@ type("number")(PlayerState.prototype, "vx");
 type("number")(PlayerState.prototype, "vy");
 type("number")(PlayerState.prototype, "angle");
 type("string")(PlayerState.prototype, "tier");
+type("number")(PlayerState.prototype, "paletteIdx"); // 0..N (MP cosmetic)
 type("number")(PlayerState.prototype, "score");
 type("number")(PlayerState.prototype, "gemScore");
 

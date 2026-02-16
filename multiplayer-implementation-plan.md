@@ -267,5 +267,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-lan-smoke.mjs ...` (pass); `node scripts/mp-browser-smoke.mjs` (pass).
 
 ### 2026-02-16 (MP UX: player palettes)
-- Multiplayer visuals now apply a deterministic pastel palette per player id (ship outline + forcefield ring + owned asteroid tint).
+- Multiplayer visuals now apply a pastel palette per player (ship outline + forcefield ring + owned asteroid tint):
+  - Server assigns `paletteIdx` on join to avoid duplicates among active players.
+  - Client/renderer uses `paletteIdx` when present (falls back to id-hash only as a legacy/default).
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); manual 2-tab check (pass).

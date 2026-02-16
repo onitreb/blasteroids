@@ -246,6 +246,26 @@ function paletteForPlayerId(id) {
   };
 }
 
+function paletteForPaletteIdx(idx) {
+  const n = PLAYER_COLOR_PALETTES.length;
+  if (n <= 0) return paletteForPlayerId("");
+  const ii = ((idx | 0) % n + n) % n;
+  const base = PLAYER_COLOR_PALETTES[ii] || PLAYER_COLOR_PALETTES[0];
+  return {
+    key: base?.key || "custom",
+    lightRgb: base?.lightRgb || [255, 221, 88],
+    darkRgb: base?.darkRgb || [231, 240, 255],
+    ringColor: rgbToRgba(base?.lightRgb || [255, 221, 88], 0.4),
+    shipStroke: rgbToRgba(base?.darkRgb || [231, 240, 255], 0.95),
+  };
+}
+
+function paletteForPlayer(player, id) {
+  const raw = player ? Number(player.paletteIdx) : NaN;
+  if (Number.isFinite(raw) && raw >= 0) return paletteForPaletteIdx(raw);
+  return paletteForPlayerId(id);
+}
+
 function xorshift32(seed) {
   let s = seed >>> 0;
   s ^= s << 13;
@@ -1254,7 +1274,7 @@ export function createRenderer(engine) {
       const attractR = Number(state.params?.attractRadius ?? 0) * Number(tier.attractScale || 1);
       const pulse = Number(player?.blastPulseT) || 0;
       const tierShift = Number(player?.progression?.tierShiftT) || 0;
-      const palette = mpConnected ? paletteForPlayerId(id) : null;
+      const palette = mpConnected ? paletteForPlayer(player, id) : null;
       const info = { id, player, ship, tier, fieldR, attractR, pulse, tierShift, palette };
       playerInfos.push(info);
       playerInfoById[id] = info;

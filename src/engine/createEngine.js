@@ -326,6 +326,7 @@ function makePlayer(
     id: String(id ?? ""),
     ship,
     input,
+    paletteIdx: null, // MP cosmetic only (server-assigned)
     score,
     gemsCollected,
     burstCooldown,

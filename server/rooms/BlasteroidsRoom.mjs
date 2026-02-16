@@ -55,6 +55,25 @@ function normalizeViewRect(message, fallback) {
   };
 }
 
+function pickPaletteIdx({ sessionId, paletteCount, used, lastAssignedIdx }) {
+  const count = Math.max(0, paletteCount | 0);
+  if (count <= 0) return 0;
+
+  const usedSet = used instanceof Set ? used : new Set();
+  const available = [];
+  for (let i = 0; i < count; i++) {
+    if (!usedSet.has(i)) available.push(i);
+  }
+  if (!available.length) return hashStringToU32(sessionId) % count;
+
+  const preferred = [];
+  for (const idx of available) {
+    if (idx !== lastAssignedIdx) preferred.push(idx);
+  }
+  const choices = preferred.length ? preferred : available;
+  return choices[hashStringToU32(sessionId) % choices.length];
+}
+
 export class BlasteroidsRoom extends Room {
   maxClients = 4;
   patchRate = 100; // default 10Hz (can override via BLASTEROIDS_PATCH_RATE_MS)
@@ -104,6 +123,10 @@ export class BlasteroidsRoom extends Room {
     // Each entry: { rect, asteroidRefs: Map<id, AsteroidState>, gemRefs: Map<id, GemState> }
     this._interestBySessionId = new Map();
     this._interestAccumMs = 0;
+
+    // MP cosmetic: server assigns per-player palette indices (unique among active players).
+    this._paletteBySessionId = new Map(); // sessionId -> idx
+    this._lastAssignedPaletteIdx = null;
 
     this._fixedDt = 1 / 60;
     this._tickMs = Math.round(1000 * this._fixedDt);
@@ -169,7 +192,20 @@ export class BlasteroidsRoom extends Room {
       gemRefs: new Map(),
     });
 
-    this._engine.addPlayer(pid, { tierKey: "small", makeLocalIfFirst: false });
+    const player = this._engine.addPlayer(pid, { tierKey: "small", makeLocalIfFirst: false });
+
+    // Assign a per-player palette index in a way that avoids duplicates among active players.
+    const used = new Set();
+    for (const idx of this._paletteBySessionId.values()) used.add(idx);
+    const paletteIdx = pickPaletteIdx({
+      sessionId: pid,
+      paletteCount: 4,
+      used,
+      lastAssignedIdx: this._lastAssignedPaletteIdx,
+    });
+    this._paletteBySessionId.set(pid, paletteIdx);
+    this._lastAssignedPaletteIdx = paletteIdx;
+    if (player) player.paletteIdx = paletteIdx;
 
     if (!this._hasStarted) {
       this._engine.state.localPlayerId = pid;
@@ -192,6 +228,8 @@ export class BlasteroidsRoom extends Room {
 
   onLeave(client) {
     const pid = client.sessionId;
+
+    this._paletteBySessionId.delete(pid);
 
     const info = this._interestBySessionId.get(pid);
     if (info?.asteroidRefs) {
@@ -377,6 +415,11 @@ export class BlasteroidsRoom extends Room {
       ps.vy = p.ship.vel.y;
       ps.angle = p.ship.angle;
       ps.tier = String(p.ship.tier ?? "small");
+      ps.paletteIdx = Number.isFinite(Number(p.paletteIdx))
+        ? (Number(p.paletteIdx) | 0)
+        : Number.isFinite(Number(this._paletteBySessionId.get(id)))
+          ? (Number(this._paletteBySessionId.get(id)) | 0)
+          : -1;
       ps.score = Number(p.score) || 0;
       ps.gemScore = Number(p.progression?.gemScore) || 0;
     }

@@ -547,6 +547,8 @@
       id: String(id ?? ""),
       ship,
       input,
+      paletteIdx: null,
+      // MP cosmetic only (server-assigned)
       score,
       gemsCollected,
       burstCooldown,
@@ -4146,6 +4148,26 @@
       shipStroke: rgbToRgba(base?.darkRgb || [231, 240, 255], 0.95)
     };
   }
+  function paletteForPaletteIdx(idx) {
+    const n = PLAYER_COLOR_PALETTES.length;
+    if (n <= 0)
+      return paletteForPlayerId("");
+    const ii = ((idx | 0) % n + n) % n;
+    const base = PLAYER_COLOR_PALETTES[ii] || PLAYER_COLOR_PALETTES[0];
+    return {
+      key: base?.key || "custom",
+      lightRgb: base?.lightRgb || [255, 221, 88],
+      darkRgb: base?.darkRgb || [231, 240, 255],
+      ringColor: rgbToRgba(base?.lightRgb || [255, 221, 88], 0.4),
+      shipStroke: rgbToRgba(base?.darkRgb || [231, 240, 255], 0.95)
+    };
+  }
+  function paletteForPlayer(player, id) {
+    const raw = player ? Number(player.paletteIdx) : NaN;
+    if (Number.isFinite(raw) && raw >= 0)
+      return paletteForPaletteIdx(raw);
+    return paletteForPlayerId(id);
+  }
   function xorshift32(seed) {
     let s = seed >>> 0;
     s ^= s << 13;
@@ -5059,7 +5081,7 @@
         const attractR = Number(state.params?.attractRadius ?? 0) * Number(tier.attractScale || 1);
         const pulse = Number(player?.blastPulseT) || 0;
         const tierShift = Number(player?.progression?.tierShiftT) || 0;
-        const palette = mpConnected ? paletteForPlayerId(id) : null;
+        const palette = mpConnected ? paletteForPlayer(player, id) : null;
         const info = { id, player, ship, tier, fieldR, attractR, pulse, tierShift, palette };
         playerInfos.push(info);
         playerInfoById[id] = info;
@@ -14408,13 +14430,15 @@ Schema instances may only have up to 64 fields.`);
           seenPlayers.add(pid);
           let track = playerTracks.get(pid);
           if (!track) {
-            track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0 };
+            track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null };
             playerTracks.set(pid, track);
           }
           const tier = shipTierKey(p?.tier);
           track.tier = tier;
           track.score = Number(p?.score) || 0;
           track.gemScore = Number(p?.gemScore) || 0;
+          const paletteRaw = Number(p?.paletteIdx);
+          track.paletteIdx = Number.isFinite(paletteRaw) && paletteRaw >= 0 ? paletteRaw | 0 : null;
           pushHistory(track.hist, {
             t: latestSimTimeMs,
             x: Number(p?.x) || 0,
@@ -14618,6 +14642,7 @@ Schema instances may only have up to 64 fields.`);
           player.progression = { gemScore: 0, currentTier: tierKey, tierShiftT: 0 };
         player.progression.gemScore = track.gemScore;
         player.progression.currentTier = tierKey;
+        player.paletteIdx = track.paletteIdx;
       }
       const localPlayer = state.playersById[state.localPlayerId];
       if (localPlayer?.ship && state.camera) {

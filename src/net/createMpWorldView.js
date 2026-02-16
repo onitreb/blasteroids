@@ -84,7 +84,7 @@ export function createMpWorldView({
   const recvSamples = []; // recent onStateChange arrivals (for telemetry)
   const recvSampleCap = 64;
 
-  const playerTracks = new Map(); // id -> { hist, tier, score, gemScore }
+  const playerTracks = new Map(); // id -> { hist, tier, score, gemScore, paletteIdx }
   const asteroidTracks = new Map(); // id -> { hist, static }
   const gemTracks = new Map(); // id -> { hist, static }
 
@@ -150,13 +150,15 @@ export function createMpWorldView({
         seenPlayers.add(pid);
         let track = playerTracks.get(pid);
         if (!track) {
-          track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0 };
+          track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null };
           playerTracks.set(pid, track);
         }
         const tier = shipTierKey(p?.tier);
         track.tier = tier;
         track.score = Number(p?.score) || 0;
         track.gemScore = Number(p?.gemScore) || 0;
+        const paletteRaw = Number(p?.paletteIdx);
+        track.paletteIdx = Number.isFinite(paletteRaw) && paletteRaw >= 0 ? (paletteRaw | 0) : null;
         pushHistory(track.hist, {
           t: latestSimTimeMs,
           x: Number(p?.x) || 0,
@@ -366,6 +368,7 @@ export function createMpWorldView({
       if (!player.progression) player.progression = { gemScore: 0, currentTier: tierKey, tierShiftT: 0 };
       player.progression.gemScore = track.gemScore;
       player.progression.currentTier = tierKey;
+      player.paletteIdx = track.paletteIdx;
     }
 
     // Follow local player camera (centered for now).

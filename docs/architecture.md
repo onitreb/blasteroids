@@ -49,7 +49,7 @@ Runtime wiring starts in `src/app/index.js`, which imports `src/main.js`.
 - Handles visuals only (background, ship, asteroids, effects, HUD overlays on canvas).
 - Must not change gameplay rules/state.
 - Uses renderer-local cache (for parsed SVG paths) only.
-- Multiplayer visuals may apply per-player color palettes (ship/forcefield/owned asteroid tint) without affecting simulation.
+- Multiplayer visuals may apply per-player color palettes (ship/forcefield/owned asteroid tint) without affecting simulation. In LAN MP, the server assigns `player.paletteIdx` (cosmetic) so active players don’t share the same palette.
 
 ### UI Bindings (`src/ui/createUiBindings.js`)
 

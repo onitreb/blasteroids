@@ -75,7 +75,7 @@ Open the in-game menu to tweak sliders/switches and click **Set default** to sav
     - Start server: `BLASTEROIDS_WORLD_SCALE=10 BLASTEROIDS_PATCH_RATE_MS=33 npm run lan:server`
     - Join in each tab: `await window.Blasteroids.mpConnect({ endpoint: "ws://" + location.host, joinOptions: { worldScale: 10 } })`
   - Interest management is implemented (clients receive only in-view asteroids/gems + margin); server sim scaling is in progress (far asteroids skip expensive work); client prediction is not implemented yet.
-  - Multiplayer ships/forcefields/owned asteroids are tinted per-player (pastel palettes; deterministic by player id).
+  - Multiplayer ships/forcefields/owned asteroids are tinted per-player (pastel palettes; server assigns `paletteIdx` to avoid duplicates among active players).
 - Quick smoke:
   - Node join: `npm run lan:server` then `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
   - Browser connect: `node scripts/mp-browser-smoke.mjs`
