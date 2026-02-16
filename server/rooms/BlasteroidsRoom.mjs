@@ -76,7 +76,7 @@ export class BlasteroidsRoom extends Room {
       height,
       seed: seed ? Number(seed) : undefined,
       // LAN MVP core co-op only (no round loop hazards / saucer) to avoid invisible authoritative events.
-      features: { roundLoop: false, saucer: false },
+      features: { roundLoop: false, saucer: false, mpSimScaling: true },
     });
 
     // IMPORTANT: createEngine initializes `state.world.scale` but does not apply it unless `setArenaConfig/resize`
@@ -134,6 +134,16 @@ export class BlasteroidsRoom extends Room {
 
     this.setSimulationInterval(() => {
       if (!this._hasStarted) return;
+
+      // Feed per-client view rects into the engine so server sim scaling can
+      // prioritize only the union of player-visible regions (plus margin).
+      const rects = [];
+      for (const client of this.clients) {
+        const info = this._interestBySessionId.get(client.sessionId);
+        if (info?.rect) rects.push(info.rect);
+      }
+      this._engine.setMpViewRects?.(rects);
+
       this._engine.update(this._fixedDt);
       this.state.tick++;
       this.state.simTimeMs += this._tickMs;

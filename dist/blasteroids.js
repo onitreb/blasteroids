@@ -561,7 +561,8 @@
     const isServer = engineRole === "server";
     const effFeatures = {
       roundLoop: !(features && typeof features === "object" && features.roundLoop === false),
-      saucer: !(features && typeof features === "object" && features.saucer === false)
+      saucer: !(features && typeof features === "object" && features.saucer === false),
+      mpSimScaling: !!(features && typeof features === "object" && features.mpSimScaling === true)
     };
     let sessionSeed = baseSeed;
     let rng = seededRng(baseSeed);
@@ -661,6 +662,11 @@
         zoomTo: 1,
         zoomAnimElapsed: 0,
         zoomAnimDur: 0
+      },
+      // Server-only multiplayer helpers (not synced to clients).
+      _mpSim: {
+        viewRects: null
+        // Array<{ cx, cy, halfW, halfH, margin }>
       },
       params: {
         shipTurnRate: 3.6,
@@ -2851,6 +2857,55 @@
       state.view.h = h;
       applyWorldScale(state.world.scale);
     }
+    function isPosInAnyViewRect({ x, y, radius = 0, viewRects = null, extraMargin = 0 } = {}) {
+      if (!Array.isArray(viewRects) || viewRects.length === 0)
+        return true;
+      const r = (Number(radius) || 0) + (Number(extraMargin) || 0);
+      for (let i = 0; i < viewRects.length; i++) {
+        const vr = viewRects[i];
+        if (!vr)
+          continue;
+        const margin = (Number(vr.margin) || 0) + r;
+        if (Math.abs(x - vr.cx) > vr.halfW + margin)
+          continue;
+        if (Math.abs(y - vr.cy) > vr.halfH + margin)
+          continue;
+        return true;
+      }
+      return false;
+    }
+    function setMpViewRects(rects) {
+      if (!isServer)
+        return false;
+      if (!state._mpSim)
+        state._mpSim = { viewRects: null };
+      if (!Array.isArray(rects) || rects.length === 0) {
+        state._mpSim.viewRects = null;
+        return true;
+      }
+      const next = [];
+      for (let i = 0; i < rects.length; i++) {
+        const r = rects[i];
+        if (!r || typeof r !== "object")
+          continue;
+        const cx = Number(r.cx);
+        const cy = Number(r.cy);
+        const halfW = Number(r.halfW);
+        const halfH = Number(r.halfH);
+        const margin = Number(r.margin);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(halfW) || !Number.isFinite(halfH))
+          continue;
+        next.push({
+          cx,
+          cy,
+          halfW: clamp(halfW, 40, 2e5),
+          halfH: clamp(halfH, 40, 2e5),
+          margin: clamp(Number.isFinite(margin) ? margin : 0, 0, 2e5)
+        });
+      }
+      state._mpSim.viewRects = next.length ? next : null;
+      return true;
+    }
     function updateShip(dt, player = localPlayer()) {
       const ship = player?.ship;
       const input = player?.input;
@@ -3014,6 +3069,9 @@
       }
     }
     function updateAsteroids(dt) {
+      const mpSimScaling = isServer && !!state.features?.mpSimScaling;
+      const viewRects = mpSimScaling ? state._mpSim?.viewRects : null;
+      const extraSimMargin = mpSimScaling ? 420 : 0;
       const star = state.round?.star;
       const heatBand = clamp(Number(state.params.starSafeBufferPx ?? 320), 80, Math.min(state.world.w, state.world.h));
       const chipDecaySec = Math.max(0, Number(state.params.fractureChipDecaySec ?? 0));
@@ -3084,6 +3142,35 @@
           a.pullFx = 0;
         if (a.shipLaunched)
           a.pullOwnerId = null;
+        if (mpSimScaling && !isPosInAnyViewRect({ x: a.pos.x, y: a.pos.y, radius: a.radius, viewRects, extraMargin: extraSimMargin })) {
+          a.pullOwnerId = null;
+          a.pullFx = 0;
+          a.pos = add(a.pos, mul(a.vel, dt));
+          if (isOutsideWorld(a, 24)) {
+            if (a.techPartId)
+              dropTechPartFromAsteroid(a, { lost: true });
+            state.asteroids.splice(i, 1);
+            continue;
+          }
+          if (star) {
+            const axisPos = star.axis === "x" ? a.pos.x : a.pos.y;
+            const dir = star.dir === 1 ? 1 : -1;
+            const signedDist = (axisPos - Number(star.boundary || 0)) * dir - a.radius;
+            a.starHeat = clamp(1 - signedDist / Math.max(1, heatBand), 0, 1);
+            if (signedDist < 0) {
+              const burnDepth = clamp(-signedDist / Math.max(8, a.radius), 0, 3);
+              const nextBurn = (Number(a.starBurnSec) || 0) + dt * (0.6 + burnDepth * 1.4);
+              a.starBurnSec = clamp(nextBurn, 0, 4);
+            } else {
+              a.starBurnSec = Math.max(0, (Number(a.starBurnSec) || 0) - dt * 1.2);
+            }
+          } else {
+            a.starHeat = 0;
+            a.starBurnSec = 0;
+          }
+          a.rot += a.rotVel * dt;
+          continue;
+        }
         const pullEaseIn = 1 - Math.exp(-dt * 10);
         const pullEaseOut = 1 - Math.exp(-dt * 6);
         let pullTarget = 0;
@@ -3357,10 +3444,15 @@
     function forEachNearbyAsteroidPair(fn) {
       const cellSize = Math.max(180, Math.round((state.params.xxlargeRadius || 150) * 2.2));
       const buckets = /* @__PURE__ */ new Map();
+      const mpSimScaling = isServer && !!state.features?.mpSimScaling;
+      const viewRects = mpSimScaling ? state._mpSim?.viewRects : null;
+      const extraSimMargin = mpSimScaling ? 420 : 0;
       const asteroids = state.asteroids;
       for (let i = 0; i < asteroids.length; i++) {
         const a = asteroids[i];
         if (a.attached)
+          continue;
+        if (mpSimScaling && !isPosInAnyViewRect({ x: a.pos.x, y: a.pos.y, radius: a.radius, viewRects, extraMargin: extraSimMargin }))
           continue;
         const cx = Math.floor(a.pos.x / cellSize);
         const cy = Math.floor(a.pos.y / cellSize);
@@ -3406,6 +3498,9 @@
     function handleCollisions() {
       if (state.mode !== "playing")
         return;
+      const mpSimScaling = isServer && !!state.features?.mpSimScaling;
+      const viewRects = mpSimScaling ? state._mpSim?.viewRects : null;
+      const extraSimMargin = mpSimScaling ? 420 : 0;
       const shipRemovals = /* @__PURE__ */ new Set();
       const shipAdds = [];
       const ids = sortedPlayerIds();
@@ -3418,6 +3513,8 @@
           if (!a || a.attached)
             continue;
           if (shipRemovals.has(a.id))
+            continue;
+          if (mpSimScaling && !isPosInAnyViewRect({ x: a.pos.x, y: a.pos.y, radius: a.radius, viewRects, extraMargin: extraSimMargin }))
             continue;
           const shipHit = circleCollide(ship, a);
           if (!shipHit)
@@ -3819,6 +3916,7 @@
       refreshProgression: (options = {}) => refreshShipTierProgression(options),
       setShipSvgRenderer,
       update,
+      setMpViewRects,
       renderGameToText,
       getCurrentShipTier: () => currentShipTier(),
       getCurrentForceFieldRadius: () => currentForceFieldRadius(),
