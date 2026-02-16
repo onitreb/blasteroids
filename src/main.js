@@ -210,7 +210,26 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
       if (msg?.burst) inputRef.burst = false;
       if (msg?.ping) inputRef.ping = false;
     },
+    getViewRect: () => {
+      const s = game.state || {};
+      const view = s.view || {};
+      const cam = s.camera || {};
+      const w = Number(view.w) || 0;
+      const h = Number(view.h) || 0;
+      const zoom = Math.max(0.1, Number(cam.zoom) || 1);
+      const cx = Number(cam.x) || 0;
+      const cy = Number(cam.y) || 0;
+      return {
+        cx,
+        cy,
+        halfW: (w * 0.5) / zoom,
+        halfH: (h * 0.5) / zoom,
+        // Keep margin >= renderer cull margin to avoid pop-in near edges.
+        margin: 240,
+      };
+    },
     sendHz: 30,
+    viewSendHz: 10,
     snapshotBufferSize: 32,
   });
   const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });

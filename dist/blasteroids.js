@@ -13975,7 +13975,9 @@ Schema instances may only have up to 64 fields.`);
   function createMpClient({
     getInput = null,
     consumeInput = null,
+    getViewRect = null,
     sendHz = 30,
+    viewSendHz = 10,
     snapshotBufferSize = 32
   } = {}) {
     const buffer = makeRingBuffer(snapshotBufferSize);
@@ -13984,6 +13986,7 @@ Schema instances may only have up to 64 fields.`);
     let endpoint = "ws://localhost:2567";
     let roomName = "blasteroids";
     let inputTimer = null;
+    let viewTimer = null;
     let lastInputSample = null;
     function isConnected() {
       return !!(room && room.connection && room.connection.isOpen);
@@ -14022,6 +14025,11 @@ Schema instances may only have up to 64 fields.`);
       inputTimer = null;
       lastInputSample = null;
     }
+    function stopViewLoop() {
+      if (viewTimer)
+        clearInterval(viewTimer);
+      viewTimer = null;
+    }
     function startInputLoop() {
       stopInputLoop();
       const hz = clampNumber(sendHz, 1, 120, 30);
@@ -14042,6 +14050,29 @@ Schema instances may only have up to 64 fields.`);
             if (msg.ping)
               sample.inputRef.ping = false;
           }
+        } catch {
+        }
+      }, intervalMs);
+    }
+    function startViewLoop() {
+      stopViewLoop();
+      if (typeof getViewRect !== "function")
+        return;
+      const hz = clampNumber(viewSendHz, 1, 60, 10);
+      const intervalMs = Math.round(1e3 / hz);
+      viewTimer = setInterval(() => {
+        if (!room)
+          return;
+        let rect = null;
+        try {
+          rect = getViewRect();
+        } catch {
+          rect = null;
+        }
+        if (!rect || typeof rect !== "object")
+          return;
+        try {
+          room.send("view", rect);
         } catch {
         }
       }, intervalMs);
@@ -14077,8 +14108,10 @@ Schema instances may only have up to 64 fields.`);
       room = await client.joinOrCreate(roomName, joinOptions);
       attachStateBuffer();
       startInputLoop();
+      startViewLoop();
       room.onLeave(() => {
         stopInputLoop();
+        stopViewLoop();
       });
       return {
         endpoint,
@@ -14089,6 +14122,7 @@ Schema instances may only have up to 64 fields.`);
     }
     async function disconnect() {
       stopInputLoop();
+      stopViewLoop();
       buffer.clear();
       const r = room;
       room = null;
@@ -14800,7 +14834,26 @@ Schema instances may only have up to 64 fields.`);
         if (msg?.ping)
           inputRef.ping = false;
       },
+      getViewRect: () => {
+        const s = game.state || {};
+        const view2 = s.view || {};
+        const cam = s.camera || {};
+        const w = Number(view2.w) || 0;
+        const h = Number(view2.h) || 0;
+        const zoom = Math.max(0.1, Number(cam.zoom) || 1);
+        const cx = Number(cam.x) || 0;
+        const cy = Number(cam.y) || 0;
+        return {
+          cx,
+          cy,
+          halfW: w * 0.5 / zoom,
+          halfH: h * 0.5 / zoom,
+          // Keep margin >= renderer cull margin to avoid pop-in near edges.
+          margin: 240
+        };
+      },
       sendHz: 30,
+      viewSendHz: 10,
       snapshotBufferSize: 32
     });
     const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });

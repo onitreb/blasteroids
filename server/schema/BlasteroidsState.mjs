@@ -1,4 +1,4 @@
-import { ArraySchema, MapSchema, Schema, type } from "@colyseus/schema";
+import { ArraySchema, MapSchema, Schema, type, view } from "@colyseus/schema";
 
 export class PlayerState extends Schema {}
 type("string")(PlayerState.prototype, "id");
@@ -52,3 +52,7 @@ type([ "string" ])(BlasteroidsState.prototype, "playerOrder");
 type({ map: AsteroidState })(BlasteroidsState.prototype, "asteroids");
 type({ map: GemState })(BlasteroidsState.prototype, "gems");
 
+// Interest management: asteroids/gems are sent only to clients that include
+// each AsteroidState/GemState instance in their `client.view` StateView.
+view()(BlasteroidsState.prototype, "asteroids");
+view()(BlasteroidsState.prototype, "gems");

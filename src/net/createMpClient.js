@@ -67,7 +67,9 @@ function readPlayersSnapshot(schemaState) {
 export function createMpClient({
   getInput = null,
   consumeInput = null,
+  getViewRect = null,
   sendHz = 30,
+  viewSendHz = 10,
   snapshotBufferSize = 32,
 } = {}) {
   const buffer = makeRingBuffer(snapshotBufferSize);
@@ -78,6 +80,7 @@ export function createMpClient({
   let roomName = "blasteroids";
 
   let inputTimer = null;
+  let viewTimer = null;
   let lastInputSample = null;
 
   function isConnected() {
@@ -120,6 +123,11 @@ export function createMpClient({
     lastInputSample = null;
   }
 
+  function stopViewLoop() {
+    if (viewTimer) clearInterval(viewTimer);
+    viewTimer = null;
+  }
+
   function startInputLoop() {
     stopInputLoop();
     const hz = clampNumber(sendHz, 1, 120, 30);
@@ -139,6 +147,28 @@ export function createMpClient({
           if (msg.burst) sample.inputRef.burst = false;
           if (msg.ping) sample.inputRef.ping = false;
         }
+      } catch {
+        // ignore (room may be closing)
+      }
+    }, intervalMs);
+  }
+
+  function startViewLoop() {
+    stopViewLoop();
+    if (typeof getViewRect !== "function") return;
+    const hz = clampNumber(viewSendHz, 1, 60, 10);
+    const intervalMs = Math.round(1000 / hz);
+    viewTimer = setInterval(() => {
+      if (!room) return;
+      let rect = null;
+      try {
+        rect = getViewRect();
+      } catch {
+        rect = null;
+      }
+      if (!rect || typeof rect !== "object") return;
+      try {
+        room.send("view", rect);
       } catch {
         // ignore (room may be closing)
       }
@@ -177,9 +207,11 @@ export function createMpClient({
     room = await client.joinOrCreate(roomName, joinOptions);
     attachStateBuffer();
     startInputLoop();
+    startViewLoop();
 
     room.onLeave(() => {
       stopInputLoop();
+      stopViewLoop();
     });
 
     return {
@@ -192,6 +224,7 @@ export function createMpClient({
 
   async function disconnect() {
     stopInputLoop();
+    stopViewLoop();
     buffer.clear();
 
     const r = room;

@@ -1,7 +1,8 @@
 import { Room } from "@colyseus/core";
-import { Encoder } from "@colyseus/schema";
+import { Encoder, StateView } from "@colyseus/schema";
 
 import { createEngine } from "../../src/engine/createEngine.js";
+import { seededRng } from "../../src/util/rng.js";
 import { BlasteroidsState, AsteroidState, GemState, PlayerState } from "../schema/BlasteroidsState.mjs";
 
 // Default BUFFER_SIZE can overflow quickly when syncing many entities.
@@ -30,6 +31,28 @@ function normalizeInput(message) {
 
 function sortedKeys(obj) {
   return Object.keys(obj || {}).sort();
+}
+
+function hashStringToU32(str) {
+  const s = String(str ?? "");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function normalizeViewRect(message, fallback) {
+  const m = message && typeof message === "object" ? message : {};
+  const fb = fallback && typeof fallback === "object" ? fallback : {};
+  return {
+    cx: clampNumber(m.cx, -1e9, 1e9, clampNumber(fb.cx, -1e9, 1e9, 0)),
+    cy: clampNumber(m.cy, -1e9, 1e9, clampNumber(fb.cy, -1e9, 1e9, 0)),
+    halfW: clampNumber(m.halfW, 40, 50_000, clampNumber(fb.halfW, 40, 50_000, 640)),
+    halfH: clampNumber(m.halfH, 40, 50_000, clampNumber(fb.halfH, 40, 50_000, 360)),
+    margin: clampNumber(m.margin, 0, 20_000, clampNumber(fb.margin, 0, 20_000, 240)),
+  };
 }
 
 export class BlasteroidsRoom extends Room {
@@ -77,6 +100,11 @@ export class BlasteroidsRoom extends Room {
     this.state.tick = 0;
     this.state.simTimeMs = 0;
 
+    // Interest management: per-client StateView membership for asteroids/gems.
+    // Each entry: { rect, asteroidRefs: Map<id, AsteroidState>, gemRefs: Map<id, GemState> }
+    this._interestBySessionId = new Map();
+    this._interestAccumMs = 0;
+
     this._fixedDt = 1 / 60;
     this._tickMs = Math.round(1000 * this._fixedDt);
 
@@ -95,17 +123,41 @@ export class BlasteroidsRoom extends Room {
       player.input.thrustAnalog = next.thrustAnalog;
     });
 
+    this.onMessage("view", (client, message) => {
+      const pid = client.sessionId;
+      const info = this._interestBySessionId.get(pid);
+      if (!info) return;
+      info.rect = normalizeViewRect(message, info.rect);
+      // Update immediately to avoid waiting until the next interest sweep.
+      this._updateClientInterest(client);
+    });
+
     this.setSimulationInterval(() => {
       if (!this._hasStarted) return;
       this._engine.update(this._fixedDt);
       this.state.tick++;
       this.state.simTimeMs += this._tickMs;
       this._syncSchemaFromEngine();
+
+      // Update interest views at (roughly) patch rate to keep view membership fresh
+      // without scanning entity lists every 60Hz tick.
+      this._interestAccumMs += this._tickMs;
+      if (this._interestAccumMs >= this.patchRate) {
+        this._interestAccumMs = 0;
+        this._updateAllClientInterest();
+      }
     }, this._tickMs);
   }
 
   onJoin(client) {
     const pid = client.sessionId;
+    client.view = new StateView();
+
+    this._interestBySessionId.set(pid, {
+      rect: null,
+      asteroidRefs: new Map(),
+      gemRefs: new Map(),
+    });
 
     this._engine.addPlayer(pid, { tierKey: "small", makeLocalIfFirst: false });
 
@@ -114,21 +166,32 @@ export class BlasteroidsRoom extends Room {
       this._engine.startGame({ seed: this._engine.state.round?.sessionSeed });
       this._hasStarted = true;
     } else {
-      const spawnPoints = this._engine.generateSpawnPoints(4, {
-        margin: 200,
-        minSeparation: 520,
-        seed: (this._engine.state.round?.seed ?? 0) ^ 0x0ddc0ffe,
-      });
-      const pick = spawnPoints.length ? spawnPoints[this.clients.length % spawnPoints.length] : { x: 0, y: 0 };
+      // Co-op UX: spawn new joiners near an existing player so they appear on-screen
+      // quickly (critical for LAN MP debugging and “jump in” feel).
+      const pick =
+        this._pickSpawnNearExistingPlayer({ joiningPlayerId: pid, maxDist: 320, minDist: 180, minSeparation: 280 }) ||
+        { x: 0, y: 0 };
       this._engine.spawnShipAtForPlayer(pid, pick);
       this._recomputeLocalPlayerId();
     }
 
     this._syncSchemaFromEngine();
+    this._ensureDefaultViewRect(pid);
+    this._updateClientInterest(client, { force: true });
   }
 
   onLeave(client) {
     const pid = client.sessionId;
+
+    const info = this._interestBySessionId.get(pid);
+    if (info?.asteroidRefs) {
+      for (const ref of info.asteroidRefs.values()) client.view?.remove(ref);
+    }
+    if (info?.gemRefs) {
+      for (const ref of info.gemRefs.values()) client.view?.remove(ref);
+    }
+    this._interestBySessionId.delete(pid);
+
     this._engine.removePlayer(pid);
     if (this.clients.length === 0) {
       this._hasStarted = false;
@@ -142,9 +205,142 @@ export class BlasteroidsRoom extends Room {
     this._syncSchemaFromEngine();
   }
 
+  _ensureDefaultViewRect(pid) {
+    const info = this._interestBySessionId.get(pid);
+    if (!info || info.rect) return;
+    const p = this._engine.state.playersById?.[pid];
+    const ship = p?.ship;
+    const cx = ship?.pos?.x ?? 0;
+    const cy = ship?.pos?.y ?? 0;
+    const w = Number(this._engine.state.view?.w) || 1280;
+    const h = Number(this._engine.state.view?.h) || 720;
+    info.rect = { cx, cy, halfW: w * 0.5, halfH: h * 0.5, margin: 240 };
+  }
+
+  _updateAllClientInterest() {
+    for (const client of this.clients) this._updateClientInterest(client);
+  }
+
+  _updateClientInterest(client, { force = false } = {}) {
+    const pid = client?.sessionId;
+    const view = client?.view;
+    if (!pid || !view) return;
+
+    const info = this._interestBySessionId.get(pid);
+    if (!info) return;
+    this._ensureDefaultViewRect(pid);
+    const rect = info.rect;
+    if (!rect) return;
+
+    const cx = rect.cx;
+    const cy = rect.cy;
+    const halfW = rect.halfW;
+    const halfH = rect.halfH;
+    const margin = rect.margin;
+
+    // Asteroids
+    const nextAsteroidIds = new Set();
+    for (const a of this._engine.state.asteroids || []) {
+      if (!a?.id) continue;
+      const r = (Number(a.radius) || 0) + margin;
+      if (Math.abs(a.pos.x - cx) > halfW + r) continue;
+      if (Math.abs(a.pos.y - cy) > halfH + r) continue;
+      nextAsteroidIds.add(a.id);
+      if (!info.asteroidRefs.has(a.id) || force) {
+        const as = this.state.asteroids.get(a.id);
+        if (!as) continue;
+        view.add(as);
+        info.asteroidRefs.set(a.id, as);
+      }
+    }
+    const removeAsteroids = [];
+    for (const id of info.asteroidRefs.keys()) {
+      if (!nextAsteroidIds.has(id)) removeAsteroids.push(id);
+    }
+    for (const id of removeAsteroids) {
+      const ref = info.asteroidRefs.get(id);
+      if (ref) view.remove(ref);
+      info.asteroidRefs.delete(id);
+    }
+
+    // Gems
+    const nextGemIds = new Set();
+    for (const g of this._engine.state.gems || []) {
+      if (!g?.id) continue;
+      const r = (Number(g.radius) || 0) + margin;
+      if (Math.abs(g.pos.x - cx) > halfW + r) continue;
+      if (Math.abs(g.pos.y - cy) > halfH + r) continue;
+      nextGemIds.add(g.id);
+      if (!info.gemRefs.has(g.id) || force) {
+        const gs = this.state.gems.get(g.id);
+        if (!gs) continue;
+        view.add(gs);
+        info.gemRefs.set(g.id, gs);
+      }
+    }
+    const removeGems = [];
+    for (const id of info.gemRefs.keys()) {
+      if (!nextGemIds.has(id)) removeGems.push(id);
+    }
+    for (const id of removeGems) {
+      const ref = info.gemRefs.get(id);
+      if (ref) view.remove(ref);
+      info.gemRefs.delete(id);
+    }
+  }
+
   _recomputeLocalPlayerId() {
     const ids = sortedKeys(this._engine.state.playersById);
     this._engine.state.localPlayerId = ids[0] ?? "";
+  }
+
+  _pickSpawnNearExistingPlayer({ joiningPlayerId, maxDist = 320, minDist = 180, minSeparation = 240 } = {}) {
+    const pid = String(joiningPlayerId ?? "");
+    const ids = sortedKeys(this._engine.state.playersById).filter((id) => id !== pid);
+    if (!ids.length) return null;
+
+    const focusId = ids[0];
+    const focusShip = this._engine.state.playersById?.[focusId]?.ship;
+    if (!focusShip) return null;
+
+    const seedBase = (Number(this._engine.state.round?.seed) >>> 0) || 0xdecafbad;
+    const seed = (seedBase ^ hashStringToU32(pid) ^ 0x9e3779b9) >>> 0 || 0x12345678;
+    const rr = seededRng(seed);
+
+    const halfW = Number(this._engine.state.world?.w) ? this._engine.state.world.w / 2 : 0;
+    const halfH = Number(this._engine.state.world?.h) ? this._engine.state.world.h / 2 : 0;
+    if (!(halfW > 0 && halfH > 0)) return { x: focusShip.pos.x, y: focusShip.pos.y };
+
+    const ships = ids
+      .map((id) => this._engine.state.playersById?.[id]?.ship)
+      .filter((s) => s && s.pos && typeof s.pos.x === "number" && typeof s.pos.y === "number");
+
+    const minSep = Math.max(0, Number(minSeparation) || 0);
+    const minSep2 = minSep * minSep;
+
+    const clampToWorld = (p, r = 0) => ({
+      x: clampNumber(p.x, -halfW + r, halfW - r, 0),
+      y: clampNumber(p.y, -halfH + r, halfH - r, 0),
+    });
+
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const ang = rr() * Math.PI * 2;
+      const d = minDist + rr() * Math.max(0, maxDist - minDist);
+      const cand = clampToWorld({ x: focusShip.pos.x + Math.cos(ang) * d, y: focusShip.pos.y + Math.sin(ang) * d }, 40);
+
+      let ok = true;
+      for (const s of ships) {
+        const dx = cand.x - s.pos.x;
+        const dy = cand.y - s.pos.y;
+        if (dx * dx + dy * dy < minSep2) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return cand;
+    }
+
+    return clampToWorld({ x: focusShip.pos.x, y: focusShip.pos.y }, 40);
   }
 
   _syncSchemaFromEngine() {
