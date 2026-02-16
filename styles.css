@@ -293,6 +293,39 @@ input[type="range"] {
   margin-top: 6px;
 }
 
+.input-block {
+  margin-top: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.input-block:focus {
+  outline: none;
+  border-color: rgba(86, 183, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(86, 183, 255, 0.14);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(231, 240, 255, 0.86);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .select-block {
   margin-top: 6px;
   width: 100%;
@@ -349,6 +382,22 @@ button:hover {
   background: rgba(86, 183, 255, 0.24);
 }
 
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
 #hint {
   font-size: 12px;
   color: var(--muted);
@@ -386,6 +435,31 @@ button:hover {
   color: rgba(231, 240, 255, 0.66);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.mp-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.mp-status {
+  margin-top: 10px;
+  color: rgba(231, 240, 255, 0.72);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.mp-tuning-disabled {
+  margin-top: 10px;
 }
 
 .tune-saved {

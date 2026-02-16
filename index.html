@@ -52,6 +52,47 @@
             <button id="start-btn" type="button">Start</button>
             <div id="hint">Tip: keep your <code>forcefield ring</code> just grazing the small rocks.</div>
           </div>
+          <details class="card stack-top" id="multiplayer">
+            <summary class="k">Multiplayer (LAN)</summary>
+            <div class="v">
+              <div class="tune-row">
+                <span>Server URL</span>
+                <span class="tune-actions">
+                  <button id="mp-endpoint-reset" class="btn-mini" type="button" title="Reset to default">Reset</button>
+                </span>
+              </div>
+              <input id="mp-endpoint" class="input-block" type="text" spellcheck="false" autocomplete="off" />
+              <div class="tune-note">
+                Default: <code>ws://&lt;this host&gt;</code> when served, or <code>ws://localhost:2567</code> on
+                <code>file://</code>.
+              </div>
+
+              <div class="tune-row">
+                <span>World scale (must match server)</span>
+                <span class="tune-actions">
+                  <output id="mp-world-scale-out">3.00x</output>
+                </span>
+              </div>
+              <input id="mp-world-scale" type="range" min="1" max="10" step="0.25" value="3" />
+              <div class="tune-note">
+                If your server was started with <code>BLASTEROIDS_WORLD_SCALE</code>, set this to the same value.
+              </div>
+
+              <div class="tune-row">
+                <span>Name (future)</span>
+                <span class="tune-actions"><span class="badge">not used yet</span></span>
+              </div>
+              <input id="mp-name" class="input-block" type="text" maxlength="24" autocomplete="nickname" />
+
+              <div class="mp-actions">
+                <button id="mp-quickplay" type="button">Quick Play</button>
+                <button id="mp-disconnect" class="btn-secondary" type="button">Disconnect</button>
+              </div>
+
+              <div id="mp-status" class="mp-status" aria-live="polite"></div>
+              <div id="mp-error" class="mp-error" role="alert"></div>
+            </div>
+          </details>
           <div class="grid grid-tight">
             <label class="card card-label">
               <div class="k">Debug</div>
@@ -110,6 +151,9 @@
           </div>
           <details class="card stack-top" id="tuning">
             <summary class="k">Tuning (debug)</summary>
+            <div id="mp-tuning-disabled" class="tune-note mp-tuning-disabled" hidden>
+              Multiplayer connected: tuning controls are disabled (server-authoritative).
+            </div>
             <div class="debug-groups">
               <div class="card debug-group">
                 <div class="k">Progression + Camera</div>

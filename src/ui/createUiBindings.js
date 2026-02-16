@@ -69,6 +69,18 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   const hudMp = documentRef.getElementById("hud-mp");
   const debugToggleBtn = documentRef.getElementById("debug-toggle");
   const startBtn = documentRef.getElementById("start-btn");
+  const mpDetails = documentRef.getElementById("multiplayer");
+  const mpEndpoint = documentRef.getElementById("mp-endpoint");
+  const mpEndpointReset = documentRef.getElementById("mp-endpoint-reset");
+  const mpWorldScale = documentRef.getElementById("mp-world-scale");
+  const mpWorldScaleOut = documentRef.getElementById("mp-world-scale-out");
+  const mpName = documentRef.getElementById("mp-name");
+  const mpQuickPlayBtn = documentRef.getElementById("mp-quickplay");
+  const mpDisconnectBtn = documentRef.getElementById("mp-disconnect");
+  const mpStatusOut = documentRef.getElementById("mp-status");
+  const mpErrorOut = documentRef.getElementById("mp-error");
+  const tuningDetails = documentRef.getElementById("tuning");
+  const mpTuningDisabledNote = documentRef.getElementById("mp-tuning-disabled");
   const dbgAttract = documentRef.getElementById("dbg-attract");
   const shipExplode = documentRef.getElementById("ship-explode");
   const dbgCameraMode = documentRef.getElementById("dbg-camera-mode");
@@ -365,6 +377,55 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   function readNum(el, fallback) {
     const v = el ? Number(el.value) : Number.NaN;
     return Number.isFinite(v) ? v : fallback;
+  }
+
+  const MP_UI_STORAGE_KEY = "blasteroids.mpUi.v1";
+  const mpUiRuntime = { pending: false, lastError: "" };
+  const tuningLockEls = tuningDetails ? Array.from(tuningDetails.querySelectorAll("input, select, button, textarea")) : [];
+  let lastMpLockState = null;
+  let lastMpConnectedState = null;
+
+  function isFileProtocol() {
+    const proto = String(windowRef?.location?.protocol || "");
+    return proto === "file:";
+  }
+
+  function defaultMpEndpoint() {
+    if (isFileProtocol()) return "ws://localhost:2567";
+    const host = String(windowRef?.location?.host || "").trim();
+    if (!host) return "ws://localhost:2567";
+    const secure = String(windowRef?.location?.protocol || "") === "https:";
+    return `${secure ? "wss" : "ws"}://${host}`;
+  }
+
+  function readMpUiFromStorage() {
+    try {
+      const raw = localStorage.getItem(MP_UI_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const out = {};
+      if (typeof parsed.endpoint === "string") out.endpoint = parsed.endpoint;
+      if (typeof parsed.name === "string") out.name = parsed.name;
+      if (Number.isFinite(Number(parsed.worldScale))) out.worldScale = Number(parsed.worldScale);
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeMpUiToStorage(obj) {
+    try {
+      localStorage.setItem(MP_UI_STORAGE_KEY, JSON.stringify(obj));
+    } catch {
+      // ignore (private mode / blocked storage)
+    }
+  }
+
+  function setMpUiStoredValue(key, value) {
+    const next = { ...(readMpUiFromStorage() || {}) };
+    next[key] = value;
+    writeMpUiToStorage(next);
   }
 
   const TUNING_DEFAULTS_STORAGE_KEY = "blasteroids.tuningDefaults.v1";
@@ -1110,6 +1171,86 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     if (dbgTierOverrideOut) dbgTierOverrideOut.textContent = `${Math.round(game.state.settings.tierOverrideIndex)}`;
   }
 
+  function getMpStatusSafe() {
+    const api = windowRef && typeof windowRef === "object" ? windowRef.Blasteroids : null;
+    if (!api || typeof api.mpStatus !== "function") return null;
+    try {
+      return api.mpStatus();
+    } catch {
+      return null;
+    }
+  }
+
+  function isMpConnected() {
+    const st = getMpStatusSafe();
+    return !!st?.connected;
+  }
+
+  function syncMpWorldScaleUi() {
+    if (!mpWorldScale) return;
+    const scale = clamp(readNum(mpWorldScale, 3), 1, 10);
+    if (mpWorldScaleOut) mpWorldScaleOut.textContent = `${scale.toFixed(2)}x`;
+  }
+
+  function setMpError(text) {
+    mpUiRuntime.lastError = String(text || "");
+    if (mpErrorOut) mpErrorOut.textContent = mpUiRuntime.lastError;
+  }
+
+  function syncMultiplayerPanel() {
+    if (!mpDetails) return;
+
+    const st = getMpStatusSafe();
+    const connected = !!st?.connected;
+    const busy = mpUiRuntime.pending;
+
+    if (mpEndpoint) mpEndpoint.disabled = connected || busy;
+    if (mpEndpointReset) mpEndpointReset.disabled = connected || busy;
+    if (mpWorldScale) mpWorldScale.disabled = connected || busy;
+    if (mpName) mpName.disabled = connected || busy;
+    if (mpQuickPlayBtn) mpQuickPlayBtn.disabled = connected || busy;
+    if (mpDisconnectBtn) mpDisconnectBtn.disabled = !connected || busy;
+
+    const mpHud = game.state?._mp;
+    const players = connected && mpHud && Number.isFinite(Number(mpHud.playerCount)) ? Number(mpHud.playerCount) : null;
+
+    if (mpStatusOut) {
+      if (busy) {
+        mpStatusOut.textContent = "Status: connecting…";
+      } else if (connected) {
+        const roomId = st?.roomId ? String(st.roomId) : "—";
+        const sessionId = st?.sessionId ? String(st.sessionId) : "—";
+        const endpoint = st?.endpoint ? String(st.endpoint) : "";
+        const playerStr = players != null ? ` | players ${players}` : "";
+        mpStatusOut.textContent = `Status: connected${playerStr}\nRoom: ${roomId}\nSession: ${sessionId}\nServer: ${endpoint}`;
+      } else {
+        mpStatusOut.textContent = "Status: disconnected";
+      }
+    }
+  }
+
+  function syncMultiplayerLockouts() {
+    const connected = isMpConnected();
+    const busy = mpUiRuntime.pending;
+    const lock = connected || busy;
+
+    if (lastMpLockState === lock && lastMpConnectedState === connected) return;
+    lastMpLockState = lock;
+    lastMpConnectedState = connected;
+
+    if (startBtn) startBtn.disabled = lock;
+    if (dbgCameraMode) dbgCameraMode.disabled = lock;
+    if (dbgWorldScale) dbgWorldScale.disabled = lock;
+    if (shipExplode) shipExplode.disabled = lock;
+    if (dbgTierOverride) dbgTierOverride.disabled = lock;
+    if (dbgTierOverrideLevel) dbgTierOverrideLevel.disabled = lock;
+
+    // Treat all tuning detail controls as authoritative-only while in multiplayer.
+    for (const el of tuningLockEls) el.disabled = lock;
+
+    if (mpTuningDisabledNote) mpTuningDisabledNote.hidden = !connected;
+  }
+
   function syncRuntimeDebugUi() {
     if (dbgGemScoreOut) dbgGemScoreOut.textContent = `${Math.round(game.state.score)}`;
     if (dbgCurrentTierOut) dbgCurrentTierOut.textContent = `${game.state.progression.currentTier}`;
@@ -1123,6 +1264,10 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
       touchPingBtn.setAttribute("aria-disabled", coolingDown ? "true" : "false");
       touchPingBtn.textContent = coolingDown ? `SONAR ${cooldownSec.toFixed(1)}s` : "SONAR";
     }
+
+    syncMpWorldScaleUi();
+    syncMultiplayerPanel();
+    syncMultiplayerLockouts();
   }
 
   function updateHudScore() {
@@ -1181,7 +1326,16 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
 
   function syncMenuButtons() {
     const playing = game.state.mode === "playing";
-    if (startBtn) startBtn.textContent = playing ? "Apply + Resume" : game.state.mode === "gameover" ? "Restart" : "Start";
+    const mpConnected = isMpConnected();
+    if (startBtn) {
+      startBtn.textContent = mpConnected
+        ? "Multiplayer Connected"
+        : playing
+          ? "Apply + Resume"
+          : game.state.mode === "gameover"
+            ? "Restart"
+            : "Start";
+    }
     if (debugToggleBtn) {
       const visible = isMenuVisible();
       debugToggleBtn.textContent = visible ? "Close Debug (M)" : "Open Debug (M)";
@@ -1198,6 +1352,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   }
 
   function startOrResume() {
+    if (isMpConnected()) return;
     applyTuningFromMenu();
     applyDebugFlagsFromMenu();
     applyArenaFromMenu();
@@ -1221,6 +1376,7 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   }
 
   function applyAllFromMenu() {
+    if (isMpConnected()) return;
     applyTuningFromMenu();
     applyDebugFlagsFromMenu();
     applyArenaFromMenu();
@@ -1274,6 +1430,123 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
   for (const b of DEBUG_MENU_BINDINGS) {
     if (!b.el) continue;
     b.el.addEventListener(b.event, b.handler);
+  }
+
+  // Multiplayer UI (LAN quick play)
+  {
+    const stored = readMpUiFromStorage() || {};
+    const defaultScale = clamp(
+      Number.isFinite(Number(stored.worldScale))
+        ? Number(stored.worldScale)
+        : clamp(readNum(dbgWorldScale, Number(game.state.world?.scale) || 3), 1, 10),
+      1,
+      10,
+    );
+
+    if (mpEndpoint) {
+      const ep = typeof stored.endpoint === "string" && stored.endpoint.trim() ? stored.endpoint.trim() : defaultMpEndpoint();
+      mpEndpoint.value = ep;
+      mpEndpoint.addEventListener("input", () => {
+        setMpUiStoredValue("endpoint", String(mpEndpoint.value || ""));
+        if (mpUiRuntime.lastError) setMpError("");
+      });
+    }
+    if (mpEndpointReset) {
+      mpEndpointReset.addEventListener("click", () => {
+        if (!mpEndpoint) return;
+        const ep = defaultMpEndpoint();
+        mpEndpoint.value = ep;
+        setMpUiStoredValue("endpoint", ep);
+        if (mpUiRuntime.lastError) setMpError("");
+        syncMultiplayerPanel();
+      });
+    }
+
+    if (mpWorldScale) {
+      mpWorldScale.value = String(defaultScale);
+      syncMpWorldScaleUi();
+      mpWorldScale.addEventListener("input", () => {
+        const scale = clamp(readNum(mpWorldScale, defaultScale), 1, 10);
+        setMpUiStoredValue("worldScale", scale);
+        syncMpWorldScaleUi();
+        if (mpUiRuntime.lastError) setMpError("");
+      });
+    }
+
+    if (mpName) {
+      mpName.value = typeof stored.name === "string" ? stored.name : "";
+      mpName.addEventListener("input", () => {
+        setMpUiStoredValue("name", String(mpName.value || ""));
+        if (mpUiRuntime.lastError) setMpError("");
+      });
+    }
+
+    if (mpQuickPlayBtn) {
+      mpQuickPlayBtn.addEventListener("click", async () => {
+        if (mpUiRuntime.pending || isMpConnected()) return;
+        setMpError("");
+
+        const api = windowRef && typeof windowRef === "object" ? windowRef.Blasteroids : null;
+        if (!api || typeof api.mpConnect !== "function") {
+          setMpError("Multiplayer API is unavailable (bundle not initialized).");
+          return;
+        }
+
+        mpUiRuntime.pending = true;
+        syncMultiplayerPanel();
+        syncMultiplayerLockouts();
+        try {
+          const endpoint = mpEndpoint ? String(mpEndpoint.value || "").trim() : defaultMpEndpoint();
+          const scale = mpWorldScale ? clamp(readNum(mpWorldScale, defaultScale), 1, 10) : defaultScale;
+          const name = mpName ? String(mpName.value || "").trim() : "";
+          const joinOptions = { worldScale: scale };
+          if (name) {
+            // Server does not currently use player name, but keep it in join options for forward-compat.
+            joinOptions.name = name;
+            joinOptions.playerName = name;
+          }
+
+          await api.mpConnect({ endpoint, joinOptions });
+        } catch (err) {
+          const msg = err && typeof err === "object" && "message" in err ? String(err.message) : String(err);
+          setMpError(`Connect failed: ${msg}`);
+        } finally {
+          mpUiRuntime.pending = false;
+          syncMultiplayerPanel();
+          syncMultiplayerLockouts();
+        }
+      });
+    }
+
+    if (mpDisconnectBtn) {
+      mpDisconnectBtn.addEventListener("click", async () => {
+        if (mpUiRuntime.pending || !isMpConnected()) return;
+        setMpError("");
+
+        const api = windowRef && typeof windowRef === "object" ? windowRef.Blasteroids : null;
+        if (!api || typeof api.mpDisconnect !== "function") {
+          setMpError("Multiplayer API is unavailable (bundle not initialized).");
+          return;
+        }
+
+        mpUiRuntime.pending = true;
+        syncMultiplayerPanel();
+        syncMultiplayerLockouts();
+        try {
+          await api.mpDisconnect();
+        } catch (err) {
+          const msg = err && typeof err === "object" && "message" in err ? String(err.message) : String(err);
+          setMpError(`Disconnect failed: ${msg}`);
+        } finally {
+          mpUiRuntime.pending = false;
+          syncMultiplayerPanel();
+          syncMultiplayerLockouts();
+        }
+      });
+    }
+
+    syncMultiplayerPanel();
+    syncMultiplayerLockouts();
   }
 
   for (const f of TUNING_FIELDS) {

@@ -57,7 +57,10 @@ try {
   const page = await browser.newPage();
   await page.goto(httpUrl, { waitUntil: "domcontentloaded" });
 
-  await page.evaluate((endpoint) => window.Blasteroids.mpConnect({ endpoint }), wsUrl);
+  // Exercise the in-game Multiplayer UI (MP-12), not just the DevTools API.
+  await page.click("#multiplayer > summary");
+  await page.fill("#mp-endpoint", wsUrl);
+  await page.click("#mp-quickplay");
 
   const connected = await page.waitForFunction(
     () =>

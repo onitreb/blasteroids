@@ -1,6 +1,6 @@
 # Multiplayer Implementation Plan — Blasteroids (Trackable)
 
-Last updated: 2026-02-15  
+Last updated: 2026-02-16  
 Status: ACTIVE  
 Owners: Engineering (Paul + Codex agents)  
 
@@ -109,7 +109,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 | MP-09 | M1 | Colyseus Room wrapper: authoritative tick, join/leave, player spawns, input apply, snapshot broadcast | SERVER/ENGINE (Codex) | DONE | MP-05, MP-08 | manual 2-client join | Notes:<br>- Room: `server/rooms/BlasteroidsRoom.mjs` (`blasteroids`) with 60Hz sim (`setSimulationInterval`) and 10Hz patches by default (`patchRate = 100ms`; tunable via `BLASTEROIDS_PATCH_RATE_MS`)<br>- Schema state: `server/schema/BlasteroidsState.mjs` (players + asteroids + gems)<br>- Engine helpers: `addPlayer`, `removePlayer`, `spawnShipAtForPlayer` added to `createEngine` for server use<br>- Input: clients send `\"input\"` messages; server applies per-player inputs and runs authoritative sim |
 | MP-10 | M1 | Client net module: connect, Quick Play, input send loop, snapshot buffer | NET (Codex) | DONE | MP-09 | manual LAN join | Notes:<br>- Net module: `src/net/createMpClient.js` (opt-in; no behavior change unless connected)<br>- Runtime hooks: `window.Blasteroids.mpConnect/mpDisconnect/mpStatus/mpSnapshots/mpRoom` (wired from `src/main.js`)<br>- Input send loop: 30Hz (edge-trigger `burst`/`ping`, continuous movement + analog fields)<br>- Snapshot buffer: ring buffer (default 32) of server ticks + minimal player snapshots |
 | MP-11 | M1 | Client render pipeline: snapshot interpolation + camera follow local player | NET/RENDER (Codex) | DONE | MP-10, MP-06 | manual LAN join | Notes:<br>- MP world view: `src/net/createMpWorldView.js` ingests Schema state (players/asteroids/gems) and applies interpolated poses into engine state for rendering<br>- While connected: `src/main.js` skips local `game.update()` and calls `mpWorld.applyInterpolatedState()` each frame; camera follows local player<br>- Opt-in hook (unchanged): connect via `window.Blasteroids.mpConnect({ endpoint })` |
-| MP-12 | M1 | Multiplayer UI: name + server URL + Quick Play; disable gameplay tuning in MP | UI | NOT_STARTED | MP-10 | manual smoke | Singleplayer flow unchanged. |
+| MP-12 | M1 | Multiplayer UI: name + server URL + Quick Play; disable gameplay tuning in MP | UI (Codex) | DONE | MP-10 | manual smoke | Notes:<br>- Added Multiplayer panel: server URL + world scale + (future) name + Quick Play/Disconnect + status<br>- While MP connected, gameplay-affecting tuning controls are disabled (server-authoritative) |
 | MP-13 | M1 | Automated tests for multiplayer engine invariants (2p determinism, ownership rules) | TEST | NOT_STARTED | MP-03 | `npm test` | Unit tests only (no network). |
 | MP-14 | M1 | Optional Playwright LAN sanity: 2 sessions capture screenshots + state | TEST | NOT_STARTED | MP-11 | scripted run output | Don’t break existing harness. |
 | MP-15 | M2 | Multiplayer perf HUD: snapshot Hz, bytes/sec, entities, tick drift | NET/UI (Codex) | DONE | MP-11 | manual | Notes:<br>- Added a minimal MP HUD line (client fps + snapshot Hz/interval + entity counts + server sim speed/tick Hz).<br>- Telemetry is derived from `onStateChange` timings (no extra deps). Singleplayer HUD unchanged when not connected.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass; prints MP HUD stats). |
@@ -279,3 +279,8 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 ### 2026-02-16 (MP tuning: asteroid scaling + net HUD)
 - Added LAN server knobs to tune asteroid population and refill pacing: `BLASTEROIDS_ASTEROID_DENSITY_SCALE` and `BLASTEROIDS_ASTEROID_SPAWN_RATE_SCALE` (also supported as `joinOptions.asteroidDensityScale` / `joinOptions.asteroidSpawnRateScale`).
 - MP HUD now shows a rough per-client network estimate (`rx/tx` bytes/sec) to help tune patch rate/entity counts.
+
+### 2026-02-16 (MP-12)
+- Added an in-game Multiplayer panel in the main menu: server URL (file:// safe default), world scale (must match server), (future) name field, Quick Play + Disconnect buttons, and a connection status readout (room/session/players).
+- In multiplayer mode, disabled gameplay-affecting tuning controls (world scale + tuning sliders) to avoid diverging from the server-authoritative simulation.
+- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass; exercises UI Quick Play); Playwright `file://` singleplayer smoke (pass).
