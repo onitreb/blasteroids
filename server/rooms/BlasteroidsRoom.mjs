@@ -55,6 +55,20 @@ function normalizeViewRect(message, fallback) {
   };
 }
 
+function readEngineNumberOption({ options, optionKey, envKey, clampMin, clampMax, fallback }) {
+  const fromOpts =
+    options &&
+    typeof options === "object" &&
+    Object.prototype.hasOwnProperty.call(options, optionKey) &&
+    options[optionKey] !== undefined
+      ? options[optionKey]
+      : undefined;
+  const raw = fromOpts ?? process.env[envKey];
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(clampMin, Math.min(clampMax, v));
+}
+
 function pickPaletteIdx({ sessionId, paletteCount, used, lastAssignedIdx }) {
   const count = Math.max(0, paletteCount | 0);
   if (count <= 0) return 0;
@@ -107,6 +121,25 @@ export class BlasteroidsRoom extends Room {
       this._engine.state.world?.scale ?? 3,
     );
     this._engine.setArenaConfig({ worldScale });
+
+    // Server-only tuning knobs for stress testing large worlds.
+    // NOTE: these affect authoritative spawn behavior (and therefore patch size/CPU).
+    this._engine.state.params.asteroidWorldDensityScale = readEngineNumberOption({
+      options,
+      optionKey: "asteroidDensityScale",
+      envKey: "BLASTEROIDS_ASTEROID_DENSITY_SCALE",
+      clampMin: 0.08,
+      clampMax: 2.5,
+      fallback: this._engine.state.params.asteroidWorldDensityScale,
+    });
+    this._engine.state.params.asteroidSpawnRateScale = readEngineNumberOption({
+      options,
+      optionKey: "asteroidSpawnRateScale",
+      envKey: "BLASTEROIDS_ASTEROID_SPAWN_RATE_SCALE",
+      clampMin: 0.25,
+      clampMax: 3,
+      fallback: this._engine.state.params.asteroidSpawnRateScale,
+    });
 
     // Remove the singleplayer placeholder player. Multiplayer server will populate real players on join.
     const placeholderId = this._engine.state.localPlayerId;

@@ -76,10 +76,13 @@ Options:
 - `npm run lan:server -- --port 2567` (default port is 2567)
 - `BLASTEROIDS_PATCH_RATE_MS=33 npm run lan:server` (override Colyseus Room `patchRate`; defaults to 100ms)
 - `BLASTEROIDS_WORLD_SCALE=10 npm run lan:server` (override authoritative world scale; defaults to engine default)
+- `BLASTEROIDS_ASTEROID_DENSITY_SCALE=0.45 npm run lan:server` (increase/decrease authoritative asteroid population target; default is engine `asteroidWorldDensityScale`)
+- `BLASTEROIDS_ASTEROID_SPAWN_RATE_SCALE=1.5 npm run lan:server` (refill pacing; higher spawns faster; default is engine `asteroidSpawnRateScale`)
 - Recommended for “big world + LAN feel” validation: `BLASTEROIDS_WORLD_SCALE=10 BLASTEROIDS_PATCH_RATE_MS=33 npm run lan:server`
 
 Client join options (DevTools):
 - `await window.Blasteroids.mpConnect({ endpoint: "ws://" + location.host, joinOptions: { worldScale: 10 } })`
+  - Optional overrides (per room): `joinOptions: { asteroidDensityScale: 0.45, asteroidSpawnRateScale: 1.5 }`
 
 Smoke scripts (Node / headless browser):
 - Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`

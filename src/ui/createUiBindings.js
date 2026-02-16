@@ -1151,7 +1151,17 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     const sim = Number.isFinite(mp.serverSimSpeed) ? `${mp.serverSimSpeed.toFixed(2)}x` : "?";
     const tickHz = Number.isFinite(mp.serverTickHz) ? `${mp.serverTickHz.toFixed(1)}Hz` : "?";
 
-    hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g`;
+    function fmtBps(bps) {
+      const v = Number(bps);
+      if (!Number.isFinite(v) || v < 0) return "?";
+      if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}MB/s`;
+      if (v >= 1_000) return `${(v / 1_000).toFixed(1)}KB/s`;
+      return `${Math.round(v)}B/s`;
+    }
+    const rx = fmtBps(mp.rxBps);
+    const tx = fmtBps(mp.txBps);
+
+    hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g | net ${rx}↓ ${tx}↑`;
   }
 
   function isMenuVisible() {

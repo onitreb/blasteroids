@@ -6612,7 +6612,19 @@
       const age = Number.isFinite(mp.latestAgeMs) ? `${Math.round(mp.latestAgeMs)}ms` : "?";
       const sim = Number.isFinite(mp.serverSimSpeed) ? `${mp.serverSimSpeed.toFixed(2)}x` : "?";
       const tickHz = Number.isFinite(mp.serverTickHz) ? `${mp.serverTickHz.toFixed(1)}Hz` : "?";
-      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g`;
+      function fmtBps(bps) {
+        const v = Number(bps);
+        if (!Number.isFinite(v) || v < 0)
+          return "?";
+        if (v >= 1e6)
+          return `${(v / 1e6).toFixed(2)}MB/s`;
+        if (v >= 1e3)
+          return `${(v / 1e3).toFixed(1)}KB/s`;
+        return `${Math.round(v)}B/s`;
+      }
+      const rx = fmtBps(mp.rxBps);
+      const tx = fmtBps(mp.txBps);
+      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g | net ${rx}\u2193 ${tx}\u2191`;
     }
     function isMenuVisible() {
       if (!menu)
@@ -14060,6 +14072,36 @@ Schema instances may only have up to 64 fields.`);
       return performance.now();
     return Date.now();
   }
+  function byteLengthOfWsData(data) {
+    if (data == null)
+      return 0;
+    if (typeof data === "string") {
+      try {
+        return new TextEncoder().encode(data).length;
+      } catch {
+        return data.length;
+      }
+    }
+    if (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer)
+      return data.byteLength;
+    if (typeof Blob !== "undefined" && data instanceof Blob)
+      return data.size;
+    if (ArrayBuffer.isView && ArrayBuffer.isView(data))
+      return data.byteLength;
+    if (data && typeof data === "object" && typeof data.byteLength === "number")
+      return data.byteLength;
+    return 0;
+  }
+  function tryGetRoomWebSocket(room) {
+    const conn = room?.connection;
+    const transport = conn?.transport || conn?._transport || conn?.["transport"] || null;
+    const ws = transport?.ws || transport?._ws || transport?.["ws"] || conn?.ws || conn?._ws || conn?.["ws"] || null;
+    const hasSend = ws && typeof ws.send === "function";
+    const hasOnMessage = ws && (typeof ws.addEventListener === "function" || typeof ws.onmessage === "function" || typeof ws.on === "function" || typeof ws.addListener === "function");
+    if (!hasSend || !hasOnMessage)
+      return null;
+    return ws;
+  }
   function makeRingBuffer(capacity) {
     const cap = Math.max(2, Math.floor(capacity));
     const buf = [];
@@ -14132,6 +14174,7 @@ Schema instances may only have up to 64 fields.`);
     let inputTimer = null;
     let viewTimer = null;
     let lastInputSample = null;
+    let traffic = null;
     function isConnected() {
       return !!(room && room.connection && room.connection.isOpen);
     }
@@ -14238,6 +14281,98 @@ Schema instances may only have up to 64 fields.`);
         });
       });
     }
+    function stopTrafficMonitor() {
+      if (traffic?.detach) {
+        try {
+          traffic.detach();
+        } catch {
+        }
+      }
+      traffic = null;
+    }
+    function startTrafficMonitor() {
+      stopTrafficMonitor();
+      if (!room)
+        return;
+      const ws = tryGetRoomWebSocket(room);
+      if (!ws)
+        return;
+      const samples = [];
+      const windowMs = 2e3;
+      const counters = { rxBytes: 0, txBytes: 0 };
+      const origSend = ws.send ? ws.send.bind(ws) : null;
+      const onWsMessage = (ev) => {
+        const data = ev && typeof ev === "object" && "data" in ev ? ev.data : ev;
+        counters.rxBytes += byteLengthOfWsData(data);
+      };
+      let nodeHandler = null;
+      let prevOnMessage = null;
+      if (typeof ws.addEventListener === "function") {
+        ws.addEventListener("message", onWsMessage);
+      } else if (typeof ws.on === "function") {
+        nodeHandler = (data) => onWsMessage({ data });
+        ws.on("message", nodeHandler);
+      } else if (typeof ws.addListener === "function") {
+        nodeHandler = (data) => onWsMessage({ data });
+        ws.addListener("message", nodeHandler);
+      } else if ("onmessage" in ws) {
+        prevOnMessage = ws.onmessage;
+        ws.onmessage = (ev) => {
+          try {
+            onWsMessage(ev);
+          } finally {
+            if (typeof prevOnMessage === "function")
+              prevOnMessage(ev);
+          }
+        };
+      }
+      if (origSend) {
+        ws.send = (...args) => {
+          counters.txBytes += byteLengthOfWsData(args[0]);
+          return origSend(...args);
+        };
+      }
+      const detach = () => {
+        if (origSend)
+          ws.send = origSend;
+        if (typeof ws.removeEventListener === "function")
+          ws.removeEventListener("message", onWsMessage);
+        if (nodeHandler) {
+          if (typeof ws.off === "function")
+            ws.off("message", nodeHandler);
+          if (typeof ws.removeListener === "function")
+            ws.removeListener("message", nodeHandler);
+        }
+        if (prevOnMessage)
+          ws.onmessage = prevOnMessage;
+      };
+      traffic = { ws, counters, samples, windowMs, detach };
+    }
+    function getNetStats(atMs = nowMs()) {
+      if (!traffic)
+        return { connected: isConnected(), rxBps: null, txBps: null, rxTotalBytes: null, txTotalBytes: null };
+      const now2 = Number(atMs) || nowMs();
+      const rxBytes = traffic.counters.rxBytes;
+      const txBytes = traffic.counters.txBytes;
+      traffic.samples.push({ t: now2, rx: rxBytes, tx: txBytes });
+      while (traffic.samples.length > 2 && now2 - traffic.samples[0].t > traffic.windowMs)
+        traffic.samples.shift();
+      if (traffic.samples.length < 2) {
+        return { connected: isConnected(), rxBps: 0, txBps: 0, rxTotalBytes: rxBytes, txTotalBytes: txBytes };
+      }
+      const first = traffic.samples[0];
+      const last = traffic.samples[traffic.samples.length - 1];
+      const dt = Math.max(1, last.t - first.t);
+      const rxBps = (last.rx - first.rx) * 1e3 / dt;
+      const txBps = (last.tx - first.tx) * 1e3 / dt;
+      return {
+        connected: isConnected(),
+        rxBps,
+        txBps,
+        rxTotalBytes: rxBytes,
+        txTotalBytes: txBytes
+      };
+    }
     async function connect({
       endpoint: nextEndpoint = endpoint,
       roomName: nextRoomName = roomName,
@@ -14251,11 +14386,13 @@ Schema instances may only have up to 64 fields.`);
       buffer.clear();
       room = await client.joinOrCreate(roomName, joinOptions);
       attachStateBuffer();
+      startTrafficMonitor();
       startInputLoop();
       startViewLoop();
       room.onLeave(() => {
         stopInputLoop();
         stopViewLoop();
+        stopTrafficMonitor();
       });
       return {
         endpoint,
@@ -14267,6 +14404,7 @@ Schema instances may only have up to 64 fields.`);
     async function disconnect() {
       stopInputLoop();
       stopViewLoop();
+      stopTrafficMonitor();
       buffer.clear();
       const r = room;
       room = null;
@@ -14301,7 +14439,8 @@ Schema instances may only have up to 64 fields.`);
       isConnected,
       getStatus,
       getSnapshots,
-      getRoom
+      getRoom,
+      getNetStats
     };
   }
 
@@ -14737,6 +14876,7 @@ Schema instances may only have up to 64 fields.`);
         state.gems.push(obj);
       }
       state.time = targetSimTime / 1e3;
+      const net = state._mpNet && typeof state._mpNet === "object" ? state._mpNet : null;
       state._mp = {
         connected: true,
         latestSimTimeMs,
@@ -14754,8 +14894,10 @@ Schema instances may only have up to 64 fields.`);
         snapshotDtMaxMs: recvStats ? recvStats.dtMaxMs : null,
         serverSimSpeed: recvStats ? recvStats.simSpeed : null,
         // 1.0 ~= real-time sim
-        serverTickHz: recvStats ? recvStats.tickHz : null
+        serverTickHz: recvStats ? recvStats.tickHz : null,
         // ~=60Hz when sim keeps up
+        rxBps: net && Number.isFinite(Number(net.rxBps)) ? Number(net.rxBps) : null,
+        txBps: net && Number.isFinite(Number(net.txBps)) ? Number(net.txBps) : null
       };
       return true;
     }
@@ -14932,6 +15074,7 @@ Schema instances may only have up to 64 fields.`);
       const mpConnected = mp.isConnected();
       const pausedByMenu = !mpConnected && ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (mpConnected) {
+        game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
         mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
         const mpHud = game.state?._mp;
         const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;

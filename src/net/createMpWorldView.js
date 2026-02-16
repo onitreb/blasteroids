@@ -468,6 +468,7 @@ export function createMpWorldView({
 
     // Expose some timing on state for HUD/debug if needed.
     state.time = targetSimTime / 1000;
+    const net = state._mpNet && typeof state._mpNet === "object" ? state._mpNet : null;
     state._mp = {
       connected: true,
       latestSimTimeMs,
@@ -485,6 +486,8 @@ export function createMpWorldView({
       snapshotDtMaxMs: recvStats ? recvStats.dtMaxMs : null,
       serverSimSpeed: recvStats ? recvStats.simSpeed : null, // 1.0 ~= real-time sim
       serverTickHz: recvStats ? recvStats.tickHz : null, // ~=60Hz when sim keeps up
+      rxBps: net && Number.isFinite(Number(net.rxBps)) ? Number(net.rxBps) : null,
+      txBps: net && Number.isFinite(Number(net.txBps)) ? Number(net.txBps) : null,
     };
     return true;
   }

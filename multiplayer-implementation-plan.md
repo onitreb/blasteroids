@@ -271,3 +271,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
   - Server assigns `paletteIdx` on join to avoid duplicates among active players.
   - Client/renderer uses `paletteIdx` when present (falls back to id-hash only as a legacy/default).
 - Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); manual 2-tab check (pass).
+
+### 2026-02-16 (MP tuning: asteroid scaling + net HUD)
+- Added LAN server knobs to tune asteroid population and refill pacing: `BLASTEROIDS_ASTEROID_DENSITY_SCALE` and `BLASTEROIDS_ASTEROID_SPAWN_RATE_SCALE` (also supported as `joinOptions.asteroidDensityScale` / `joinOptions.asteroidSpawnRateScale`).
+- MP HUD now shows a rough per-client network estimate (`rx/tx` bytes/sec) to help tune patch rate/entity counts.

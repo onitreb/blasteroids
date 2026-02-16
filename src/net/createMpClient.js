@@ -11,6 +11,44 @@ function nowMs() {
   return Date.now();
 }
 
+function byteLengthOfWsData(data) {
+  if (data == null) return 0;
+  if (typeof data === "string") {
+    try {
+      return new TextEncoder().encode(data).length;
+    } catch {
+      return data.length;
+    }
+  }
+  if (typeof ArrayBuffer !== "undefined" && data instanceof ArrayBuffer) return data.byteLength;
+  if (typeof Blob !== "undefined" && data instanceof Blob) return data.size;
+  if (ArrayBuffer.isView && ArrayBuffer.isView(data)) return data.byteLength;
+  if (data && typeof data === "object" && typeof data.byteLength === "number") return data.byteLength;
+  return 0;
+}
+
+function tryGetRoomWebSocket(room) {
+  const conn = room?.connection;
+  const transport = conn?.transport || conn?._transport || conn?.["transport"] || null;
+  const ws =
+    transport?.ws ||
+    transport?._ws ||
+    transport?.["ws"] ||
+    conn?.ws ||
+    conn?._ws ||
+    conn?.["ws"] ||
+    null;
+  const hasSend = ws && typeof ws.send === "function";
+  const hasOnMessage =
+    ws &&
+    (typeof ws.addEventListener === "function" ||
+      typeof ws.onmessage === "function" ||
+      typeof ws.on === "function" ||
+      typeof ws.addListener === "function");
+  if (!hasSend || !hasOnMessage) return null;
+  return ws;
+}
+
 function makeRingBuffer(capacity) {
   const cap = Math.max(2, Math.floor(capacity));
   const buf = [];
@@ -82,6 +120,8 @@ export function createMpClient({
   let inputTimer = null;
   let viewTimer = null;
   let lastInputSample = null;
+
+  let traffic = null; // { ws, rxBytes, txBytes, samples, detach }
 
   function isConnected() {
     return !!(room && room.connection && room.connection.isOpen);
@@ -192,6 +232,101 @@ export function createMpClient({
     });
   }
 
+  function stopTrafficMonitor() {
+    if (traffic?.detach) {
+      try {
+        traffic.detach();
+      } catch {
+        // ignore
+      }
+    }
+    traffic = null;
+  }
+
+  function startTrafficMonitor() {
+    stopTrafficMonitor();
+    if (!room) return;
+    const ws = tryGetRoomWebSocket(room);
+    if (!ws) return;
+
+    const samples = [];
+    const windowMs = 2000;
+    const counters = { rxBytes: 0, txBytes: 0 };
+    const origSend = ws.send ? ws.send.bind(ws) : null;
+
+    const onWsMessage = (ev) => {
+      const data = ev && typeof ev === "object" && "data" in ev ? ev.data : ev;
+      counters.rxBytes += byteLengthOfWsData(data);
+    };
+
+    let nodeHandler = null;
+    let prevOnMessage = null;
+
+    if (typeof ws.addEventListener === "function") {
+      ws.addEventListener("message", onWsMessage);
+    } else if (typeof ws.on === "function") {
+      nodeHandler = (data) => onWsMessage({ data });
+      ws.on("message", nodeHandler);
+    } else if (typeof ws.addListener === "function") {
+      nodeHandler = (data) => onWsMessage({ data });
+      ws.addListener("message", nodeHandler);
+    } else if ("onmessage" in ws) {
+      prevOnMessage = ws.onmessage;
+      ws.onmessage = (ev) => {
+        try {
+          onWsMessage(ev);
+        } finally {
+          if (typeof prevOnMessage === "function") prevOnMessage(ev);
+        }
+      };
+    }
+
+    if (origSend) {
+      ws.send = (...args) => {
+        counters.txBytes += byteLengthOfWsData(args[0]);
+        return origSend(...args);
+      };
+    }
+
+    const detach = () => {
+      if (origSend) ws.send = origSend;
+      if (typeof ws.removeEventListener === "function") ws.removeEventListener("message", onWsMessage);
+      // best-effort for node ws; not all transports expose remove/off in a consistent way
+      if (nodeHandler) {
+        if (typeof ws.off === "function") ws.off("message", nodeHandler);
+        if (typeof ws.removeListener === "function") ws.removeListener("message", nodeHandler);
+      }
+      if (prevOnMessage) ws.onmessage = prevOnMessage;
+    };
+
+    traffic = { ws, counters, samples, windowMs, detach };
+  }
+
+  function getNetStats(atMs = nowMs()) {
+    if (!traffic) return { connected: isConnected(), rxBps: null, txBps: null, rxTotalBytes: null, txTotalBytes: null };
+
+    const now = Number(atMs) || nowMs();
+    const rxBytes = traffic.counters.rxBytes;
+    const txBytes = traffic.counters.txBytes;
+    traffic.samples.push({ t: now, rx: rxBytes, tx: txBytes });
+    while (traffic.samples.length > 2 && now - traffic.samples[0].t > traffic.windowMs) traffic.samples.shift();
+    if (traffic.samples.length < 2) {
+      return { connected: isConnected(), rxBps: 0, txBps: 0, rxTotalBytes: rxBytes, txTotalBytes: txBytes };
+    }
+    const first = traffic.samples[0];
+    const last = traffic.samples[traffic.samples.length - 1];
+    const dt = Math.max(1, last.t - first.t);
+    const rxBps = ((last.rx - first.rx) * 1000) / dt;
+    const txBps = ((last.tx - first.tx) * 1000) / dt;
+    return {
+      connected: isConnected(),
+      rxBps,
+      txBps,
+      rxTotalBytes: rxBytes,
+      txTotalBytes: txBytes,
+    };
+  }
+
   async function connect({
     endpoint: nextEndpoint = endpoint,
     roomName: nextRoomName = roomName,
@@ -206,12 +341,14 @@ export function createMpClient({
 
     room = await client.joinOrCreate(roomName, joinOptions);
     attachStateBuffer();
+    startTrafficMonitor();
     startInputLoop();
     startViewLoop();
 
     room.onLeave(() => {
       stopInputLoop();
       stopViewLoop();
+      stopTrafficMonitor();
     });
 
     return {
@@ -225,6 +362,7 @@ export function createMpClient({
   async function disconnect() {
     stopInputLoop();
     stopViewLoop();
+    stopTrafficMonitor();
     buffer.clear();
 
     const r = room;
@@ -267,5 +405,6 @@ export function createMpClient({
     getStatus,
     getSnapshots,
     getRoom,
+    getNetStats,
   };
 }

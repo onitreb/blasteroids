@@ -162,6 +162,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
     if (mpConnected) {
       // Multiplayer: authoritative sim runs on server; client renders interpolated state.
+      game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
       mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
       const mpHud = game.state?._mp;
       const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
