@@ -5082,7 +5082,23 @@
       const ring = Array.isArray(ringRgb) ? ringRgb : tier?.ringRgb;
       const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
       const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
-      const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+      const mpConnected = !!state._mp?.connected;
+      let pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+      if (showPullFx && mpConnected) {
+        const ownerId = a.pullOwnerId ? String(a.pullOwnerId) : "";
+        if (!ownerId || !ship?.pos || !a?.pos) {
+          pullFx = 0;
+        } else {
+          const baseAttract = Math.max(0, Number(state.params?.attractRadius ?? 0));
+          const attractR = baseAttract * Math.max(0.2, Number(tier.attractScale || 1));
+          const dx = a.pos.x - ship.pos.x;
+          const dy = a.pos.y - ship.pos.y;
+          const dist = Math.hypot(dx, dy);
+          const denom = Math.max(1e-6, attractR - fieldR);
+          const t = clamp((dist - fieldR) / denom, 0, 1);
+          pullFx = (1 - t) * (1 - t);
+        }
+      }
       const shape = getAsteroidShape(a);
       if (pullFx > 0.01) {
         const visScale = pullFxVisualScaleForTier(tier.key);
@@ -15847,6 +15863,8 @@ Schema instances may only have up to 64 fields.`);
     const rngById = /* @__PURE__ */ new Map();
     const pingAsteroids = /* @__PURE__ */ new Set();
     const pingParts = /* @__PURE__ */ new Set();
+    const prevAsteroidById = /* @__PURE__ */ new Map();
+    const lastBurstFxAtMsByPlayerId = /* @__PURE__ */ new Map();
     const fxRng = makeRng(1369960461);
     let lastUpdateAtMs = 0;
     let lastBurst = false;
@@ -15856,6 +15874,8 @@ Schema instances may only have up to 64 fields.`);
       rngById.clear();
       pingAsteroids.clear();
       pingParts.clear();
+      prevAsteroidById.clear();
+      lastBurstFxAtMsByPlayerId.clear();
       lastUpdateAtMs = 0;
       lastBurst = false;
       lastPing = false;
@@ -16006,12 +16026,20 @@ Schema instances may only have up to 64 fields.`);
         const fwdX = Math.cos(ang);
         const fwdY = Math.sin(ang);
         const forwardAccel = ax * fwdX + ay * fwdY;
-        const remoteThrustAmt = clamp(forwardAccel / shipThrust, 0, 1);
+        const remoteThrustAmtRaw = clamp(forwardAccel / shipThrust, 0, 1);
+        if (!Number.isFinite(mv.thrustT))
+          mv.thrustT = 0;
+        const smooth = 1 - Math.exp(-dt * 10);
+        mv.thrustT = lerp(mv.thrustT, remoteThrustAmtRaw, smooth);
+        const remoteThrustAmt = mv.thrustT;
         const thrustAmt = id === localId ? localThrustAmt : remoteThrustAmt;
         if (player) {
           if (!player._mpVfx || typeof player._mpVfx !== "object")
             player._mpVfx = {};
-          const isThrusting = thrustAmt > 0.08;
+          const on = 0.12;
+          const off = 0.06;
+          const wasOn = !!mv.thrusting;
+          const isThrusting = wasOn ? thrustAmt > off : thrustAmt > on;
           player._mpVfx.thrusting = isThrusting;
           mv.thrusting = isThrusting;
         }
@@ -16086,7 +16114,50 @@ Schema instances may only have up to 64 fields.`);
         particles.splice(0, particles.length - maxParticles);
       }
     }
-    function updateBurstFx({ burstPressed }) {
+    function decayBlastPulse(dt) {
+      const ids = Object.keys(state.playersById || {}).sort();
+      for (let i = 0; i < ids.length; i++) {
+        const p = state.playersById?.[ids[i]];
+        if (!p)
+          continue;
+        if (!Number.isFinite(p.blastPulseT))
+          p.blastPulseT = 0;
+        if (p.blastPulseT > 0)
+          p.blastPulseT = Math.max(0, p.blastPulseT - dt);
+      }
+    }
+    function shouldTriggerBurstFx(playerId, atMs, cooldownMs = 250) {
+      const id = String(playerId ?? "");
+      const now2 = Number(atMs) || nowMs3();
+      const last = Number(lastBurstFxAtMsByPlayerId.get(id) || 0);
+      if (last && now2 - last < cooldownMs)
+        return false;
+      lastBurstFxAtMsByPlayerId.set(id, now2);
+      return true;
+    }
+    function triggerBurstFx({ playerId, pos, vel, atMs }) {
+      const pid = String(playerId ?? "");
+      if (!pid)
+        return;
+      if (!shouldTriggerBurstFx(pid, atMs))
+        return;
+      const p = state.playersById?.[pid];
+      if (p)
+        p.blastPulseT = 0.22;
+      const usePos = pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) ? pos : vec(0, 0);
+      spawnExplosion(state, fxRng, usePos, { kind: "ring", rgb: [255, 221, 88], r0: 14, r1: 110, ttl: 0.18 });
+      const seedBase = hashStringToU322(`burst:${pid}:${Math.floor((Number(state.time) || 0) * 10)}`);
+      const r = makeRng(seedBase ^ 2246822507);
+      const n = 10;
+      const vv = vel && Number.isFinite(vel.x) && Number.isFinite(vel.y) ? vel : vec(0, 0);
+      const baseAng = Math.atan2(vv.y, vv.x);
+      for (let i = 0; i < n; i++) {
+        const ang = baseAng + i / n * Math.PI * 2 + r() * 0.25;
+        const speed = lerp(240, 420, r());
+        spawnBurstWavelets(state, fxRng, { pos: usePos, angle: ang, speed, ttl: 0.48, rgb: [255, 221, 88] });
+      }
+    }
+    function updateBurstFxFromInput({ burstPressed, atMs }) {
       if (!burstPressed)
         return;
       if (state.mode !== "playing")
@@ -16095,15 +16166,51 @@ Schema instances may only have up to 64 fields.`);
       const ship = state.playersById?.[localId]?.ship || null;
       if (!ship?.pos)
         return;
-      const pos = vec(Number(ship.pos.x) || 0, Number(ship.pos.y) || 0);
-      spawnExplosion(state, fxRng, pos, { kind: "ring", rgb: [255, 221, 88], r0: 18, r1: 120, ttl: 0.18 });
-      const seedBase = hashStringToU322(`burst:${localId}:${Math.floor((Number(state.time) || 0) * 10)}`);
-      const r = makeRng(seedBase ^ 2246822507);
-      const n = 10;
-      for (let i = 0; i < n; i++) {
-        const ang = i / n * Math.PI * 2 + r() * 0.25;
-        const speed = lerp(240, 420, r());
-        spawnBurstWavelets(state, fxRng, { pos, angle: ang, speed, ttl: 0.48, rgb: [255, 221, 88] });
+      let hasAttached = false;
+      for (let i = 0; i < (state.asteroids?.length || 0); i++) {
+        const a = state.asteroids[i];
+        if (!a)
+          continue;
+        if (String(a.attachedTo ?? "") === localId) {
+          hasAttached = true;
+          break;
+        }
+      }
+      if (!hasAttached)
+        return;
+      triggerBurstFx({
+        playerId: localId,
+        pos: vec(Number(ship.pos.x) || 0, Number(ship.pos.y) || 0),
+        vel: vec(Number(ship.vel?.x) || 0, Number(ship.vel?.y) || 0),
+        atMs
+      });
+    }
+    function updateBurstFxFromAuthoritative({ atMs }) {
+      const seen = /* @__PURE__ */ new Set();
+      for (let i = 0; i < (state.asteroids?.length || 0); i++) {
+        const a = state.asteroids[i];
+        if (!a)
+          continue;
+        const id = String(a.id ?? "");
+        if (!id)
+          continue;
+        seen.add(id);
+        const attachedTo = a.attachedTo ? String(a.attachedTo) : "";
+        const shipLaunched = !!a.shipLaunched;
+        const prev = prevAsteroidById.get(id);
+        if (prev && prev.attachedTo && !attachedTo && shipLaunched && !prev.shipLaunched) {
+          const pid = prev.attachedTo;
+          const p = state.playersById?.[pid];
+          const ship = p?.ship || null;
+          const pos = ship?.pos ? vec(Number(ship.pos.x) || 0, Number(ship.pos.y) || 0) : vec(Number(a.pos?.x) || 0, Number(a.pos?.y) || 0);
+          const vel = a?.vel ? vec(Number(a.vel.x) || 0, Number(a.vel.y) || 0) : vec(0, 0);
+          triggerBurstFx({ playerId: pid, pos, vel, atMs });
+        }
+        prevAsteroidById.set(id, { attachedTo, shipLaunched });
+      }
+      for (const id of prevAsteroidById.keys()) {
+        if (!seen.has(id))
+          prevAsteroidById.delete(id);
       }
     }
     function update({ dtSec = 0, atMs = nowMs3() } = {}) {
@@ -16127,7 +16234,9 @@ Schema instances may only have up to 64 fields.`);
       const pingPressed = pingNow && !lastPing;
       lastBurst = burstNow;
       lastPing = pingNow;
-      updateBurstFx({ burstPressed });
+      decayBlastPulse(dt);
+      updateBurstFxFromInput({ burstPressed, atMs });
+      updateBurstFxFromAuthoritative({ atMs });
       updateTechPing({ dt, pingPressed });
       updateExhaustAndThrusters({ dt });
     }

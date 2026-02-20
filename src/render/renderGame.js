@@ -1084,7 +1084,24 @@ export function createRenderer(engine) {
     const ring = Array.isArray(ringRgb) ? ringRgb : tier?.ringRgb;
     const canShowForTier = Array.isArray(tier.attractSizes) ? tier.attractSizes.includes(a.size) : false;
     const showPullFx = state.mode === "playing" && canShowForTier && !a.attached && !a.shipLaunched;
-    const pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+    const mpConnected = !!state._mp?.connected;
+    let pullFx = showPullFx ? clamp(a.pullFx ?? 0, 0, 1) : 0;
+    if (showPullFx && mpConnected) {
+      const ownerId = a.pullOwnerId ? String(a.pullOwnerId) : "";
+      if (!ownerId || !ship?.pos || !a?.pos) {
+        pullFx = 0;
+      } else {
+        const baseAttract = Math.max(0, Number(state.params?.attractRadius ?? 0));
+        const attractR = baseAttract * Math.max(0.2, Number(tier.attractScale || 1));
+        const dx = a.pos.x - ship.pos.x;
+        const dy = a.pos.y - ship.pos.y;
+        const dist = Math.hypot(dx, dy);
+        const denom = Math.max(1e-6, attractR - fieldR);
+        const t = clamp((dist - fieldR) / denom, 0, 1);
+        // Strongest near the forcefield surface, fades out toward the attract radius.
+        pullFx = (1 - t) * (1 - t);
+      }
+    }
     const shape = getAsteroidShape(a);
 
     if (pullFx > 0.01) {

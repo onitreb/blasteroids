@@ -596,3 +596,12 @@ Updates
     - `npm run build`: success (`dist/blasteroids.js` regenerated)
     - `node scripts/mp-browser-smoke.mjs`: pass
     - `node scripts/mp-browser-2p-smoke.mjs`: pass
+
+- 2026-02-20 MP-27 (MP-connected gravity + blast visuals):
+  - Pull/gravity tethers now render in MP by deriving pull intensity from authoritative `pullOwnerId` + distance (client-only; no gameplay impact).
+  - Burst/blast feedback now renders in MP for local + remote players by detecting authoritative burst state changes (detaching asteroids + `shipLaunched`), driving `blastPulseT` client-side, and spawning wavelets/ring effects.
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass
