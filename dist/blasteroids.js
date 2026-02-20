@@ -1439,8 +1439,10 @@
         vel: vec(0, 0),
         radius,
         containerAsteroidId: null,
+        carrierPlayerId: null,
         installedSlot: null,
-        respawnCount: 0
+        respawnCount: 0,
+        lostReason: void 0
       };
     }
     function getTechPartById(id) {
@@ -1458,14 +1460,16 @@
       const halfH = state.world.h / 2;
       return Math.sqrt(halfW * halfW + halfH * halfH) * 1.3;
     }
-    function tryStartTechPing() {
+    function tryStartTechPingForPlayer(player = localPlayer()) {
       if (state.mode !== "playing")
         return false;
       if ((Number(state.round.techPingCooldownSec) || 0) > 0)
         return false;
+      if (!player?.ship)
+        return false;
       const speed = clamp(Number(state.params.techPingSpeedPxPerSec ?? 2400), 200, 2e4);
       state.round.techPing = {
-        origin: vec(Number(state.ship.pos?.x) || 0, Number(state.ship.pos?.y) || 0),
+        origin: vec(Number(player.ship.pos?.x) || 0, Number(player.ship.pos?.y) || 0),
         radius: 0,
         prevRadius: 0,
         speed,
@@ -1578,6 +1582,7 @@
       if (!part || part.state === "installed")
         return false;
       part.containerAsteroidId = null;
+      part.carrierPlayerId = null;
       part.pos = vec(Number(asteroid.pos?.x) || 0, Number(asteroid.pos?.y) || 0);
       if (lost) {
         part.state = "lost";
@@ -1596,6 +1601,7 @@
         return false;
       part.state = "lost";
       part.containerAsteroidId = null;
+      part.carrierPlayerId = null;
       part.vel = vec(0, 0);
       if (state.round.carriedPartId === part.id)
         state.round.carriedPartId = null;
@@ -1708,22 +1714,39 @@
       const star = state.round.star;
       if (!star) {
         state.round.starExposureSec = 0;
-        state.ship.starHeat = 0;
+        forEachPlayer((p) => {
+          if (!p?.ship)
+            return;
+          p.ship.starExposureSec = 0;
+          p.ship.starHeat = 0;
+        });
         return;
       }
       const killSec = clamp(Number(state.params.shipStarKillSec ?? 3), 0.25, 30);
       const coolRate = clamp(Number(state.params.shipStarCoolRate ?? 1.6), 0, 20);
-      const signed = starSignedDistToBodyEdge(state.ship, star);
-      const inStar = signed < 0;
-      let next = Math.max(0, Number(state.round.starExposureSec) || 0);
-      if (inStar)
-        next += dt;
-      else
-        next = Math.max(0, next - coolRate * dt);
-      state.round.starExposureSec = next;
-      state.ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
-      if (next >= killSec) {
-        spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
+      let localExposure = 0;
+      let killedPos = null;
+      forEachPlayer((p) => {
+        const ship = p?.ship;
+        if (!ship)
+          return;
+        const signed = starSignedDistToBodyEdge(ship, star);
+        const inStar = signed < 0;
+        let next = Math.max(0, Number(ship.starExposureSec) || 0);
+        if (inStar)
+          next += dt;
+        else
+          next = Math.max(0, next - coolRate * dt);
+        ship.starExposureSec = next;
+        ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
+        if (p.id === state.localPlayerId)
+          localExposure = next;
+        if (!killedPos && next >= killSec)
+          killedPos = vec(Number(ship.pos?.x) || 0, Number(ship.pos?.y) || 0);
+      });
+      state.round.starExposureSec = localExposure;
+      if (killedPos) {
+        spawnExplosion(killedPos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
         endRound("lose", "star_overheat");
       }
     }
@@ -1772,7 +1795,6 @@
       if (!Array.isArray(parts) || parts.length === 0)
         return;
       const stepDt = Math.max(0, Number(dt) || 0);
-      const ship = state.ship;
       const gate = state.round.gate;
       const star = state.round.star;
       for (let i = 0; i < parts.length; i++) {
@@ -1845,53 +1867,110 @@
           }
         }
       }
-      if (state.round.carriedPartId) {
-        const carried = getTechPartById(state.round.carriedPartId);
-        if (!carried || carried.state !== "carried")
-          state.round.carriedPartId = null;
+      const carriedByPlayerId = /* @__PURE__ */ new Map();
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part || part.state !== "carried") {
+          if (part && part.carrierPlayerId != null)
+            part.carrierPlayerId = null;
+          continue;
+        }
+        const carrierId = String(part.carrierPlayerId ?? "");
+        const carrier = carrierId ? state.playersById?.[carrierId] : null;
+        if (!carrierId || !carrier?.ship) {
+          part.state = "dropped";
+          part.carrierPlayerId = null;
+          part.containerAsteroidId = null;
+          if (part.vel) {
+            part.vel.x = 0;
+            part.vel.y = 0;
+          } else {
+            part.vel = vec(0, 0);
+          }
+          continue;
+        }
+        if (carriedByPlayerId.has(carrierId)) {
+          part.state = "dropped";
+          part.carrierPlayerId = null;
+          part.containerAsteroidId = null;
+          if (part.vel) {
+            part.vel.x = 0;
+            part.vel.y = 0;
+          } else {
+            part.vel = vec(0, 0);
+          }
+          continue;
+        }
+        carriedByPlayerId.set(carrierId, part);
       }
-      if (!state.round.carriedPartId) {
-        const pad = clamp(Number(state.params.techPartPickupPad ?? 20), 0, 800);
+      const pickupPad = clamp(Number(state.params.techPartPickupPad ?? 20), 0, 800);
+      const ids = sortedPlayerIds();
+      for (let pi = 0; pi < ids.length; pi++) {
+        const pid = ids[pi];
+        if (carriedByPlayerId.has(pid))
+          continue;
+        const player = state.playersById?.[pid];
+        const ship = player?.ship;
+        if (!ship)
+          continue;
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
           if (!part || part.state !== "dropped")
             continue;
-          const pickR = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + pad;
+          const pickR = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + pickupPad;
           if (len2(sub(part.pos, ship.pos)) > pickR * pickR)
             continue;
           part.state = "carried";
+          part.carrierPlayerId = pid;
           part.containerAsteroidId = null;
           part.installedSlot = null;
-          part.vel = vec(0, 0);
-          state.round.carriedPartId = part.id;
+          if (part.vel) {
+            part.vel.x = 0;
+            part.vel.y = 0;
+          } else {
+            part.vel = vec(0, 0);
+          }
+          carriedByPlayerId.set(pid, part);
           break;
         }
       }
-      if (gate && state.round.carriedPartId) {
-        const part = getTechPartById(state.round.carriedPartId);
-        const slots = Array.isArray(gate.slots) ? gate.slots : null;
-        if (part && part.state === "carried" && slots) {
-          const pad = clamp(Number(state.params.jumpGateInstallPad ?? 60), 0, 2e3);
-          const installR = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0) + pad;
-          if (len2(sub(ship.pos, gate.pos)) <= installR * installR) {
-            let slotIndex = -1;
-            for (let i = 0; i < slots.length; i++) {
-              if (!slots[i]) {
-                slotIndex = i;
-                break;
-              }
-            }
-            if (slotIndex >= 0) {
-              slots[slotIndex] = part.id;
-              gate.slots = slots;
-              part.state = "installed";
-              part.installedSlot = slotIndex;
-              part.containerAsteroidId = null;
-              part.vel = vec(0, 0);
-              part.pos = vec(Number(gate.pos?.x) || 0, Number(gate.pos?.y) || 0);
-              state.round.carriedPartId = null;
+      if (gate && Array.isArray(gate.slots)) {
+        const slots = gate.slots;
+        const installPad = clamp(Number(state.params.jumpGateInstallPad ?? 60), 0, 2e3);
+        for (let pi = 0; pi < ids.length; pi++) {
+          const pid = ids[pi];
+          const part = carriedByPlayerId.get(pid);
+          if (!part || part.state !== "carried")
+            continue;
+          const player = state.playersById?.[pid];
+          const ship = player?.ship;
+          if (!ship)
+            continue;
+          const installR = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0) + installPad;
+          if (len2(sub(ship.pos, gate.pos)) > installR * installR)
+            continue;
+          let slotIndex = -1;
+          for (let i = 0; i < slots.length; i++) {
+            if (!slots[i]) {
+              slotIndex = i;
+              break;
             }
           }
+          if (slotIndex < 0)
+            continue;
+          slots[slotIndex] = part.id;
+          part.state = "installed";
+          part.installedSlot = slotIndex;
+          part.containerAsteroidId = null;
+          part.carrierPlayerId = null;
+          if (part.vel) {
+            part.vel.x = 0;
+            part.vel.y = 0;
+          } else {
+            part.vel = vec(0, 0);
+          }
+          part.pos = vec(Number(gate.pos?.x) || 0, Number(gate.pos?.y) || 0);
+          carriedByPlayerId.delete(pid);
         }
       }
       if (gate && Array.isArray(gate.slots)) {
@@ -1909,22 +1988,48 @@
             gate.active = true;
         }
       }
-      if (state.round.carriedPartId) {
-        const part = getTechPartById(state.round.carriedPartId);
-        if (part && part.state === "carried") {
-          const fwd = shipForward(ship);
-          const gap = 10;
-          const off = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + gap;
-          part.pos = add(ship.pos, mul(fwd, off));
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part || part.state !== "carried")
+          continue;
+        const carrierId = String(part.carrierPlayerId ?? "");
+        const player = carrierId ? state.playersById?.[carrierId] : null;
+        const ship = player?.ship;
+        if (!ship)
+          continue;
+        const fwd = shipForward(ship);
+        const gap = 10;
+        const off = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + gap;
+        if (!part.pos)
+          part.pos = vec(0, 0);
+        part.pos.x = ship.pos.x + fwd.x * off;
+        part.pos.y = ship.pos.y + fwd.y * off;
+        if (!part.vel)
           part.vel = vec(0, 0);
-        } else {
-          state.round.carriedPartId = null;
-        }
+        part.vel.x = 0;
+        part.vel.y = 0;
       }
+      const localCarried = carriedByPlayerId.get(state.localPlayerId);
+      state.round.carriedPartId = localCarried ? localCarried.id : null;
       if (gate?.active) {
-        const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
-        if (len2(sub(ship.pos, gate.pos)) <= r * r)
-          startGateEscapeSequence(gate);
+        if (isServer) {
+          for (let pi = 0; pi < ids.length; pi++) {
+            const pid = ids[pi];
+            const ship = state.playersById?.[pid]?.ship;
+            if (!ship)
+              continue;
+            const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
+            if (len2(sub(ship.pos, gate.pos)) <= r * r) {
+              endRound("win", "escaped");
+              break;
+            }
+          }
+        } else {
+          const ship = state.ship;
+          const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
+          if (len2(sub(ship.pos, gate.pos)) <= r * r)
+            startGateEscapeSequence(gate);
+        }
       }
     }
     function rebuildWorldCellIndex() {
@@ -1989,6 +2094,27 @@
       return Math.max(0.1, base || 1);
     }
     function currentSpawnExclusionViews() {
+      if (isServer) {
+        const rects = state._mpSim?.viewRects;
+        if (Array.isArray(rects) && rects.length) {
+          const out = [];
+          for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            if (!r)
+              continue;
+            const cx = Number(r.cx);
+            const cy = Number(r.cy);
+            const halfW = Number(r.halfW);
+            const halfH = Number(r.halfH);
+            const margin = Number(r.margin) || 0;
+            if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(halfW) || !Number.isFinite(halfH))
+              continue;
+            out.push({ x: cx, y: cy, halfW: Math.max(0, halfW + margin), halfH: Math.max(0, halfH + margin) });
+          }
+          if (out.length)
+            return out;
+        }
+      }
       const views = [];
       forEachPlayer((p) => {
         if (!p?.ship)
@@ -2612,26 +2738,28 @@
         trySpawnAmbientAsteroid();
         attempts++;
       }
-      const nearRadius = Math.min(state.view.w, state.view.h) * 0.5 / Math.max(0.1, state.camera.zoom || 1);
-      const minOnscreenAtStart = 12;
-      let localAttempts = 0;
-      while (localAttempts < 160) {
-        const halfW = state.view.w * 0.52 / Math.max(0.1, state.camera.zoom || 1);
-        const halfH = state.view.h * 0.52 / Math.max(0.1, state.camera.zoom || 1);
-        const onScreenNow = state.asteroids.reduce((n, a) => {
-          const inX = Math.abs(a.pos.x - state.ship.pos.x) <= halfW + a.radius;
-          const inY = Math.abs(a.pos.y - state.ship.pos.y) <= halfH + a.radius;
-          return n + (inX && inY ? 1 : 0);
-        }, 0);
-        if (onScreenNow >= minOnscreenAtStart)
-          break;
-        trySpawnAmbientAsteroid({
-          nearPos: state.ship.pos,
-          nearRadius,
-          minDistFromShip: 210,
-          maxCellCount: 12
-        });
-        localAttempts++;
+      if (!isServer) {
+        const nearRadius = Math.min(state.view.w, state.view.h) * 0.5 / Math.max(0.1, state.camera.zoom || 1);
+        const minOnscreenAtStart = 12;
+        let localAttempts = 0;
+        while (localAttempts < 160) {
+          const halfW = state.view.w * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+          const halfH = state.view.h * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+          const onScreenNow = state.asteroids.reduce((n, a) => {
+            const inX = Math.abs(a.pos.x - state.ship.pos.x) <= halfW + a.radius;
+            const inY = Math.abs(a.pos.y - state.ship.pos.y) <= halfH + a.radius;
+            return n + (inX && inY ? 1 : 0);
+          }, 0);
+          if (onScreenNow >= minOnscreenAtStart)
+            break;
+          trySpawnAmbientAsteroid({
+            nearPos: state.ship.pos,
+            nearRadius,
+            minDistFromShip: 210,
+            maxCellCount: 12
+          });
+          localAttempts++;
+        }
       }
       resetRoundState();
       rebuildWorldCellIndex();
@@ -3704,9 +3832,21 @@
         p.input.burst = false;
         burstAttachedForPlayer(p);
       });
-      if (state.features?.roundLoop && state.input.ping) {
-        state.input.ping = false;
-        tryStartTechPing();
+      if (state.features?.roundLoop) {
+        let pingPlayer = null;
+        const ids = sortedPlayerIds();
+        for (let i = 0; i < ids.length; i++) {
+          const p = state.playersById?.[ids[i]];
+          if (!p?.input)
+            continue;
+          if (!p.input.ping)
+            continue;
+          p.input.ping = false;
+          if (!pingPlayer)
+            pingPlayer = p;
+        }
+        if (pingPlayer)
+          tryStartTechPingForPlayer(pingPlayer);
       }
       forEachPlayer((p) => updateShip(dt, p));
       if (state.features?.roundLoop) {
@@ -14783,8 +14923,14 @@ Schema instances may only have up to 64 fields.`);
     const gemTracks = /* @__PURE__ */ new Map();
     const asteroidObjectsById = /* @__PURE__ */ new Map();
     const gemObjectsById = /* @__PURE__ */ new Map();
+    const techPartTracks = /* @__PURE__ */ new Map();
+    const techPartObjectsById = /* @__PURE__ */ new Map();
     let asteroidIdsSorted = [];
     let gemIdsSorted = [];
+    let techPartIdsSorted = [];
+    let roundSnapshot = null;
+    let starTrack = null;
+    let gateSnapshot = null;
     function attach({ room: nextRoom, localSessionId: nextLocalSessionId } = {}) {
       detach();
       room = nextRoom;
@@ -14805,10 +14951,16 @@ Schema instances may only have up to 64 fields.`);
       playerTracks.clear();
       asteroidTracks.clear();
       gemTracks.clear();
+      techPartTracks.clear();
       asteroidObjectsById.clear();
       gemObjectsById.clear();
+      techPartObjectsById.clear();
       asteroidIdsSorted = [];
       gemIdsSorted = [];
+      techPartIdsSorted = [];
+      roundSnapshot = null;
+      starTrack = null;
+      gateSnapshot = null;
     }
     function isAttached() {
       return !!room;
@@ -14935,6 +15087,104 @@ Schema instances may only have up to 64 fields.`);
       }
       asteroidIdsSorted = Array.from(asteroidTracks.keys()).sort();
       gemIdsSorted = Array.from(gemTracks.keys()).sort();
+      const round = schemaState.round && typeof schemaState.round === "object" ? schemaState.round : null;
+      if (!round) {
+        roundSnapshot = null;
+        starTrack = null;
+        gateSnapshot = null;
+        techPartTracks.clear();
+        techPartIdsSorted = [];
+        return;
+      }
+      roundSnapshot = {
+        durationSec: Number(round.durationSec) || 0,
+        elapsedSec: Number(round.elapsedSec) || 0,
+        carriedPartId: String(round.carriedPartId ?? ""),
+        escapeActive: !!Number(round.escapeActive)
+      };
+      const star = round.star && typeof round.star === "object" ? round.star : null;
+      const starPresent = !!(star && Number(star.present));
+      if (!starPresent) {
+        starTrack = null;
+      } else {
+        if (!starTrack)
+          starTrack = { hist: makeHistory(), static: {} };
+        starTrack.static.edge = String(star.edge ?? "");
+        starTrack.static.axis = String(star.axis ?? "");
+        starTrack.static.dir = Number(star.dir) || 0;
+        pushHistory(starTrack.hist, {
+          t: latestSimTimeMs,
+          boundary: Number(star.boundary) || 0,
+          prog: Number(star.t) || 0
+        });
+      }
+      const gate = round.gate && typeof round.gate === "object" ? round.gate : null;
+      const gatePresent = !!(gate && Number(gate.present));
+      const slots = [];
+      if (gatePresent) {
+        const rawSlots = gate?.slots;
+        const n = rawSlots && typeof rawSlots.length === "number" ? Math.max(0, rawSlots.length | 0) : 0;
+        for (let i = 0; i < n; i++)
+          slots.push(String(rawSlots[i] ?? ""));
+      }
+      gateSnapshot = gatePresent ? {
+        id: String(gate.id ?? ""),
+        edge: String(gate.edge ?? ""),
+        x: Number(gate.x) || 0,
+        y: Number(gate.y) || 0,
+        radius: Number(gate.radius) || 0,
+        active: !!Number(gate.active),
+        chargeSec: Number(gate.chargeSec) || 0,
+        chargeElapsedSec: gate.chargeElapsedSec != null && Number.isFinite(Number(gate.chargeElapsedSec)) && Number(gate.chargeElapsedSec) >= 0 ? Number(gate.chargeElapsedSec) || 0 : null,
+        slots
+      } : null;
+      const seenParts = /* @__PURE__ */ new Set();
+      const parts = round.techParts;
+      if (parts && typeof parts.length === "number") {
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          if (!p)
+            continue;
+          const pid = String(p.id ?? "");
+          if (!pid)
+            continue;
+          seenParts.add(pid);
+          let track = techPartTracks.get(pid);
+          if (!track) {
+            track = {
+              hist: makeHistory(),
+              static: {
+                id: pid,
+                state: "",
+                radius: 0,
+                containerAsteroidId: "",
+                carrierPlayerId: "",
+                installedSlot: -1,
+                respawnCount: 0
+              }
+            };
+            techPartTracks.set(pid, track);
+          }
+          track.static.state = String(p.state ?? "");
+          track.static.radius = Number(p.radius) || track.static.radius || 0;
+          track.static.containerAsteroidId = String(p.containerAsteroidId ?? "");
+          track.static.carrierPlayerId = String(p.carrierPlayerId ?? "");
+          track.static.installedSlot = Number.isFinite(Number(p.installedSlot)) ? Number(p.installedSlot) | 0 : -1;
+          track.static.respawnCount = Number(p.respawnCount) || 0;
+          pushHistory(track.hist, {
+            t: latestSimTimeMs,
+            x: Number(p.x) || 0,
+            y: Number(p.y) || 0,
+            vx: Number(p.vx) || 0,
+            vy: Number(p.vy) || 0
+          });
+        }
+      }
+      for (const id of techPartTracks.keys()) {
+        if (!seenParts.has(id))
+          techPartTracks.delete(id);
+      }
+      techPartIdsSorted = Array.from(techPartTracks.keys()).sort();
     }
     function computeRecvStats(atMs, windowMs = 2e3) {
       const nTotal = recvSamples.length;
@@ -15142,6 +15392,110 @@ Schema instances may only have up to 64 fields.`);
         state.gems.push(obj);
       }
       state.time = targetSimTime / 1e3;
+      if (!state.round || typeof state.round !== "object") {
+        state.round = {
+          durationSec: 0,
+          elapsedSec: 0,
+          outcome: null,
+          star: null,
+          gate: null,
+          techParts: [],
+          carriedPartId: null,
+          techPing: null,
+          techPingCooldownSec: 0,
+          starExposureSec: 0,
+          escape: null
+        };
+      }
+      if (roundSnapshot) {
+        state.round.durationSec = roundSnapshot.durationSec;
+        state.round.elapsedSec = roundSnapshot.elapsedSec;
+        state.round.carriedPartId = roundSnapshot.carriedPartId || null;
+        state.round.escape = roundSnapshot.escapeActive ? { active: true } : null;
+      } else {
+        state.round.durationSec = 0;
+        state.round.elapsedSec = 0;
+        state.round.carriedPartId = null;
+        state.round.escape = null;
+      }
+      if (starTrack && starTrack.hist) {
+        const span = pickSpan(starTrack.hist, targetSimTime);
+        if (span) {
+          const { p0, p1, t } = span;
+          const boundary = lerp(Number(p0.boundary) || 0, Number(p1.boundary) || 0, t);
+          const prog = lerp(Number(p0.prog) || 0, Number(p1.prog) || 0, t);
+          if (!state.round.star)
+            state.round.star = { id: "red-giant-0" };
+          state.round.star.edge = starTrack.static.edge;
+          state.round.star.axis = starTrack.static.axis;
+          state.round.star.dir = starTrack.static.dir;
+          state.round.star.boundary = boundary;
+          state.round.star.t = prog;
+        }
+      } else {
+        state.round.star = null;
+      }
+      if (gateSnapshot) {
+        if (!state.round.gate)
+          state.round.gate = { id: gateSnapshot.id || "jump-gate-0", pos: vec(0, 0), slots: [] };
+        const g = state.round.gate;
+        g.id = gateSnapshot.id || "jump-gate-0";
+        g.edge = gateSnapshot.edge;
+        if (!g.pos)
+          g.pos = vec(0, 0);
+        g.pos.x = gateSnapshot.x;
+        g.pos.y = gateSnapshot.y;
+        g.radius = gateSnapshot.radius;
+        g.active = !!gateSnapshot.active;
+        g.chargeSec = gateSnapshot.chargeSec;
+        g.chargeElapsedSec = gateSnapshot.chargeElapsedSec;
+        const rawSlots = Array.isArray(gateSnapshot.slots) ? gateSnapshot.slots : [];
+        if (!Array.isArray(g.slots))
+          g.slots = [];
+        g.slots.length = rawSlots.length;
+        for (let i = 0; i < rawSlots.length; i++)
+          g.slots[i] = rawSlots[i] ? rawSlots[i] : null;
+      } else {
+        state.round.gate = null;
+      }
+      if (!Array.isArray(state.round.techParts))
+        state.round.techParts = [];
+      state.round.techParts.length = 0;
+      for (const id of techPartIdsSorted) {
+        const track = techPartTracks.get(id);
+        if (!track)
+          continue;
+        const span = pickSpan(track.hist, targetSimTime);
+        if (!span)
+          continue;
+        const { p0, p1, t } = span;
+        let obj = techPartObjectsById.get(id);
+        if (!obj) {
+          obj = {
+            id,
+            state: track.static.state,
+            pos: vec(0, 0),
+            vel: vec(0, 0),
+            radius: track.static.radius,
+            containerAsteroidId: null,
+            installedSlot: null,
+            respawnCount: 0,
+            carrierPlayerId: null
+          };
+          techPartObjectsById.set(id, obj);
+        }
+        obj.state = track.static.state;
+        obj.radius = track.static.radius;
+        obj.pos.x = lerp(p0.x, p1.x, t);
+        obj.pos.y = lerp(p0.y, p1.y, t);
+        obj.vel.x = lerp(p0.vx, p1.vx, t);
+        obj.vel.y = lerp(p0.vy, p1.vy, t);
+        obj.containerAsteroidId = track.static.containerAsteroidId ? track.static.containerAsteroidId : null;
+        obj.carrierPlayerId = track.static.carrierPlayerId ? track.static.carrierPlayerId : null;
+        obj.installedSlot = track.static.installedSlot >= 0 ? track.static.installedSlot : null;
+        obj.respawnCount = track.static.respawnCount | 0;
+        state.round.techParts.push(obj);
+      }
       const net = state._mpNet && typeof state._mpNet === "object" ? state._mpNet : null;
       state._mp = {
         connected: true,
@@ -15349,7 +15703,10 @@ Schema instances may only have up to 64 fields.`);
         accumulator = 0;
       } else if (!externalStepping) {
         while (!pausedByMenu && accumulator >= fixedDt) {
+          const prevMode = game.state.mode;
           game.update(fixedDt);
+          if (prevMode !== "gameover" && game.state.mode === "gameover")
+            ui.setMenuVisible(true);
           accumulator -= fixedDt;
         }
         if (pausedByMenu)

@@ -149,8 +149,8 @@ test("carried tech part installs into the gate when in range", () => {
   const part = engine.state.round.techParts[0];
   assert.ok(gate && part);
 
-  engine.state.round.carriedPartId = part.id;
   part.state = "carried";
+  part.carrierPlayerId = engine.state.localPlayerId;
   part.containerAsteroidId = null;
   part.installedSlot = null;
 

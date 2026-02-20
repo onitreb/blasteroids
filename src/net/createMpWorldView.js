@@ -90,9 +90,16 @@ export function createMpWorldView({
 
   const asteroidObjectsById = new Map();
   const gemObjectsById = new Map();
+  const techPartTracks = new Map(); // id -> { hist, static }
+  const techPartObjectsById = new Map();
 
   let asteroidIdsSorted = [];
   let gemIdsSorted = [];
+  let techPartIdsSorted = [];
+
+  let roundSnapshot = null; // latest non-interpolated round fields (duration/elapsed/escape, gate slots, etc.)
+  let starTrack = null; // { hist, static, present }
+  let gateSnapshot = null; // non-interpolated (small) gate snapshot for slots/charge/active
 
   function attach({ room: nextRoom, localSessionId: nextLocalSessionId } = {}) {
     detach();
@@ -117,10 +124,16 @@ export function createMpWorldView({
     playerTracks.clear();
     asteroidTracks.clear();
     gemTracks.clear();
+    techPartTracks.clear();
     asteroidObjectsById.clear();
     gemObjectsById.clear();
+    techPartObjectsById.clear();
     asteroidIdsSorted = [];
     gemIdsSorted = [];
+    techPartIdsSorted = [];
+    roundSnapshot = null;
+    starTrack = null;
+    gateSnapshot = null;
   }
 
   function isAttached() {
@@ -251,6 +264,113 @@ export function createMpWorldView({
     // Cache stable order arrays for rendering (deterministic).
     asteroidIdsSorted = Array.from(asteroidTracks.keys()).sort();
     gemIdsSorted = Array.from(gemTracks.keys()).sort();
+
+    // Round loop (star/gate/tech parts)
+    const round = schemaState.round && typeof schemaState.round === "object" ? schemaState.round : null;
+    if (!round) {
+      roundSnapshot = null;
+      starTrack = null;
+      gateSnapshot = null;
+      techPartTracks.clear();
+      techPartIdsSorted = [];
+      return;
+    }
+
+    roundSnapshot = {
+      durationSec: Number(round.durationSec) || 0,
+      elapsedSec: Number(round.elapsedSec) || 0,
+      carriedPartId: String(round.carriedPartId ?? ""),
+      escapeActive: !!Number(round.escapeActive),
+    };
+
+    // Star (scalar interpolation via history)
+    const star = round.star && typeof round.star === "object" ? round.star : null;
+    const starPresent = !!(star && Number(star.present));
+    if (!starPresent) {
+      starTrack = null;
+    } else {
+      if (!starTrack) starTrack = { hist: makeHistory(), static: {} };
+      starTrack.static.edge = String(star.edge ?? "");
+      starTrack.static.axis = String(star.axis ?? "");
+      starTrack.static.dir = Number(star.dir) || 0;
+      pushHistory(starTrack.hist, {
+        t: latestSimTimeMs,
+        boundary: Number(star.boundary) || 0,
+        prog: Number(star.t) || 0,
+      });
+    }
+
+    // Gate (mostly static; position is interpolated like other entities)
+    const gate = round.gate && typeof round.gate === "object" ? round.gate : null;
+    const gatePresent = !!(gate && Number(gate.present));
+    const slots = [];
+    if (gatePresent) {
+      const rawSlots = gate?.slots;
+      const n = rawSlots && typeof rawSlots.length === "number" ? Math.max(0, rawSlots.length | 0) : 0;
+      for (let i = 0; i < n; i++) slots.push(String(rawSlots[i] ?? ""));
+    }
+    gateSnapshot = gatePresent
+      ? {
+          id: String(gate.id ?? ""),
+          edge: String(gate.edge ?? ""),
+          x: Number(gate.x) || 0,
+          y: Number(gate.y) || 0,
+          radius: Number(gate.radius) || 0,
+          active: !!Number(gate.active),
+          chargeSec: Number(gate.chargeSec) || 0,
+          chargeElapsedSec:
+            gate.chargeElapsedSec != null && Number.isFinite(Number(gate.chargeElapsedSec)) && Number(gate.chargeElapsedSec) >= 0
+              ? Number(gate.chargeElapsedSec) || 0
+              : null,
+          slots,
+        }
+      : null;
+
+    // Tech parts (entity interpolation)
+    const seenParts = new Set();
+    const parts = round.techParts;
+    if (parts && typeof parts.length === "number") {
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        if (!p) continue;
+        const pid = String(p.id ?? "");
+        if (!pid) continue;
+        seenParts.add(pid);
+        let track = techPartTracks.get(pid);
+        if (!track) {
+          track = {
+            hist: makeHistory(),
+            static: {
+              id: pid,
+              state: "",
+              radius: 0,
+              containerAsteroidId: "",
+              carrierPlayerId: "",
+              installedSlot: -1,
+              respawnCount: 0,
+            },
+          };
+          techPartTracks.set(pid, track);
+        }
+        track.static.state = String(p.state ?? "");
+        track.static.radius = Number(p.radius) || track.static.radius || 0;
+        track.static.containerAsteroidId = String(p.containerAsteroidId ?? "");
+        track.static.carrierPlayerId = String(p.carrierPlayerId ?? "");
+        track.static.installedSlot = Number.isFinite(Number(p.installedSlot)) ? (Number(p.installedSlot) | 0) : -1;
+        track.static.respawnCount = Number(p.respawnCount) || 0;
+        pushHistory(track.hist, {
+          t: latestSimTimeMs,
+          x: Number(p.x) || 0,
+          y: Number(p.y) || 0,
+          vx: Number(p.vx) || 0,
+          vy: Number(p.vy) || 0,
+        });
+      }
+    }
+    for (const id of techPartTracks.keys()) {
+      if (!seenParts.has(id)) techPartTracks.delete(id);
+    }
+    techPartIdsSorted = Array.from(techPartTracks.keys()).sort();
   }
 
   function computeRecvStats(atMs, windowMs = 2000) {
@@ -468,6 +588,114 @@ export function createMpWorldView({
 
     // Expose some timing on state for HUD/debug if needed.
     state.time = targetSimTime / 1000;
+
+    // Round loop state (derived from Schema)
+    if (!state.round || typeof state.round !== "object") {
+      state.round = {
+        durationSec: 0,
+        elapsedSec: 0,
+        outcome: null,
+        star: null,
+        gate: null,
+        techParts: [],
+        carriedPartId: null,
+        techPing: null,
+        techPingCooldownSec: 0,
+        starExposureSec: 0,
+        escape: null,
+      };
+    }
+    if (roundSnapshot) {
+      state.round.durationSec = roundSnapshot.durationSec;
+      state.round.elapsedSec = roundSnapshot.elapsedSec;
+      state.round.carriedPartId = roundSnapshot.carriedPartId || null;
+      state.round.escape = roundSnapshot.escapeActive ? { active: true } : null;
+    } else {
+      state.round.durationSec = 0;
+      state.round.elapsedSec = 0;
+      state.round.carriedPartId = null;
+      state.round.escape = null;
+    }
+
+    // Star (interpolate boundary)
+    if (starTrack && starTrack.hist) {
+      const span = pickSpan(starTrack.hist, targetSimTime);
+      if (span) {
+        const { p0, p1, t } = span;
+        const boundary = lerp(Number(p0.boundary) || 0, Number(p1.boundary) || 0, t);
+        const prog = lerp(Number(p0.prog) || 0, Number(p1.prog) || 0, t);
+        if (!state.round.star) state.round.star = { id: "red-giant-0" };
+        state.round.star.edge = starTrack.static.edge;
+        state.round.star.axis = starTrack.static.axis;
+        state.round.star.dir = starTrack.static.dir;
+        state.round.star.boundary = boundary;
+        state.round.star.t = prog;
+      }
+    } else {
+      state.round.star = null;
+    }
+
+    // Gate (no interpolation needed, but keep shape stable)
+    if (gateSnapshot) {
+      if (!state.round.gate) state.round.gate = { id: gateSnapshot.id || "jump-gate-0", pos: vec(0, 0), slots: [] };
+      const g = state.round.gate;
+      g.id = gateSnapshot.id || "jump-gate-0";
+      g.edge = gateSnapshot.edge;
+      if (!g.pos) g.pos = vec(0, 0);
+      g.pos.x = gateSnapshot.x;
+      g.pos.y = gateSnapshot.y;
+      g.radius = gateSnapshot.radius;
+      g.active = !!gateSnapshot.active;
+      g.chargeSec = gateSnapshot.chargeSec;
+      g.chargeElapsedSec = gateSnapshot.chargeElapsedSec;
+      const rawSlots = Array.isArray(gateSnapshot.slots) ? gateSnapshot.slots : [];
+      if (!Array.isArray(g.slots)) g.slots = [];
+      g.slots.length = rawSlots.length;
+      for (let i = 0; i < rawSlots.length; i++) g.slots[i] = rawSlots[i] ? rawSlots[i] : null;
+    } else {
+      state.round.gate = null;
+    }
+
+    // Tech parts (interpolated)
+    if (!Array.isArray(state.round.techParts)) state.round.techParts = [];
+    state.round.techParts.length = 0;
+    for (const id of techPartIdsSorted) {
+      const track = techPartTracks.get(id);
+      if (!track) continue;
+      const span = pickSpan(track.hist, targetSimTime);
+      if (!span) continue;
+      const { p0, p1, t } = span;
+
+      let obj = techPartObjectsById.get(id);
+      if (!obj) {
+        obj = {
+          id,
+          state: track.static.state,
+          pos: vec(0, 0),
+          vel: vec(0, 0),
+          radius: track.static.radius,
+          containerAsteroidId: null,
+          installedSlot: null,
+          respawnCount: 0,
+          carrierPlayerId: null,
+        };
+        techPartObjectsById.set(id, obj);
+      }
+
+      obj.state = track.static.state;
+      obj.radius = track.static.radius;
+      obj.pos.x = lerp(p0.x, p1.x, t);
+      obj.pos.y = lerp(p0.y, p1.y, t);
+      obj.vel.x = lerp(p0.vx, p1.vx, t);
+      obj.vel.y = lerp(p0.vy, p1.vy, t);
+      obj.containerAsteroidId = track.static.containerAsteroidId ? track.static.containerAsteroidId : null;
+      obj.carrierPlayerId = track.static.carrierPlayerId ? track.static.carrierPlayerId : null;
+      obj.installedSlot = track.static.installedSlot >= 0 ? track.static.installedSlot : null;
+      obj.respawnCount = track.static.respawnCount | 0;
+
+      state.round.techParts.push(obj);
+    }
+
     const net = state._mpNet && typeof state._mpNet === "object" ? state._mpNet : null;
     state._mp = {
       connected: true,

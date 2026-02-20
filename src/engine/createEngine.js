@@ -1266,8 +1266,10 @@ export function createEngine({ width, height, seed, role = "client", features = 
       vel: vec(0, 0),
       radius,
       containerAsteroidId: null,
+      carrierPlayerId: null,
       installedSlot: null,
       respawnCount: 0,
+      lostReason: undefined,
     };
   }
 
@@ -1286,13 +1288,14 @@ export function createEngine({ width, height, seed, role = "client", features = 
     return Math.sqrt(halfW * halfW + halfH * halfH) * 1.3;
   }
 
-  function tryStartTechPing() {
+  function tryStartTechPingForPlayer(player = localPlayer()) {
     if (state.mode !== "playing") return false;
     if ((Number(state.round.techPingCooldownSec) || 0) > 0) return false;
+    if (!player?.ship) return false;
 
     const speed = clamp(Number(state.params.techPingSpeedPxPerSec ?? 2400), 200, 20000);
     state.round.techPing = {
-      origin: vec(Number(state.ship.pos?.x) || 0, Number(state.ship.pos?.y) || 0),
+      origin: vec(Number(player.ship.pos?.x) || 0, Number(player.ship.pos?.y) || 0),
       radius: 0,
       prevRadius: 0,
       speed,
@@ -1407,6 +1410,7 @@ export function createEngine({ width, height, seed, role = "client", features = 
 
     if (!part || part.state === "installed") return false;
     part.containerAsteroidId = null;
+    part.carrierPlayerId = null;
     part.pos = vec(Number(asteroid.pos?.x) || 0, Number(asteroid.pos?.y) || 0);
 
     if (lost) {
@@ -1426,6 +1430,7 @@ export function createEngine({ width, height, seed, role = "client", features = 
     if (!part || part.state === "installed") return false;
     part.state = "lost";
     part.containerAsteroidId = null;
+    part.carrierPlayerId = null;
     part.vel = vec(0, 0);
     if (state.round.carriedPartId === part.id) state.round.carriedPartId = null;
     if (reason && typeof reason === "string") part.lostReason = reason;
@@ -1549,23 +1554,41 @@ export function createEngine({ width, height, seed, role = "client", features = 
     const star = state.round.star;
     if (!star) {
       state.round.starExposureSec = 0;
-      state.ship.starHeat = 0;
+      forEachPlayer((p) => {
+        if (!p?.ship) return;
+        p.ship.starExposureSec = 0;
+        p.ship.starHeat = 0;
+      });
       return;
     }
 
     const killSec = clamp(Number(state.params.shipStarKillSec ?? 3), 0.25, 30);
     const coolRate = clamp(Number(state.params.shipStarCoolRate ?? 1.6), 0, 20);
-    const signed = starSignedDistToBodyEdge(state.ship, star);
-    const inStar = signed < 0;
+    let localExposure = 0;
+    let killedPos = null;
 
-    let next = Math.max(0, Number(state.round.starExposureSec) || 0);
-    if (inStar) next += dt;
-    else next = Math.max(0, next - coolRate * dt);
-    state.round.starExposureSec = next;
-    state.ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
+    forEachPlayer((p) => {
+      const ship = p?.ship;
+      if (!ship) return;
 
-    if (next >= killSec) {
-      spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
+      const signed = starSignedDistToBodyEdge(ship, star);
+      const inStar = signed < 0;
+
+      let next = Math.max(0, Number(ship.starExposureSec) || 0);
+      if (inStar) next += dt;
+      else next = Math.max(0, next - coolRate * dt);
+
+      ship.starExposureSec = next;
+      ship.starHeat = clamp(killSec > 1e-6 ? next / killSec : 0, 0, 1);
+
+      if (p.id === state.localPlayerId) localExposure = next;
+      if (!killedPos && next >= killSec) killedPos = vec(Number(ship.pos?.x) || 0, Number(ship.pos?.y) || 0);
+    });
+
+    state.round.starExposureSec = localExposure;
+
+    if (killedPos) {
+      spawnExplosion(killedPos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
       endRound("lose", "star_overheat");
     }
   }
@@ -1616,7 +1639,6 @@ export function createEngine({ width, height, seed, role = "client", features = 
     if (!Array.isArray(parts) || parts.length === 0) return;
     const stepDt = Math.max(0, Number(dt) || 0);
 
-    const ship = state.ship;
     const gate = state.round.gate;
     const star = state.round.star;
 
@@ -1702,59 +1724,115 @@ export function createEngine({ width, height, seed, role = "client", features = 
       }
     }
 
-    // Sanity: if the carried id doesn't exist (or isn't carried), clear it.
-    if (state.round.carriedPartId) {
-      const carried = getTechPartById(state.round.carriedPartId);
-      if (!carried || carried.state !== "carried") state.round.carriedPartId = null;
+    // Track which players are currently carrying a part (at most one per player).
+    const carriedByPlayerId = new Map();
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part || part.state !== "carried") {
+        if (part && part.carrierPlayerId != null) part.carrierPlayerId = null;
+        continue;
+      }
+      const carrierId = String(part.carrierPlayerId ?? "");
+      const carrier = carrierId ? state.playersById?.[carrierId] : null;
+      if (!carrierId || !carrier?.ship) {
+        part.state = "dropped";
+        part.carrierPlayerId = null;
+        part.containerAsteroidId = null;
+        if (part.vel) {
+          part.vel.x = 0;
+          part.vel.y = 0;
+        } else {
+          part.vel = vec(0, 0);
+        }
+        continue;
+      }
+      if (carriedByPlayerId.has(carrierId)) {
+        // Deterministic resolution: drop later duplicates (part array order is deterministic).
+        part.state = "dropped";
+        part.carrierPlayerId = null;
+        part.containerAsteroidId = null;
+        if (part.vel) {
+          part.vel.x = 0;
+          part.vel.y = 0;
+        } else {
+          part.vel = vec(0, 0);
+        }
+        continue;
+      }
+      carriedByPlayerId.set(carrierId, part);
     }
 
-    // Pickup (one at a time).
-    if (!state.round.carriedPartId) {
-      const pad = clamp(Number(state.params.techPartPickupPad ?? 20), 0, 800);
+    // Pickup: each player can pick up one dropped part (deterministic player id order).
+    const pickupPad = clamp(Number(state.params.techPartPickupPad ?? 20), 0, 800);
+    const ids = sortedPlayerIds();
+    for (let pi = 0; pi < ids.length; pi++) {
+      const pid = ids[pi];
+      if (carriedByPlayerId.has(pid)) continue;
+      const player = state.playersById?.[pid];
+      const ship = player?.ship;
+      if (!ship) continue;
+
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         if (!part || part.state !== "dropped") continue;
-        const pickR = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + pad;
+        const pickR = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + pickupPad;
         if (len2(sub(part.pos, ship.pos)) > pickR * pickR) continue;
         part.state = "carried";
+        part.carrierPlayerId = pid;
         part.containerAsteroidId = null;
         part.installedSlot = null;
-        part.vel = vec(0, 0);
-        state.round.carriedPartId = part.id;
+        if (part.vel) {
+          part.vel.x = 0;
+          part.vel.y = 0;
+        } else {
+          part.vel = vec(0, 0);
+        }
+        carriedByPlayerId.set(pid, part);
         break;
       }
     }
 
     // Install (auto) when carrying and in range of the gate.
-    if (gate && state.round.carriedPartId) {
-      const part = getTechPartById(state.round.carriedPartId);
-      const slots = Array.isArray(gate.slots) ? gate.slots : null;
-      if (part && part.state === "carried" && slots) {
-        const pad = clamp(Number(state.params.jumpGateInstallPad ?? 60), 0, 2000);
-        const installR = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0) + pad;
-        if (len2(sub(ship.pos, gate.pos)) <= installR * installR) {
-          let slotIndex = -1;
-          for (let i = 0; i < slots.length; i++) {
-            if (!slots[i]) {
-              slotIndex = i;
-              break;
-            }
-          }
-          if (slotIndex >= 0) {
-            slots[slotIndex] = part.id;
-            gate.slots = slots;
-            part.state = "installed";
-            part.installedSlot = slotIndex;
-            part.containerAsteroidId = null;
-            part.vel = vec(0, 0);
-            part.pos = vec(Number(gate.pos?.x) || 0, Number(gate.pos?.y) || 0);
-            state.round.carriedPartId = null;
+    if (gate && Array.isArray(gate.slots)) {
+      const slots = gate.slots;
+      const installPad = clamp(Number(state.params.jumpGateInstallPad ?? 60), 0, 2000);
+      for (let pi = 0; pi < ids.length; pi++) {
+        const pid = ids[pi];
+        const part = carriedByPlayerId.get(pid);
+        if (!part || part.state !== "carried") continue;
+        const player = state.playersById?.[pid];
+        const ship = player?.ship;
+        if (!ship) continue;
+
+        const installR = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0) + installPad;
+        if (len2(sub(ship.pos, gate.pos)) > installR * installR) continue;
+
+        let slotIndex = -1;
+        for (let i = 0; i < slots.length; i++) {
+          if (!slots[i]) {
+            slotIndex = i;
+            break;
           }
         }
+        if (slotIndex < 0) continue;
+
+        slots[slotIndex] = part.id;
+        part.state = "installed";
+        part.installedSlot = slotIndex;
+        part.containerAsteroidId = null;
+        part.carrierPlayerId = null;
+        if (part.vel) {
+          part.vel.x = 0;
+          part.vel.y = 0;
+        } else {
+          part.vel = vec(0, 0);
+        }
+        part.pos = vec(Number(gate.pos?.x) || 0, Number(gate.pos?.y) || 0);
+        carriedByPlayerId.delete(pid);
       }
     }
 
-    // Gate activation: charge up after 4 installed.
+    // Gate activation: charge up after all slots are filled.
     if (gate && Array.isArray(gate.slots)) {
       const allInstalled = gate.slots.every((slot) => !!slot);
       if (!allInstalled) {
@@ -1769,24 +1847,49 @@ export function createEngine({ width, height, seed, role = "client", features = 
       }
     }
 
-    // Attach carried part to ship nose.
-    if (state.round.carriedPartId) {
-      const part = getTechPartById(state.round.carriedPartId);
-      if (part && part.state === "carried") {
-        const fwd = shipForward(ship);
-        const gap = 10;
-        const off = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + gap;
-        part.pos = add(ship.pos, mul(fwd, off));
-        part.vel = vec(0, 0);
-      } else {
-        state.round.carriedPartId = null;
-      }
+    // Attach carried parts to their ship noses.
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part || part.state !== "carried") continue;
+      const carrierId = String(part.carrierPlayerId ?? "");
+      const player = carrierId ? state.playersById?.[carrierId] : null;
+      const ship = player?.ship;
+      if (!ship) continue;
+      const fwd = shipForward(ship);
+      const gap = 10;
+      const off = Math.max(0, Number(ship.radius) || 0) + Math.max(0, Number(part.radius) || 0) + gap;
+      if (!part.pos) part.pos = vec(0, 0);
+      part.pos.x = ship.pos.x + fwd.x * off;
+      part.pos.y = ship.pos.y + fwd.y * off;
+      if (!part.vel) part.vel = vec(0, 0);
+      part.vel.x = 0;
+      part.vel.y = 0;
     }
+
+    // Legacy/back-compat: expose a single carried id for the local player only.
+    const localCarried = carriedByPlayerId.get(state.localPlayerId);
+    state.round.carriedPartId = localCarried ? localCarried.id : null;
 
     // Win condition: enter active gate.
     if (gate?.active) {
-      const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
-      if (len2(sub(ship.pos, gate.pos)) <= r * r) startGateEscapeSequence(gate);
+      if (isServer) {
+        // Multiplayer server: don't run a per-client escape animation. Any ship entering wins the round.
+        for (let pi = 0; pi < ids.length; pi++) {
+          const pid = ids[pi];
+          const ship = state.playersById?.[pid]?.ship;
+          if (!ship) continue;
+          const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
+          if (len2(sub(ship.pos, gate.pos)) <= r * r) {
+            endRound("win", "escaped");
+            break;
+          }
+        }
+      } else {
+        // Singleplayer/client-authoritative: preserve the existing escape animation sequence.
+        const ship = state.ship;
+        const r = Math.max(0, Number(gate.radius) || 0) + Math.max(0, Number(ship.radius) || 0);
+        if (len2(sub(ship.pos, gate.pos)) <= r * r) startGateEscapeSequence(gate);
+      }
     }
   }
 
@@ -1858,6 +1961,27 @@ export function createEngine({ width, height, seed, role = "client", features = 
   }
 
   function currentSpawnExclusionViews() {
+    // Multiplayer server: prefer client-provided view rects (more accurate than the engine's
+    // local camera/zoom estimate, and avoids spawning entities visibly into any player's view).
+    if (isServer) {
+      const rects = state._mpSim?.viewRects;
+      if (Array.isArray(rects) && rects.length) {
+        const out = [];
+        for (let i = 0; i < rects.length; i++) {
+          const r = rects[i];
+          if (!r) continue;
+          const cx = Number(r.cx);
+          const cy = Number(r.cy);
+          const halfW = Number(r.halfW);
+          const halfH = Number(r.halfH);
+          const margin = Number(r.margin) || 0;
+          if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(halfW) || !Number.isFinite(halfH)) continue;
+          out.push({ x: cx, y: cy, halfW: Math.max(0, halfW + margin), halfH: Math.max(0, halfH + margin) });
+        }
+        if (out.length) return out;
+      }
+    }
+
     const views = [];
     forEachPlayer((p) => {
       if (!p?.ship) return;
@@ -2503,26 +2627,28 @@ export function createEngine({ width, height, seed, role = "client", features = 
       attempts++;
     }
 
-    // Ensure game start never feels empty around the player/camera.
-    const nearRadius = Math.min(state.view.w, state.view.h) * 0.5 / Math.max(0.1, state.camera.zoom || 1);
-    const minOnscreenAtStart = 12;
-    let localAttempts = 0;
-    while (localAttempts < 160) {
-      const halfW = state.view.w * 0.52 / Math.max(0.1, state.camera.zoom || 1);
-      const halfH = state.view.h * 0.52 / Math.max(0.1, state.camera.zoom || 1);
-      const onScreenNow = state.asteroids.reduce((n, a) => {
-        const inX = Math.abs(a.pos.x - state.ship.pos.x) <= halfW + a.radius;
-        const inY = Math.abs(a.pos.y - state.ship.pos.y) <= halfH + a.radius;
-        return n + (inX && inY ? 1 : 0);
-      }, 0);
-      if (onScreenNow >= minOnscreenAtStart) break;
-      trySpawnAmbientAsteroid({
-        nearPos: state.ship.pos,
-        nearRadius,
-        minDistFromShip: 210,
-        maxCellCount: 12,
-      });
-      localAttempts++;
+    if (!isServer) {
+      // Ensure game start never feels empty around the player/camera.
+      const nearRadius = Math.min(state.view.w, state.view.h) * 0.5 / Math.max(0.1, state.camera.zoom || 1);
+      const minOnscreenAtStart = 12;
+      let localAttempts = 0;
+      while (localAttempts < 160) {
+        const halfW = state.view.w * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+        const halfH = state.view.h * 0.52 / Math.max(0.1, state.camera.zoom || 1);
+        const onScreenNow = state.asteroids.reduce((n, a) => {
+          const inX = Math.abs(a.pos.x - state.ship.pos.x) <= halfW + a.radius;
+          const inY = Math.abs(a.pos.y - state.ship.pos.y) <= halfH + a.radius;
+          return n + (inX && inY ? 1 : 0);
+        }, 0);
+        if (onScreenNow >= minOnscreenAtStart) break;
+        trySpawnAmbientAsteroid({
+          nearPos: state.ship.pos,
+          nearRadius,
+          minDistFromShip: 210,
+          maxCellCount: 12,
+        });
+        localAttempts++;
+      }
     }
 
     resetRoundState();
@@ -3630,9 +3756,17 @@ export function createEngine({ width, height, seed, role = "client", features = 
       p.input.burst = false;
       burstAttachedForPlayer(p);
     });
-    if (state.features?.roundLoop && state.input.ping) {
-      state.input.ping = false;
-      tryStartTechPing();
+    if (state.features?.roundLoop) {
+      let pingPlayer = null;
+      const ids = sortedPlayerIds();
+      for (let i = 0; i < ids.length; i++) {
+        const p = state.playersById?.[ids[i]];
+        if (!p?.input) continue;
+        if (!p.input.ping) continue;
+        p.input.ping = false;
+        if (!pingPlayer) pingPlayer = p;
+      }
+      if (pingPlayer) tryStartTechPingForPlayer(pingPlayer);
     }
     forEachPlayer((p) => updateShip(dt, p));
     if (state.features?.roundLoop) {

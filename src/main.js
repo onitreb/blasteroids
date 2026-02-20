@@ -171,7 +171,9 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
       accumulator = 0;
     } else if (!externalStepping) {
       while (!pausedByMenu && accumulator >= fixedDt) {
+        const prevMode = game.state.mode;
         game.update(fixedDt);
+        if (prevMode !== "gameover" && game.state.mode === "gameover") ui.setMenuVisible(true);
         accumulator -= fixedDt;
       }
       if (pausedByMenu) accumulator = 0;

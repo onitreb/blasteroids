@@ -3,7 +3,7 @@ import { Encoder, StateView } from "@colyseus/schema";
 
 import { createEngine } from "../../src/engine/createEngine.js";
 import { seededRng } from "../../src/util/rng.js";
-import { BlasteroidsState, AsteroidState, GemState, PlayerState } from "../schema/BlasteroidsState.mjs";
+import { BlasteroidsState, AsteroidState, GemState, PlayerState, RoundTechPartState } from "../schema/BlasteroidsState.mjs";
 
 // Default BUFFER_SIZE can overflow quickly when syncing many entities.
 // Keep this intentionally generous for LAN MVP; revisit with interest management.
@@ -108,8 +108,7 @@ export class BlasteroidsRoom extends Room {
       width,
       height,
       seed: seed ? Number(seed) : undefined,
-      // LAN MVP core co-op only (no round loop hazards / saucer) to avoid invisible authoritative events.
-      features: { roundLoop: false, saucer: false, mpSimScaling: true },
+      features: { roundLoop: true, saucer: false, mpSimScaling: true },
     });
 
     // IMPORTANT: createEngine initializes `state.world.scale` but does not apply it unless `setArenaConfig/resize`
@@ -163,6 +162,8 @@ export class BlasteroidsRoom extends Room {
 
     this._fixedDt = 1 / 60;
     this._tickMs = Math.round(1000 * this._fixedDt);
+    this._roundResetDelayMs = 2000;
+    this._roundResetAccumMs = 0;
 
     this.onMessage("input", (client, message) => {
       const pid = client.sessionId;
@@ -191,19 +192,32 @@ export class BlasteroidsRoom extends Room {
     this.setSimulationInterval(() => {
       if (!this._hasStarted) return;
 
-      // Feed per-client view rects into the engine so server sim scaling can
-      // prioritize only the union of player-visible regions (plus margin).
-      const rects = [];
-      for (const client of this.clients) {
-        const info = this._interestBySessionId.get(client.sessionId);
-        if (info?.rect) rects.push(info.rect);
-      }
-      this._engine.setMpViewRects?.(rects);
+      if (this._engine.state.mode === "playing") {
+        this._roundResetAccumMs = 0;
 
-      this._engine.update(this._fixedDt);
-      this.state.tick++;
-      this.state.simTimeMs += this._tickMs;
-      this._syncSchemaFromEngine();
+        // Feed per-client view rects into the engine so server sim scaling can
+        // prioritize only the union of player-visible regions (plus margin).
+        const rects = [];
+        for (const client of this.clients) {
+          const info = this._interestBySessionId.get(client.sessionId);
+          if (info?.rect) rects.push(info.rect);
+        }
+        this._engine.setMpViewRects?.(rects);
+
+        this._engine.update(this._fixedDt);
+        this.state.tick++;
+        this.state.simTimeMs += this._tickMs;
+        this._syncSchemaFromEngine();
+      } else {
+        // If the round ends (win/lose), automatically reset so the room stays playable.
+        this._roundResetAccumMs += this._tickMs;
+        if (this._roundResetAccumMs >= this._roundResetDelayMs) {
+          this._roundResetAccumMs = 0;
+          this._resetAuthoritativeRound();
+        } else {
+          this._syncSchemaFromEngine();
+        }
+      }
 
       // Update interest views at (roughly) patch rate to keep view membership fresh
       // without scanning entity lists every 60Hz tick.
@@ -508,5 +522,90 @@ export class BlasteroidsRoom extends Room {
     for (const [id] of state.gems) {
       if (!seenGems.has(id)) state.gems.delete(id);
     }
+
+    // Round loop (star/gate/tech parts)
+    const round = state.round;
+    const er = engineState.round && typeof engineState.round === "object" ? engineState.round : {};
+
+    if (round) {
+      round.durationSec = Number(er.durationSec) || 0;
+      round.elapsedSec = Number(er.elapsedSec) || 0;
+      round.carriedPartId = String(er.carriedPartId ?? "");
+      round.escapeActive = er.escape?.active ? 1 : 0;
+
+      const star = round.star;
+      const es = er.star && typeof er.star === "object" ? er.star : null;
+      if (star) {
+        star.present = es ? 1 : 0;
+        star.edge = es ? String(es.edge ?? "") : "";
+        star.axis = es ? String(es.axis ?? "") : "";
+        star.dir = es ? (Number(es.dir) || 0) : 0;
+        star.t = es ? (Number(es.t) || 0) : 0;
+        star.boundary = es ? (Number(es.boundary) || 0) : 0;
+      }
+
+      const gate = round.gate;
+      const eg = er.gate && typeof er.gate === "object" ? er.gate : null;
+      if (gate) {
+        gate.present = eg ? 1 : 0;
+        gate.id = eg ? String(eg.id ?? "") : "";
+        gate.edge = eg ? String(eg.edge ?? "") : "";
+        gate.x = eg ? (Number(eg.pos?.x) || 0) : 0;
+        gate.y = eg ? (Number(eg.pos?.y) || 0) : 0;
+        gate.radius = eg ? (Number(eg.radius) || 0) : 0;
+        gate.active = eg?.active ? 1 : 0;
+        gate.chargeSec = eg ? (Number(eg.chargeSec) || 0) : 0;
+        gate.chargeElapsedSec = eg && eg.chargeElapsedSec != null ? (Number(eg.chargeElapsedSec) || 0) : -1;
+
+        const slotsRaw = eg && Array.isArray(eg.slots) ? eg.slots : [];
+        const slots = gate.slots;
+        if (slots && typeof slots.push === "function" && typeof slots.pop === "function") {
+          while (slots.length < slotsRaw.length) slots.push("");
+          while (slots.length > slotsRaw.length) slots.pop();
+          for (let i = 0; i < slotsRaw.length; i++) slots[i] = String(slotsRaw[i] ?? "");
+        }
+      }
+
+      const parts = Array.isArray(er.techParts) ? er.techParts : [];
+      if (round.techParts) {
+        const arr = round.techParts;
+        while (arr.length < parts.length) arr.push(new RoundTechPartState());
+        while (arr.length > parts.length) arr.pop();
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i] && typeof parts[i] === "object" ? parts[i] : {};
+          const ps = arr[i];
+          ps.id = String(p.id ?? "");
+          ps.state = String(p.state ?? "");
+          ps.x = Number(p.pos?.x) || 0;
+          ps.y = Number(p.pos?.y) || 0;
+          ps.vx = Number(p.vel?.x) || 0;
+          ps.vy = Number(p.vel?.y) || 0;
+          ps.radius = Number(p.radius) || 0;
+          ps.containerAsteroidId = String(p.containerAsteroidId ?? "");
+          ps.carrierPlayerId = String(p.carrierPlayerId ?? "");
+          ps.installedSlot = Number.isFinite(Number(p.installedSlot)) ? (Number(p.installedSlot) | 0) : -1;
+          ps.respawnCount = Number(p.respawnCount) || 0;
+        }
+      }
+    }
+  }
+
+  _resetAuthoritativeRound() {
+    // Keep the room alive and deterministic: use the engine's built-in round seed advancement.
+    this._engine.startGame();
+
+    // Multiplayer: spawn ships at deterministic separated points for the current round seed.
+    const ids = sortedKeys(this._engine.state.playersById);
+    if (ids.length) {
+      const points = this._engine.generateSpawnPoints(ids.length, {
+        margin: 420,
+        minSeparation: 600,
+        seed: this._engine.state.round?.seed,
+      });
+      for (let i = 0; i < ids.length; i++) this._engine.spawnShipAtForPlayer(ids[i], points[i] || { x: 0, y: 0 });
+    }
+
+    this._syncSchemaFromEngine();
+    for (const client of this.clients) this._updateClientInterest(client, { force: true });
   }
 }

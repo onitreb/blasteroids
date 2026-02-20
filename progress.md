@@ -557,3 +557,19 @@ Updates
     - `npm test`: pass
     - `npm run build`: success (`dist/blasteroids.js` regenerated)
     - Local 2-client join smoke: `node scripts/mp-lan-smoke.mjs ws://localhost:<port>` (pass)
+
+- 2026-02-20 MP-23 (round loop parity in multiplayer):
+  - Server enables `features.roundLoop` for MP rooms, syncs star/gate/tech parts via Schema, and auto-resets rounds after win/lose so rooms remain playable.
+  - Engine round loop refactor: multi-ship aware star exposure + tech part pickup/carry/install; preserves singleplayer escape animation locally while server uses a simple “any ship enters active gate => win”.
+  - Client MP view ingests + applies round loop state so the existing renderer draws star/gate/tech parts while MP connected.
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass (screenshots + state dump under `tmp/mp-14/`)
+    - `node scripts/mp-lan-smoke.mjs ws://localhost:2567`: pass
+
+- 2026-02-20 MP follow-ups:
+  - Fixed Colyseus `ArraySchema` runtime error (`ArraySchema: can't set .length to a higher value than its length.`) by resizing round arrays using `push/pop` on the server Schema.
+  - Reduced visible MP spawn pop-in: server now uses client view rects as spawn exclusion zones, and server skips the singleplayer-only “guarantee onscreen asteroids at start” behavior.
+  - UX: singleplayer now auto-opens the menu after a gameover (so death returns you to the menu instead of staying on the gameover screen).
