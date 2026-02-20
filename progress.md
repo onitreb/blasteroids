@@ -573,3 +573,17 @@ Updates
   - Fixed Colyseus `ArraySchema` runtime error (`ArraySchema: can't set .length to a higher value than its length.`) by resizing round arrays using `push/pop` on the server Schema.
   - Reduced visible MP spawn pop-in: server now uses client view rects as spawn exclusion zones, and server skips the singleplayer-only “guarantee onscreen asteroids at start” behavior.
   - UX: singleplayer now auto-opens the menu after a gameover (so death returns you to the menu instead of staying on the gameover screen).
+
+- 2026-02-20 MP-24 (saucer + lasers parity in multiplayer):
+  - Server enables `features.saucer` for MP rooms and syncs saucer + lasers state via Schema.
+  - Engine saucer targeting + laser collisions are multi-ship aware (deterministic tie-break by player id).
+  - Client MP world view ingests/interpolates saucer + lasers into engine state so the existing renderer draws them while MP connected.
+  - Perf follow-up: cap concurrent saucer lasers (`state.params.saucerLaserMaxCount`, default `16`) and render lasers cheaper while MP-connected; MP HUD now shows laser count (`... ${lasers}l ...`).
+  - Added Playwright smoke: `node scripts/mp-browser-saucer-smoke.mjs` (waits for a saucer spawn + at least one laser in MP).
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass
+    - `node scripts/mp-browser-saucer-smoke.mjs`: pass
+    - `node scripts/mp-lan-smoke.mjs ws://localhost:<port>`: pass

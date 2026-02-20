@@ -3,7 +3,14 @@ import { Encoder, StateView } from "@colyseus/schema";
 
 import { createEngine } from "../../src/engine/createEngine.js";
 import { seededRng } from "../../src/util/rng.js";
-import { BlasteroidsState, AsteroidState, GemState, PlayerState, RoundTechPartState } from "../schema/BlasteroidsState.mjs";
+import {
+  BlasteroidsState,
+  AsteroidState,
+  GemState,
+  PlayerState,
+  RoundTechPartState,
+  SaucerLaserState,
+} from "../schema/BlasteroidsState.mjs";
 
 // Default BUFFER_SIZE can overflow quickly when syncing many entities.
 // Keep this intentionally generous for LAN MVP; revisit with interest management.
@@ -108,7 +115,7 @@ export class BlasteroidsRoom extends Room {
       width,
       height,
       seed: seed ? Number(seed) : undefined,
-      features: { roundLoop: true, saucer: false, mpSimScaling: true },
+      features: { roundLoop: true, saucer: true, mpSimScaling: true },
     });
 
     // IMPORTANT: createEngine initializes `state.world.scale` but does not apply it unless `setArenaConfig/resize`
@@ -587,6 +594,43 @@ export class BlasteroidsRoom extends Room {
           ps.respawnCount = Number(p.respawnCount) || 0;
         }
       }
+    }
+
+    // Saucer + lasers (authoritative gameplay; clients render only)
+    const saucer = state.saucer;
+    const esaucer = engineState.saucer && typeof engineState.saucer === "object" ? engineState.saucer : null;
+    if (saucer) {
+      saucer.present = esaucer ? 1 : 0;
+      saucer.id = esaucer ? String(esaucer.id ?? "") : "";
+      saucer.x = esaucer ? (Number(esaucer.pos?.x) || 0) : 0;
+      saucer.y = esaucer ? (Number(esaucer.pos?.y) || 0) : 0;
+      saucer.vx = esaucer ? (Number(esaucer.vel?.x) || 0) : 0;
+      saucer.vy = esaucer ? (Number(esaucer.vel?.y) || 0) : 0;
+      saucer.radius = esaucer ? (Number(esaucer.radius) || 0) : 0;
+    }
+
+    const lasers = state.saucerLasers;
+    const seenLasers = new Set();
+    for (const b of engineState.saucerLasers || []) {
+      if (!b?.id) continue;
+      const id = String(b.id);
+      seenLasers.add(id);
+      let ls = lasers.get(id);
+      if (!ls) {
+        ls = new SaucerLaserState();
+        ls.id = id;
+        lasers.set(id, ls);
+      }
+      ls.x = Number(b.pos?.x) || 0;
+      ls.y = Number(b.pos?.y) || 0;
+      ls.vx = Number(b.vel?.x) || 0;
+      ls.vy = Number(b.vel?.y) || 0;
+      ls.radius = Number(b.radius) || 0;
+      ls.bornAtSec = Number(b.bornAtSec) || 0;
+      ls.ageSec = Number(b.ageSec) || 0;
+    }
+    for (const [id] of lasers) {
+      if (!seenLasers.has(id)) lasers.delete(id);
     }
   }
 

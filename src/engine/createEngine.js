@@ -565,6 +565,8 @@ export function createEngine({ width, height, seed, role = "client", features = 
       saucerBurstPauseMaxSec: 3.0,
       saucerLaserSpeed: 520,
       saucerLaserRadius: 4,
+      // Prevent laser buildup in large worlds (perf/net) while keeping deterministic behavior.
+      saucerLaserMaxCount: 16,
     },
   };
   const worldCellAsteroidCounts = new Map();
@@ -2223,8 +2225,29 @@ export function createEngine({ width, height, seed, role = "client", features = 
 
   function fireSaucerLaser(saucer) {
     if (!saucer) return;
-    const ship = state.ship;
-    const dir = norm(sub(ship.pos, saucer.pos));
+    const maxLasers = Math.max(1, Math.floor(Number(state.params.saucerLaserMaxCount) || 0) || 16);
+    if ((state.saucerLasers?.length || 0) >= maxLasers) return;
+    let targetShip = null;
+    let bestD2 = Infinity;
+    let bestId = null;
+    const ids = sortedPlayerIds();
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const ship = state.playersById?.[id]?.ship;
+      if (!ship?.pos) continue;
+      const dx = ship.pos.x - saucer.pos.x;
+      const dy = ship.pos.y - saucer.pos.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2 - 1e-9 || (Math.abs(d2 - bestD2) <= 1e-9 && (bestId == null || id < bestId))) {
+        bestD2 = d2;
+        bestId = id;
+        targetShip = ship;
+      }
+    }
+    // Fallback for non-multiplayer callers (should be rare).
+    if (!targetShip && state.ship?.pos) targetShip = state.ship;
+
+    const dir = targetShip?.pos ? norm(sub(targetShip.pos, saucer.pos)) : vec(0, 0);
     const useDir = len2(dir) <= 1e-9 ? angleToVec(rng() * Math.PI * 2) : dir;
     const r = Math.max(1, state.params.saucerLaserRadius || 4);
     const muzzle = add(saucer.pos, mul(useDir, saucer.radius + r + 3));
@@ -2300,17 +2323,27 @@ export function createEngine({ width, height, seed, role = "client", features = 
 
   function handleSaucerLaserShipCollisions() {
     if (state.mode !== "playing") return;
+    const ids = sortedPlayerIds();
     for (let i = state.saucerLasers.length - 1; i >= 0; i--) {
       const b = state.saucerLasers[i];
-      if (!circleHit(b, state.ship)) continue;
+      let hitShip = null;
+      for (let j = 0; j < ids.length; j++) {
+        const ship = state.playersById?.[ids[j]]?.ship;
+        if (!ship) continue;
+        if (circleHit(b, ship)) {
+          hitShip = ship;
+          break;
+        }
+      }
+      if (!hitShip) continue;
       state.saucerLasers.splice(i, 1);
-      spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
+      spawnExplosion(hitShip.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
       if (state.settings.shipExplodesOnImpact) {
         endRound("lose", "saucer_laser");
         return;
       }
       const pushDir = norm(b.vel);
-      state.ship.vel = add(state.ship.vel, mul(pushDir, 170));
+      hitShip.vel = add(hitShip.vel, mul(pushDir, 170));
     }
   }
 

@@ -66,6 +66,25 @@ type(RoundStarState)(RoundState.prototype, "star");
 type(RoundGateState)(RoundState.prototype, "gate");
 type([ RoundTechPartState ])(RoundState.prototype, "techParts");
 
+export class SaucerState extends Schema {}
+type("number")(SaucerState.prototype, "present"); // 0/1
+type("string")(SaucerState.prototype, "id");
+type("number")(SaucerState.prototype, "x");
+type("number")(SaucerState.prototype, "y");
+type("number")(SaucerState.prototype, "vx");
+type("number")(SaucerState.prototype, "vy");
+type("number")(SaucerState.prototype, "radius");
+
+export class SaucerLaserState extends Schema {}
+type("string")(SaucerLaserState.prototype, "id");
+type("number")(SaucerLaserState.prototype, "x");
+type("number")(SaucerLaserState.prototype, "y");
+type("number")(SaucerLaserState.prototype, "vx");
+type("number")(SaucerLaserState.prototype, "vy");
+type("number")(SaucerLaserState.prototype, "radius");
+type("number")(SaucerLaserState.prototype, "bornAtSec");
+type("number")(SaucerLaserState.prototype, "ageSec");
+
 export class AsteroidState extends Schema {}
 type("string")(AsteroidState.prototype, "id");
 type("string")(AsteroidState.prototype, "size");
@@ -97,6 +116,8 @@ export class BlasteroidsState extends Schema {
     this.gems = new MapSchema();
     this.playerOrder = new ArraySchema();
     this.round = new RoundState();
+    this.saucer = new SaucerState();
+    this.saucerLasers = new MapSchema();
   }
 }
 
@@ -108,6 +129,8 @@ type([ "string" ])(BlasteroidsState.prototype, "playerOrder");
 type({ map: AsteroidState })(BlasteroidsState.prototype, "asteroids");
 type({ map: GemState })(BlasteroidsState.prototype, "gems");
 type(RoundState)(BlasteroidsState.prototype, "round");
+type(SaucerState)(BlasteroidsState.prototype, "saucer");
+type({ map: SaucerLaserState })(BlasteroidsState.prototype, "saucerLasers");
 
 // Interest management: asteroids/gems are sent only to clients that include
 // each AsteroidState/GemState instance in their `client.view` StateView.

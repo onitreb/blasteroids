@@ -1451,6 +1451,9 @@ export function createRenderer(engine) {
       ctx.restore();
     }
 
+    const laserCount = Array.isArray(state.saucerLasers) ? state.saucerLasers.length : 0;
+    const cheapLasers = mpConnected || laserCount > 8;
+
     for (const b of state.saucerLasers) {
       const lifeT = clamp(b.ageSec / 1.2, 0, 1);
       const alpha = lerp(0.95, 0.72, lifeT);
@@ -1461,22 +1464,24 @@ export function createRenderer(engine) {
       ctx.rotate(ang);
       ctx.lineCap = "round";
 
-      // Outer soft glow.
-      ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = `rgba(255,221,88,${(alpha * 0.6).toFixed(3)})`;
-      ctx.lineWidth = 9;
-      ctx.shadowColor = "rgba(255,221,88,0.95)";
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.moveTo(-lenPx * 0.5, 0);
-      ctx.lineTo(lenPx * 0.5, 0);
-      ctx.stroke();
+      if (!cheapLasers) {
+        // Outer soft glow.
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = `rgba(255,221,88,${(alpha * 0.6).toFixed(3)})`;
+        ctx.lineWidth = 9;
+        ctx.shadowColor = "rgba(255,221,88,0.95)";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(-lenPx * 0.5, 0);
+        ctx.lineTo(lenPx * 0.5, 0);
+        ctx.stroke();
+      }
 
-      // Bright core beam.
+      // Bright core beam (always).
       ctx.globalCompositeOperation = "source-over";
       ctx.shadowBlur = 0;
       ctx.strokeStyle = `rgba(255,250,190,${alpha.toFixed(3)})`;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = cheapLasers ? 2 : 3;
       ctx.beginPath();
       ctx.moveTo(-lenPx * 0.5, 0);
       ctx.lineTo(lenPx * 0.5, 0);

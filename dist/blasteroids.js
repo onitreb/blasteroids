@@ -797,7 +797,9 @@
         saucerBurstPauseMinSec: 1,
         saucerBurstPauseMaxSec: 3,
         saucerLaserSpeed: 520,
-        saucerLaserRadius: 4
+        saucerLaserRadius: 4,
+        // Prevent laser buildup in large worlds (perf/net) while keeping deterministic behavior.
+        saucerLaserMaxCount: 16
       }
     };
     const worldCellAsteroidCounts = /* @__PURE__ */ new Map();
@@ -2346,8 +2348,30 @@
     function fireSaucerLaser(saucer) {
       if (!saucer)
         return;
-      const ship = state.ship;
-      const dir = norm(sub(ship.pos, saucer.pos));
+      const maxLasers = Math.max(1, Math.floor(Number(state.params.saucerLaserMaxCount) || 0) || 16);
+      if ((state.saucerLasers?.length || 0) >= maxLasers)
+        return;
+      let targetShip = null;
+      let bestD2 = Infinity;
+      let bestId = null;
+      const ids = sortedPlayerIds();
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const ship = state.playersById?.[id]?.ship;
+        if (!ship?.pos)
+          continue;
+        const dx = ship.pos.x - saucer.pos.x;
+        const dy = ship.pos.y - saucer.pos.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD2 - 1e-9 || Math.abs(d2 - bestD2) <= 1e-9 && (bestId == null || id < bestId)) {
+          bestD2 = d2;
+          bestId = id;
+          targetShip = ship;
+        }
+      }
+      if (!targetShip && state.ship?.pos)
+        targetShip = state.ship;
+      const dir = targetShip?.pos ? norm(sub(targetShip.pos, saucer.pos)) : vec(0, 0);
       const useDir = len2(dir) <= 1e-9 ? angleToVec(rng() * Math.PI * 2) : dir;
       const r = Math.max(1, state.params.saucerLaserRadius || 4);
       const muzzle = add(saucer.pos, mul(useDir, saucer.radius + r + 3));
@@ -2416,18 +2440,29 @@
     function handleSaucerLaserShipCollisions() {
       if (state.mode !== "playing")
         return;
+      const ids = sortedPlayerIds();
       for (let i = state.saucerLasers.length - 1; i >= 0; i--) {
         const b = state.saucerLasers[i];
-        if (!circleHit(b, state.ship))
+        let hitShip = null;
+        for (let j = 0; j < ids.length; j++) {
+          const ship = state.playersById?.[ids[j]]?.ship;
+          if (!ship)
+            continue;
+          if (circleHit(b, ship)) {
+            hitShip = ship;
+            break;
+          }
+        }
+        if (!hitShip)
           continue;
         state.saucerLasers.splice(i, 1);
-        spawnExplosion(state.ship.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
+        spawnExplosion(hitShip.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
         if (state.settings.shipExplodesOnImpact) {
           endRound("lose", "saucer_laser");
           return;
         }
         const pushDir = norm(b.vel);
-        state.ship.vel = add(state.ship.vel, mul(pushDir, 170));
+        hitShip.vel = add(hitShip.vel, mul(pushDir, 170));
       }
     }
     function reducedMass(aMass, bMass) {
@@ -5381,6 +5416,8 @@
         }
         ctx.restore();
       }
+      const laserCount = Array.isArray(state.saucerLasers) ? state.saucerLasers.length : 0;
+      const cheapLasers = mpConnected || laserCount > 8;
       for (const b of state.saucerLasers) {
         const lifeT = clamp(b.ageSec / 1.2, 0, 1);
         const alpha = lerp(0.95, 0.72, lifeT);
@@ -5390,19 +5427,21 @@
         ctx.translate(b.pos.x, b.pos.y);
         ctx.rotate(ang);
         ctx.lineCap = "round";
-        ctx.globalCompositeOperation = "lighter";
-        ctx.strokeStyle = `rgba(255,221,88,${(alpha * 0.6).toFixed(3)})`;
-        ctx.lineWidth = 9;
-        ctx.shadowColor = "rgba(255,221,88,0.95)";
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.moveTo(-lenPx * 0.5, 0);
-        ctx.lineTo(lenPx * 0.5, 0);
-        ctx.stroke();
+        if (!cheapLasers) {
+          ctx.globalCompositeOperation = "lighter";
+          ctx.strokeStyle = `rgba(255,221,88,${(alpha * 0.6).toFixed(3)})`;
+          ctx.lineWidth = 9;
+          ctx.shadowColor = "rgba(255,221,88,0.95)";
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.moveTo(-lenPx * 0.5, 0);
+          ctx.lineTo(lenPx * 0.5, 0);
+          ctx.stroke();
+        }
         ctx.globalCompositeOperation = "source-over";
         ctx.shadowBlur = 0;
         ctx.strokeStyle = `rgba(255,250,190,${alpha.toFixed(3)})`;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = cheapLasers ? 2 : 3;
         ctx.beginPath();
         ctx.moveTo(-lenPx * 0.5, 0);
         ctx.lineTo(lenPx * 0.5, 0);
@@ -6916,7 +6955,8 @@ Server: ${endpoint}`;
       }
       const rx = fmtBps(mp.rxBps);
       const tx = fmtBps(mp.txBps);
-      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g | net ${rx}\u2193 ${tx}\u2191`;
+      const lasers = Array.isArray(game.state.saucerLasers) ? game.state.saucerLasers.length : 0;
+      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g ${lasers}l | net ${rx}\u2193 ${tx}\u2191`;
     }
     function isMenuVisible() {
       if (!menu)
@@ -14931,6 +14971,10 @@ Schema instances may only have up to 64 fields.`);
     let roundSnapshot = null;
     let starTrack = null;
     let gateSnapshot = null;
+    let saucerTrack = null;
+    const saucerLaserTracks = /* @__PURE__ */ new Map();
+    const saucerLaserObjectsById = /* @__PURE__ */ new Map();
+    let saucerLaserIdsSorted = [];
     function attach({ room: nextRoom, localSessionId: nextLocalSessionId } = {}) {
       detach();
       room = nextRoom;
@@ -14961,6 +15005,10 @@ Schema instances may only have up to 64 fields.`);
       roundSnapshot = null;
       starTrack = null;
       gateSnapshot = null;
+      saucerTrack = null;
+      saucerLaserTracks.clear();
+      saucerLaserObjectsById.clear();
+      saucerLaserIdsSorted = [];
     }
     function isAttached() {
       return !!room;
@@ -15085,6 +15133,55 @@ Schema instances may only have up to 64 fields.`);
         if (!seenGems.has(id))
           gemTracks.delete(id);
       }
+      const saucer = schemaState.saucer && typeof schemaState.saucer === "object" ? schemaState.saucer : null;
+      const saucerPresent = !!(saucer && Number(saucer.present));
+      if (!saucerPresent) {
+        saucerTrack = null;
+      } else {
+        if (!saucerTrack)
+          saucerTrack = { hist: makeHistory(), static: { id: "", radius: 0 } };
+        saucerTrack.static.id = String(saucer.id ?? "");
+        saucerTrack.static.radius = Number(saucer.radius) || saucerTrack.static.radius || 0;
+        pushHistory(saucerTrack.hist, {
+          t: latestSimTimeMs,
+          x: Number(saucer.x) || 0,
+          y: Number(saucer.y) || 0,
+          vx: Number(saucer.vx) || 0,
+          vy: Number(saucer.vy) || 0
+        });
+      }
+      const seenLasers = /* @__PURE__ */ new Set();
+      const lasers = schemaState.saucerLasers;
+      if (lasers && typeof lasers.forEach === "function") {
+        lasers.forEach((b, id) => {
+          const lid = String(b?.id ?? id ?? "");
+          if (!lid)
+            return;
+          seenLasers.add(lid);
+          let track = saucerLaserTracks.get(lid);
+          if (!track) {
+            track = { hist: makeHistory(), static: { id: lid, radius: 0, bornAtSec: 0 } };
+            saucerLaserTracks.set(lid, track);
+          }
+          track.static.radius = Number(b?.radius) || track.static.radius || 0;
+          track.static.bornAtSec = Number(b?.bornAtSec) || 0;
+          pushHistory(track.hist, {
+            t: latestSimTimeMs,
+            x: Number(b?.x) || 0,
+            y: Number(b?.y) || 0,
+            vx: Number(b?.vx) || 0,
+            vy: Number(b?.vy) || 0,
+            ageSec: Number(b?.ageSec) || 0
+          });
+        });
+      }
+      for (const id of saucerLaserTracks.keys()) {
+        if (!seenLasers.has(id)) {
+          saucerLaserTracks.delete(id);
+          saucerLaserObjectsById.delete(id);
+        }
+      }
+      saucerLaserIdsSorted = Array.from(saucerLaserTracks.keys()).sort();
       asteroidIdsSorted = Array.from(asteroidTracks.keys()).sort();
       gemIdsSorted = Array.from(gemTracks.keys()).sort();
       const round = schemaState.round && typeof schemaState.round === "object" ? schemaState.round : null;
@@ -15390,6 +15487,67 @@ Schema instances may only have up to 64 fields.`);
         obj.vel.x = lerp(p0.vx, p1.vx, t);
         obj.vel.y = lerp(p0.vy, p1.vy, t);
         state.gems.push(obj);
+      }
+      if (saucerTrack && saucerTrack.hist) {
+        const span = pickSpan(saucerTrack.hist, targetSimTime);
+        if (span) {
+          const { p0, p1, t } = span;
+          if (!state.saucer) {
+            state.saucer = {
+              id: saucerTrack.static.id || "saucer-0",
+              pos: vec(0, 0),
+              vel: vec(0, 0),
+              radius: saucerTrack.static.radius || 0
+            };
+          }
+          const s = state.saucer;
+          s.id = saucerTrack.static.id || s.id || "saucer-0";
+          if (!s.pos)
+            s.pos = vec(0, 0);
+          if (!s.vel)
+            s.vel = vec(0, 0);
+          s.radius = saucerTrack.static.radius || s.radius || 0;
+          s.pos.x = lerp(p0.x, p1.x, t);
+          s.pos.y = lerp(p0.y, p1.y, t);
+          s.vel.x = lerp(p0.vx, p1.vx, t);
+          s.vel.y = lerp(p0.vy, p1.vy, t);
+        } else {
+          state.saucer = null;
+        }
+      } else {
+        state.saucer = null;
+      }
+      if (!Array.isArray(state.saucerLasers))
+        state.saucerLasers = [];
+      state.saucerLasers.length = 0;
+      for (const id of saucerLaserIdsSorted) {
+        const track = saucerLaserTracks.get(id);
+        if (!track)
+          continue;
+        const span = pickSpan(track.hist, targetSimTime);
+        if (!span)
+          continue;
+        const { p0, p1, t } = span;
+        let obj = saucerLaserObjectsById.get(id);
+        if (!obj) {
+          obj = {
+            id,
+            pos: vec(0, 0),
+            vel: vec(0, 0),
+            radius: track.static.radius || 0,
+            ageSec: 0,
+            bornAtSec: track.static.bornAtSec || 0
+          };
+          saucerLaserObjectsById.set(id, obj);
+        }
+        obj.radius = track.static.radius || obj.radius || 0;
+        obj.bornAtSec = track.static.bornAtSec || 0;
+        obj.pos.x = lerp(p0.x, p1.x, t);
+        obj.pos.y = lerp(p0.y, p1.y, t);
+        obj.vel.x = lerp(p0.vx, p1.vx, t);
+        obj.vel.y = lerp(p0.vy, p1.vy, t);
+        obj.ageSec = lerp(Number(p0.ageSec) || 0, Number(p1.ageSec) || 0, t);
+        state.saucerLasers.push(obj);
       }
       state.time = targetSimTime / 1e3;
       if (!state.round || typeof state.round !== "object") {

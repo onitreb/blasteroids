@@ -100,6 +100,10 @@ export function createMpWorldView({
   let roundSnapshot = null; // latest non-interpolated round fields (duration/elapsed/escape, gate slots, etc.)
   let starTrack = null; // { hist, static, present }
   let gateSnapshot = null; // non-interpolated (small) gate snapshot for slots/charge/active
+  let saucerTrack = null; // { hist, static }
+  const saucerLaserTracks = new Map(); // id -> { hist, static }
+  const saucerLaserObjectsById = new Map();
+  let saucerLaserIdsSorted = [];
 
   function attach({ room: nextRoom, localSessionId: nextLocalSessionId } = {}) {
     detach();
@@ -134,6 +138,10 @@ export function createMpWorldView({
     roundSnapshot = null;
     starTrack = null;
     gateSnapshot = null;
+    saucerTrack = null;
+    saucerLaserTracks.clear();
+    saucerLaserObjectsById.clear();
+    saucerLaserIdsSorted = [];
   }
 
   function isAttached() {
@@ -260,6 +268,56 @@ export function createMpWorldView({
     for (const id of gemTracks.keys()) {
       if (!seenGems.has(id)) gemTracks.delete(id);
     }
+
+    // Saucer + lasers (gameplay entities; no wrap)
+    const saucer = schemaState.saucer && typeof schemaState.saucer === "object" ? schemaState.saucer : null;
+    const saucerPresent = !!(saucer && Number(saucer.present));
+    if (!saucerPresent) {
+      saucerTrack = null;
+    } else {
+      if (!saucerTrack) saucerTrack = { hist: makeHistory(), static: { id: "", radius: 0 } };
+      saucerTrack.static.id = String(saucer.id ?? "");
+      saucerTrack.static.radius = Number(saucer.radius) || saucerTrack.static.radius || 0;
+      pushHistory(saucerTrack.hist, {
+        t: latestSimTimeMs,
+        x: Number(saucer.x) || 0,
+        y: Number(saucer.y) || 0,
+        vx: Number(saucer.vx) || 0,
+        vy: Number(saucer.vy) || 0,
+      });
+    }
+
+    const seenLasers = new Set();
+    const lasers = schemaState.saucerLasers;
+    if (lasers && typeof lasers.forEach === "function") {
+      lasers.forEach((b, id) => {
+        const lid = String(b?.id ?? id ?? "");
+        if (!lid) return;
+        seenLasers.add(lid);
+        let track = saucerLaserTracks.get(lid);
+        if (!track) {
+          track = { hist: makeHistory(), static: { id: lid, radius: 0, bornAtSec: 0 } };
+          saucerLaserTracks.set(lid, track);
+        }
+        track.static.radius = Number(b?.radius) || track.static.radius || 0;
+        track.static.bornAtSec = Number(b?.bornAtSec) || 0;
+        pushHistory(track.hist, {
+          t: latestSimTimeMs,
+          x: Number(b?.x) || 0,
+          y: Number(b?.y) || 0,
+          vx: Number(b?.vx) || 0,
+          vy: Number(b?.vy) || 0,
+          ageSec: Number(b?.ageSec) || 0,
+        });
+      });
+    }
+    for (const id of saucerLaserTracks.keys()) {
+      if (!seenLasers.has(id)) {
+        saucerLaserTracks.delete(id);
+        saucerLaserObjectsById.delete(id);
+      }
+    }
+    saucerLaserIdsSorted = Array.from(saucerLaserTracks.keys()).sort();
 
     // Cache stable order arrays for rendering (deterministic).
     asteroidIdsSorted = Array.from(asteroidTracks.keys()).sort();
@@ -584,6 +642,69 @@ export function createMpWorldView({
       obj.vel.x = lerp(p0.vx, p1.vx, t);
       obj.vel.y = lerp(p0.vy, p1.vy, t);
       state.gems.push(obj);
+    }
+
+    // Saucer (interpolated)
+    if (saucerTrack && saucerTrack.hist) {
+      const span = pickSpan(saucerTrack.hist, targetSimTime);
+      if (span) {
+        const { p0, p1, t } = span;
+        if (!state.saucer) {
+          state.saucer = {
+            id: saucerTrack.static.id || "saucer-0",
+            pos: vec(0, 0),
+            vel: vec(0, 0),
+            radius: saucerTrack.static.radius || 0,
+          };
+        }
+        const s = state.saucer;
+        s.id = saucerTrack.static.id || s.id || "saucer-0";
+        if (!s.pos) s.pos = vec(0, 0);
+        if (!s.vel) s.vel = vec(0, 0);
+        s.radius = saucerTrack.static.radius || s.radius || 0;
+        s.pos.x = lerp(p0.x, p1.x, t);
+        s.pos.y = lerp(p0.y, p1.y, t);
+        s.vel.x = lerp(p0.vx, p1.vx, t);
+        s.vel.y = lerp(p0.vy, p1.vy, t);
+      } else {
+        state.saucer = null;
+      }
+    } else {
+      state.saucer = null;
+    }
+
+    // Saucer lasers (interpolated)
+    if (!Array.isArray(state.saucerLasers)) state.saucerLasers = [];
+    state.saucerLasers.length = 0;
+    for (const id of saucerLaserIdsSorted) {
+      const track = saucerLaserTracks.get(id);
+      if (!track) continue;
+      const span = pickSpan(track.hist, targetSimTime);
+      if (!span) continue;
+      const { p0, p1, t } = span;
+
+      let obj = saucerLaserObjectsById.get(id);
+      if (!obj) {
+        obj = {
+          id,
+          pos: vec(0, 0),
+          vel: vec(0, 0),
+          radius: track.static.radius || 0,
+          ageSec: 0,
+          bornAtSec: track.static.bornAtSec || 0,
+        };
+        saucerLaserObjectsById.set(id, obj);
+      }
+
+      obj.radius = track.static.radius || obj.radius || 0;
+      obj.bornAtSec = track.static.bornAtSec || 0;
+      obj.pos.x = lerp(p0.x, p1.x, t);
+      obj.pos.y = lerp(p0.y, p1.y, t);
+      obj.vel.x = lerp(p0.vx, p1.vx, t);
+      obj.vel.y = lerp(p0.vy, p1.vy, t);
+      obj.ageSec = lerp(Number(p0.ageSec) || 0, Number(p1.ageSec) || 0, t);
+
+      state.saucerLasers.push(obj);
     }
 
     // Expose some timing on state for HUD/debug if needed.

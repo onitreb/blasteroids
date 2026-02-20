@@ -87,3 +87,4 @@ Client join options (DevTools):
 Smoke scripts (Node / headless browser):
 - Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
 - Browser connect + snapshots: `node scripts/mp-browser-smoke.mjs`
+- Browser saucer + lasers sync: `node scripts/mp-browser-saucer-smoke.mjs`
