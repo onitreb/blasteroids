@@ -11,3 +11,4 @@ node_modules/
 
 # Scratch / temp artifacts
 tmp_*
+tmp/
