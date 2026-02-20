@@ -91,6 +91,21 @@ Refactor engine/render boundaries so multiplayer is feasible without breaking si
 ### M2 — Online-Ready
 Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 
+### M3 — Parity (Staged)
+Reintroduce singleplayer gameplay systems + visual parity in multiplayer, while keeping server-authoritative rules and client-side rendering/VFX.
+
+---
+
+## Current Multiplayer Simplifications (intentional)
+
+The LAN MVP was built by first stabilizing correctness/perf, then layering UX and visuals. As a result, the current multiplayer build is not “full singleplayer parity” yet:
+
+- Multiplayer rooms run with `features: { roundLoop: false, saucer: false }` (core co-op only; no star/gate loop).
+- The server-authoritative engine may run in a mode that skips camera/VFX work.
+- While MP is connected, the client renders interpolated authoritative state and **does not yet** reproduce all singleplayer visual-only effects (e.g. thrusters/exhaust, burst/pull explosion effects) because local sim is paused and these effects are not synced from the server.
+
+This is expected, but should be tracked as follow-up work so multiplayer does not remain a “POC-only” experience. After the MVP foundations are stable, reintroduce singleplayer gameplay systems (round loop, saucer, etc.) and then restore visual parity, while keeping the server authoritative and effects client-side.
+
 ---
 
 ## Work Plan (single source of truth)
@@ -118,7 +133,11 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 | MP-19 | M1 | LAN tuning knobs: patch rate override + adaptive interp delay | NET/SERVER (Codex) | DONE | MP-18 | manual | Notes:<br>- Server: allow overriding Room `patchRate` via `BLASTEROIDS_PATCH_RATE_MS` (default 100ms).<br>- Client: interpolation delay adapts to observed snapshot jitter (tracks `snapshotDtMaxMs`) so higher patch Hz reduces input lag automatically.<br>- Validation: `npm test` (pass); `npm run build` (pass; updated `dist/blasteroids.js`); `node scripts/mp-browser-smoke.mjs` (pass). |
 | MP-20 | M1 | Interest management: per-client asteroid/gem visibility (in-view + margin) | SERVER/NET (Codex) | DONE | MP-11 | manual (2p big arena) | Notes:<br>- Implemented Colyseus `StateView` filtering for `asteroids`/`gems` per-client (players remain fully visible via Schema).<br>- Client sends its world-space view rect (+ margin) at 10Hz; server updates `client.view` membership accordingly.<br>- Co-op UX: new joiners spawn near an existing player so they’re visible on-canvas immediately (helps validate interest management).<br>- Validation: `npm test` (pass), `npm run build` (pass), manual 2-tab test (worldScale=10, patchRate~30Hz) shows asteroid counts diverge when far apart and converge when together. |
 | MP-21 | M1 | Server sim scaling: sleep far asteroids (simulate only near players) | ENGINE/SERVER (Codex) | DONE | MP-20 | manual (stress) | Notes:<br>- Engine: added server-only `features.mpSimScaling` + `setMpViewRects(rects)`; when enabled, far asteroids skip pull/attach work and asteroid broadphase buckets include only active asteroids.<br>- Server: Room now passes per-client view rects into the engine each tick; MP rooms enable `mpSimScaling`.<br>- Validation: `npm test` (pass), `npm run build` (pass), `node scripts/mp-lan-smoke.mjs` (pass), `node scripts/mp-browser-smoke.mjs` (pass), manual 4-player 10-minute LAN run (Paul) with no major issues. |
-| MP-22 | M1 | Client prediction: local ship turn/thrust immediate + reconcile | NET/ENGINE | NOT_STARTED | MP-18 | manual | Implement “predict local, interpolate others” per official Colyseus guidance; keep server authoritative for collisions/attachments. |
+| MP-22 | M1 | Client prediction: local ship turn/thrust immediate + reconcile | NET/ENGINE | NOT_STARTED | MP-18 | manual | Notes (standards + refs):<br>- Colyseus does **not** provide built-in client prediction yet; implement app-side (FAQ section “Does Colyseus help me with client-prediction?”): https://docs.colyseus.io/faq<br>- Official references for predicted input + fixed tick (v0.17 Phaser tutorial):<br>  - https://docs.colyseus.io/tutorial/phaser/client-predicted-input (shows `server.simulateLatency(200)` for testing)<br>  - https://docs.colyseus.io/tutorial/phaser/fixed-tickrate<br>- Command Pattern best practice (queue/process commands deterministically): https://docs.colyseus.io/recommendations/command-pattern<br><br>Plan (implementation, mapped to repo files):<br>- Predict **local ship only** (turn/thrust). Remote ships + asteroids + gems stay server-authoritative and are rendered from interpolated snapshots (`src/net/createMpWorldView.js`).<br>- Client input commands: add `seq` to input payloads, send at 60Hz (fixed tick), and keep a ring buffer of unacked commands for replay (`src/net/createMpClient.js`).<br>- Authoritative ack: extend Schema `PlayerState` with `lastProcessedInputSeq` so the client can drop acknowledged inputs and reconcile (`server/schema/BlasteroidsState.mjs`).<br>- Server input queue: queue incoming input messages per client, apply in-order at the start of each 60Hz sim tick (ignore stale/out-of-order), set `lastProcessedInputSeq`, then run one authoritative engine tick (`server/rooms/BlasteroidsRoom.mjs`).<br>- Client reconciliation: on patch, read the authoritative local-player pose + `lastProcessedInputSeq`, rollback local predicted ship to server pose, replay remaining unacked commands using the same deterministic ship-step, then render predicted local ship + interpolated world (`src/net/createMpWorldView.js` + `src/main.js`).<br>- Drift minimization: extract ship kinematics into a deterministic helper used by both authoritative engine update and client prediction (DOM-free, no RNG, no gameplay side effects) so movement math matches (`src/engine/*`).<br>- Ensure `createMpWorldView.applyInterpolatedState` does **not** overwrite predicted local ship fields while prediction is enabled (keep authoritative local pose for reconciliation/debug).<br><br>Validation (reality-based):<br>- Manual: enable simulated latency (Colyseus `simulateLatency`) and confirm local ship responds immediately while server remains authoritative; observe bounded correction (no runaway rubber-banding).<br>- Automated: extend Playwright MP smoke to run with simulated latency + lower patch Hz, then assert local movement begins before the first server patch; keep `file://` singleplayer unchanged. |
+| MP-23 | M3 | Gameplay parity: enable + sync round loop (star/gate/parts) in MP | ENGINE/SERVER/NET/RENDER | NOT_STARTED | MP-21 | manual + smokes | Ensure MP rooms can run the round loop server-authoritatively and clients render it correctly (no `file://` impact). |
+| MP-24 | M3 | Gameplay parity: enable + sync saucer + lasers in MP | ENGINE/SERVER/NET/RENDER | NOT_STARTED | MP-23 | manual + smokes | Server authoritative saucer/laser behavior; clients render it. |
+| MP-25 | M3 | Visual parity: client-side VFX while MP connected | RENDER/NET | NOT_STARTED | MP-24 | manual | Restore thrusters/exhaust, pull/burst FX, and other visuals in MP by deriving VFX from authoritative state changes (no gameplay side effects). |
+| MP-26 | M3 | Mode switch: co-op vs versus (PvP) (design + wiring) | DOCS/UI/SERVER | NOT_STARTED | MP-25 | n/a | Define rules + UI switch; implementation can be split into smaller steps after design is locked. |
 | MP-16 | M2 | Online deployment doc: DIY TLS/WSS, env vars, ops checklist, rate limits | DOCS/SERVER | NOT_STARTED | MP-09 | n/a | Doc-only until LAN MVP stable. |
 
 ---
@@ -295,3 +314,7 @@ Deployment checklist (DIY TLS/WSS) + baseline safety/perf instrumentation.
 - Added a 2-client Playwright smoke that exercises the in-game Multiplayer UI Quick Play path and asserts both sessions see `2` players and can move.
 - Captures screenshots + a combined JSON dump (`mpStatus`, `state._mp`, and `renderGameToText()`) under `tmp/mp-14/`.
 - Validation: `node scripts/mp-browser-2p-smoke.mjs` (pass).
+
+### 2026-02-20 (MP-22 planning)
+- Researched Colyseus v0.17 official guidance for client-predicted input, fixed tick-rate loops, and command-queue patterns.
+- Updated MP-22 Notes with concrete implementation + validation plan aligned to current repo architecture (server-authoritative; predict local ship only; reconcile via seq ack).

@@ -77,6 +77,7 @@ Multiplayer runs in a separate “served” mode and must not break the `file://
 - Colyseus Room(s): `server/rooms/*`
 - Schema state definitions: `server/schema/*`
 - Interest management uses Schema `@view()` + per-client `StateView` (clients receive only in-view asteroids/gems + margin).
+- Visual effects remain client-side: the authoritative server may run the engine in a mode that skips camera/VFX work. In MP, clients should render the authoritative state and reintroduce visual-only effects (thrusters/exhaust, burst/pull FX, etc.) without affecting simulation.
 
 ## Testing and Validation
 

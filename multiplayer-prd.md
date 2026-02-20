@@ -1,6 +1,6 @@
-# Multiplayer PRD — Blasteroids (LAN MVP → Online)
+# Multiplayer PRD — Blasteroids (LAN MVP → Parity)
 
-Last updated: 2026-02-16  
+Last updated: 2026-02-20  
 Status: DRAFT  
 Owners: Product (Paul), Engineering (Paul + Codex agents)  
 
@@ -9,7 +9,7 @@ Related docs:
 - `RUNBOOK.md` (build/test + smoke checklist)
 - `docs/architecture.md` (module boundaries and invariants)
 - `docs/review-checklist.md` (refactor acceptance checklist)
-- `round-loop-prd.md` (future objective loop; **not in MVP**)
+- `round-loop-prd.md` (objective loop; staged into MP)
 
 ---
 
@@ -53,6 +53,18 @@ The first objective is not “perfect netcode” or “final progression,” but
 - Cross-region latency optimization.
 - Full round loop (red giant + gate + tech parts) and saucer/lasers.
 - Cheat-proofing beyond baseline sanity checks.
+
+---
+
+## 3.1) Project Scope: Feature Parity (Staged)
+
+The scope of this project is **multiplayer parity** with the singleplayer game. We start with a LAN MVP to validate the core tech and co-op feel, then progressively reintroduce the full singleplayer gameplay and visuals.
+
+Multiplayer should converge on the singleplayer gameplay feature set, using the same underlying engine rules wherever possible (avoid “forked game modes” that drift over time). Examples of staged singleplayer gameplay systems:
+- Round loop (red giant + gate + tech parts)
+- Saucer / lasers
+
+Visual effects are still client-side: the server remains authoritative for gameplay state, while clients render the authoritative state and reintroduce visual-only effects locally (thrusters/exhaust, pull/burst FX, etc.) without affecting simulation.
 
 ---
 
@@ -117,6 +129,15 @@ Multiplayer adds an additional “served” mode:
   - Clients send input (intent).
   - Server broadcasts state snapshots (or patches + snapshots).
   - Clients render interpolated states; clients do not mutate authoritative world state.
+
+### Single source of truth (gameplay)
+- Multiplayer should not become a separate “fork” of the game rules. The authoritative server and singleplayer both rely on the same deterministic engine (`src/engine/*`).
+- Multiplayer clients may do smoothing/prediction for responsiveness, but authoritative gameplay rules (collisions, attachments, scoring, spawns, etc.) remain server-side in the engine.
+
+### Visual effects (client-side)
+- The authoritative server stays focused on gameplay state and may run the engine in a mode that **skips camera/VFX work**.
+- Clients render the authoritative state and reintroduce **visual-only** effects locally (thrusters/exhaust, pull/attract visuals, burst/explosion FX, HUD polish, etc.) without affecting simulation.
+- Current LAN MP implementation prioritizes correctness/perf and does **not** yet reproduce all singleplayer visual effects while connected. This is expected and should be tracked as follow-up work.
 
 ### Tick + rates (initial targets; tune after profiling)
 - Server sim tick: 60Hz fixed dt (with catch-up cap to avoid spiral of death).
@@ -185,3 +206,24 @@ Multiplayer adds an additional “served” mode:
 - `npm test` passes.
 - `npm run build` passes and `dist/blasteroids.js` is updated for any runtime changes.
 - Singleplayer still runs via `file://` with no console errors.
+
+---
+
+## 12) Roadmap (High-Level)
+
+This roadmap is ordered to avoid “icing before cake” (KISS/YAGNI): stabilize core MP first, then reintroduce gameplay systems, then polish visuals/UX, then add additional modes.
+
+### Phase A — LAN MVP Foundations (Done / Current)
+- Server-authoritative shared world (players/asteroids/gems) + interpolation
+- Scaling foundations (interest management + server sim scaling)
+- Minimal in-game MP connect UI (Quick Play) + smoke coverage
+
+### Phase B — Gameplay Parity (Staged)
+- Re-enable and sync the round loop in multiplayer (star/gate/tech parts), keeping server authoritative.
+- Re-enable and sync saucer + lasers in multiplayer (server authoritative for spawns/projectiles/interactions).
+
+### Phase C — Visual Parity (Client-side)
+- Restore singleplayer-level client visuals while connected (thrusters/exhaust, pull/burst FX, star/gate visuals polish) derived from authoritative state changes without affecting simulation.
+
+### Phase D — Additional Modes
+- Add mode switch: co-op (current) vs versus (PvP), with explicitly defined rules (ship-ship interactions, scoring, win conditions).
