@@ -3,6 +3,7 @@ import { createRenderer } from "./render/renderGame.js";
 import { createUiBindings } from "./ui/createUiBindings.js";
 import { createMpClient } from "./net/createMpClient.js";
 import { createMpWorldView } from "./net/createMpWorldView.js";
+import { createMpVfx } from "./net/createMpVfx.js";
 
 (() => {
   const canvas = document.getElementById("game");
@@ -145,6 +146,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
   let accumulator = 0;
   const fixedDt = 1 / 60;
   let mpDelayMs = 120;
+  let wasMpConnected = false;
 
   function stepRealTime(ts) {
     const dtMs = Math.min(50, ts - last);
@@ -153,6 +155,8 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
 
     ui.applyTouchControls?.();
     const mpConnected = mp.isConnected();
+    if (!mpConnected && wasMpConnected) mpVfx.reset();
+    wasMpConnected = mpConnected;
     const pausedByMenu =
       !mpConnected &&
       ui.isMenuVisible() &&
@@ -164,6 +168,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
       // Multiplayer: authoritative sim runs on server; client renders interpolated state.
       game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
       mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
+      mpVfx.update({ dtSec: dtMs / 1000, atMs: ts });
       const mpHud = game.state?._mp;
       const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
       const targetDelay = dtMax != null ? Math.max(60, Math.min(220, dtMax + 20)) : 120;
@@ -236,6 +241,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
     snapshotBufferSize: 32,
   });
   const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
+  const mpVfx = createMpVfx({ engine: game });
 
   const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
   window.Blasteroids = {
@@ -262,6 +268,7 @@ import { createMpWorldView } from "./net/createMpWorldView.js";
     mpDisconnect: async () => {
       mpWorld.detach();
       await mp.disconnect();
+      mpVfx.reset();
       // Return to a safe singleplayer state.
       game.resetWorld();
       game.state.mode = "menu";

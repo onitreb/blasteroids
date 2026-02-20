@@ -587,3 +587,12 @@ Updates
     - `node scripts/mp-browser-2p-smoke.mjs`: pass
     - `node scripts/mp-browser-saucer-smoke.mjs`: pass
     - `node scripts/mp-lan-smoke.mjs ws://localhost:<port>`: pass
+
+- 2026-02-20 MP-25 (MP-connected visual parity for client-only VFX):
+  - Added an MP-only client-side VFX updater that runs while MP is connected: exhaust particles (all ships), burst wavelets (local input), and tech ping/sonar ring with cooldown + highlights for parts/part asteroids.
+  - Renderer now shows remote ship thrusters via a cheap heuristic derived from authoritative motion (no net sync).
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass

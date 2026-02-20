@@ -1748,7 +1748,7 @@
       });
       state.round.starExposureSec = localExposure;
       if (killedPos) {
-        spawnExplosion(killedPos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
+        spawnExplosion2(killedPos, { kind: "pop", rgb: [255, 140, 95], r0: 12, r1: 68, ttl: 0.22 });
         endRound("lose", "star_overheat");
       }
     }
@@ -2383,7 +2383,7 @@
         ageSec: 0,
         bornAtSec: state.time
       });
-      spawnExplosion(muzzle, { kind: "tiny", rgb: [255, 221, 88], r0: 3, r1: 14, ttl: 0.12 });
+      spawnExplosion2(muzzle, { kind: "tiny", rgb: [255, 221, 88], r0: 3, r1: 14, ttl: 0.12 });
     }
     function updateSaucer(dt) {
       if (!state.saucer) {
@@ -2456,7 +2456,7 @@
         if (!hitShip)
           continue;
         state.saucerLasers.splice(i, 1);
-        spawnExplosion(hitShip.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
+        spawnExplosion2(hitShip.pos, { kind: "pop", rgb: [255, 221, 88], r0: 6, r1: 30, ttl: 0.18 });
         if (state.settings.shipExplodesOnImpact) {
           endRound("lose", "saucer_laser");
           return;
@@ -2547,7 +2547,7 @@
       target2.fractureDamage = clamp(next, 0, 1);
       return target2.fractureDamage >= 1;
     }
-    function spawnExplosion(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
+    function spawnExplosion2(pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
       if (isServer)
         return;
       state.effects.push({
@@ -2562,7 +2562,7 @@
         seed: Math.floor(fxRng() * 1e9)
       });
     }
-    function spawnBurstWavelets({ pos, angle, speed, ttl = 0.55 * 1.1, rgb = [255, 221, 88] }) {
+    function spawnBurstWavelets2({ pos, angle, speed, ttl = 0.55 * 1.1, rgb = [255, 221, 88] }) {
       if (isServer)
         return;
       state.effects.push({
@@ -2642,7 +2642,7 @@
           return;
         removeSet.add(a.id);
       }
-      spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 18, ttl: 0.16 });
+      spawnExplosion2(a.pos, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 18, ttl: 0.16 });
       spawnGem(a.pos, vec(0, 0), { jitterMag: 0 });
     }
     function spawnShipAt(pos) {
@@ -2861,7 +2861,7 @@
       player.burstCooldown = state.params.burstCooldownSec;
       player.blastPulseT = 0.22;
       const fieldR = forceFieldRadiusForPlayer(player);
-      spawnExplosion(player.ship.pos, {
+      spawnExplosion2(player.ship.pos, {
         kind: "ring",
         rgb: [255, 255, 255],
         r0: fieldR - 2,
@@ -2902,7 +2902,7 @@
           const ringP = add(player.ship.pos, mul(vDir, fieldR));
           const ang = angleOf(vDir);
           const spd = len(a.vel);
-          spawnBurstWavelets({ pos: ringP, angle: ang, speed: spd * 0.9, ttl: waveletTtl, rgb: [255, 221, 88] });
+          spawnBurstWavelets2({ pos: ringP, angle: ang, speed: spd * 0.9, ttl: waveletTtl, rgb: [255, 221, 88] });
         }
         attachedIndex++;
       }
@@ -3104,7 +3104,7 @@
       ship.pos = add(ship.pos, mul(ship.vel, dt));
       confineBodyToWorld(ship);
     }
-    function exhaustShipScaleAndMirror(tier, ship) {
+    function exhaustShipScaleAndMirror2(tier, ship) {
       const renderer = tier?.renderer || {};
       const shipRadius = Math.max(1, Number(ship?.radius) || Number(tier?.radius) || 1);
       if (renderer.type === "svg") {
@@ -3118,7 +3118,7 @@
       const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
       return { scale: drawScale, mirrorX: false };
     }
-    function spawnExhaustParticle(kind, x, y, vx, vy, { ttl, r, seed: seed2 }) {
+    function spawnExhaustParticle2(kind, x, y, vx, vy, { ttl, r, seed: seed2 }) {
       const p = exhaustPool.length ? exhaustPool.pop() : { kind: "flame", pos: vec(0, 0), vel: vec(0, 0), age: 0, ttl: 0, r: 1, seed: 0 };
       p.kind = kind;
       p.pos.x = x;
@@ -3166,7 +3166,7 @@
       const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
       if (engines.length === 0)
         return;
-      const { scale, mirrorX } = exhaustShipScaleAndMirror(tier, ship);
+      const { scale, mirrorX } = exhaustShipScaleAndMirror2(tier, ship);
       const ang = ship.angle || 0;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
@@ -3213,7 +3213,7 @@
           const r = (2 + exhaustRng() * 2.2) * tierScale * (0.85 + 0.25 * intensity);
           const posX = nozzleX + sideX * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backX * (exhaustRng() * 2.8);
           const posY = nozzleY + sideY * ((exhaustRng() * 2 - 1) * 2.2 * tierScale) + backY * (exhaustRng() * 2.8);
-          spawnExhaustParticle("flame", posX, posY, vx, vy, { ttl, r, seed: seed2 });
+          spawnExhaustParticle2("flame", posX, posY, vx, vy, { ttl, r, seed: seed2 });
         }
         const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
         if (sparkChance > 1e-6 && exhaustRng() < sparkChance) {
@@ -3224,7 +3224,7 @@
           const vy = baseVelY + backY * speed + sideY * sideJitter;
           const ttl = 0.12 + exhaustRng() * 0.2;
           const r = (1 + exhaustRng() * 1.4) * tierScale;
-          spawnExhaustParticle("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed: seed2 });
+          spawnExhaustParticle2("spark", nozzleX, nozzleY, vx, vy, { ttl, r, seed: seed2 });
         }
       }
       if (particles.length > maxParticles) {
@@ -3509,7 +3509,7 @@
           collector.progression = makePlayerProgression();
         collector.progression.gemScore += pts;
         refreshShipTierProgressionForPlayer(collector, { animateZoom: true });
-        spawnExplosion(collector.ship.pos, { kind: "tiny", rgb: gemRgb2(g.kind), r0: 4, r1: 16, ttl: 0.14 });
+        spawnExplosion2(collector.ship.pos, { kind: "tiny", rgb: gemRgb2(g.kind), r0: 4, r1: 16, ttl: 0.14 });
       }
     }
     function handleSaucerAsteroidCollisions() {
@@ -3524,8 +3524,8 @@
         if (!circleHit(saucer, a))
           continue;
         const dropVel = add(mul(a.vel, 0.7), mul(saucer.vel, 0.3));
-        spawnExplosion(saucer.pos, { kind: "pop", rgb: [255, 221, 88], r0: 14, r1: 56, ttl: 0.24 });
-        spawnExplosion(saucer.pos, { kind: "ring", rgb: [255, 221, 88], r0: 20, r1: 88, ttl: 0.2 });
+        spawnExplosion2(saucer.pos, { kind: "pop", rgb: [255, 221, 88], r0: 14, r1: 56, ttl: 0.24 });
+        spawnExplosion2(saucer.pos, { kind: "ring", rgb: [255, 221, 88], r0: 20, r1: 88, ttl: 0.2 });
         spawnGem(saucer.pos, dropVel, { kind: "gold", radiusScale: 1, jitterMag: 20, ttlSec: 18 });
         state.score += 125;
         state.saucer = null;
@@ -3538,7 +3538,7 @@
         return null;
       if (target2.size === "med") {
         const baseR2 = Math.max(1, target2.radius || asteroidRadiusForSize(state.params, "med"));
-        spawnExplosion(target2.pos, {
+        spawnExplosion2(target2.pos, {
           kind: "pop",
           rgb: [255, 255, 255],
           r0: 10,
@@ -3571,7 +3571,7 @@
         frag.fractureCooldownT = 0.65;
         pieces.push(frag);
       }
-      spawnExplosion(target2.pos, {
+      spawnExplosion2(target2.pos, {
         kind: "pop",
         rgb: [255, 255, 255],
         r0: 10,
@@ -3708,7 +3708,7 @@
                 if (a.techPartId)
                   dropTechPartFromAsteroid(a);
                 shipRemovals.add(a.id);
-                spawnExplosion(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
+                spawnExplosion2(a.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 5, r1: 18, ttl: 0.14 });
               }
             }
             continue;
@@ -3793,7 +3793,7 @@
               toAdd.push(...frags.slice(0, room));
               continue;
             }
-            spawnExplosion(target2.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
+            spawnExplosion2(target2.pos, { kind: "tiny", rgb: [255, 89, 100], r0: 4, r1: 14, ttl: 0.14 });
             const massRatio = projectile.mass > 0 && target2.mass > 0 ? projectile.mass / target2.mass : 1;
             const shoveScale = Math.min(1, Math.max(0, massRatio));
             const shove = Math.min(180, impactSpeedN * 0.5 * shoveScale);
@@ -3803,7 +3803,7 @@
         }
         if (impactSpeedN > 190 && (a.hitFxT <= 0 || b.hitFxT <= 0)) {
           const mid = mul(add(a.pos, b.pos), 0.5);
-          spawnExplosion(mid, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 16, ttl: 0.12 });
+          spawnExplosion2(mid, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 16, ttl: 0.12 });
           a.hitFxT = 0.08;
           b.hitFxT = 0.08;
         }
@@ -4947,6 +4947,9 @@
       const phase = seed % 1e3 * 1e-3 * Math.PI * 2;
       const spin = phase + state.time * (carried ? 2.2 : 1.6);
       const coreRgb = carried ? [231, 240, 255] : [215, 150, 255];
+      const pingFxT = Math.max(0, Number(part.techPingFxT) || 0);
+      const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
+      const pingIntensity = pingFxT > 1e-3 ? clamp(pingFxT / Math.max(0.15, Math.min(2, glowSec)), 0, 1) : 0;
       const index = Number(String(part.id).split("-").pop() || 0) || 0;
       const segCount = 4;
       const segSpan = Math.PI * 2 / segCount;
@@ -4958,16 +4961,16 @@
       ctx.translate(part.pos.x, part.pos.y);
       ctx.rotate(spin + index * segSpan);
       ctx.globalCompositeOperation = "lighter";
-      ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.16 : 0.42);
+      ctx.fillStyle = rgbToRgba(coreRgb, (carried ? 0.16 : 0.42) + pingIntensity * 0.14);
       ctx.beginPath();
       ctx.arc(0, 0, r, a0, a1);
       ctx.arc(0, 0, innerR, a1, a0, true);
       ctx.closePath();
       ctx.fill();
       ctx.shadowColor = rgbToRgba(coreRgb, 0.95);
-      ctx.shadowBlur = carried ? clamp(r * 0.32, 10, 30) : clamp(r * 0.28, 10, 26);
-      ctx.strokeStyle = rgbToRgba(coreRgb, carried ? 0.98 : 0.92);
-      ctx.lineWidth = clamp(r * 0.06, 2, 6);
+      ctx.shadowBlur = (carried ? clamp(r * 0.32, 10, 30) : clamp(r * 0.28, 10, 26)) + pingIntensity * clamp(r * 0.18, 6, 18);
+      ctx.strokeStyle = rgbToRgba(coreRgb, (carried ? 0.98 : 0.92) + pingIntensity * 0.06);
+      ctx.lineWidth = clamp(r * 0.06, 2, 6) + pingIntensity * 1.2;
       ctx.beginPath();
       ctx.arc(0, 0, r, a0, a1);
       ctx.arc(0, 0, innerR, a1, a0, true);
@@ -5501,7 +5504,8 @@
         const p = playerInfos[i];
         if (p.id === localId)
           continue;
-        drawShipModel(ctx, p.ship, false, p.tier, p.palette);
+        const remoteThrusting = mpConnected && !!p.player?._mpVfx?.thrusting;
+        drawShipModel(ctx, p.ship, remoteThrusting, p.tier, p.palette);
       }
       if (localInfo?.ship)
         drawShipModel(ctx, localInfo.ship, localThrusting, localInfo.tier, localInfo.palette);
@@ -5873,12 +5877,12 @@
     const tuneTechPingCooldownSave = documentRef.getElementById("tune-tech-ping-cooldown-save");
     const tuneTechPingCooldownDefault = documentRef.getElementById("tune-tech-ping-cooldown-default");
     const nf = new Intl.NumberFormat();
-    function nowMs3() {
+    function nowMs4() {
       if (windowRef?.performance && typeof windowRef.performance.now === "function")
         return windowRef.performance.now();
       return Date.now();
     }
-    const hudPerf = { t0: nowMs3(), frames: 0, fps: 0 };
+    const hudPerf = { t0: nowMs4(), frames: 0, fps: 0 };
     const touch = {
       active: false,
       pointerId: null,
@@ -6931,7 +6935,7 @@ Server: ${endpoint}`;
         return;
       }
       hudPerf.frames++;
-      const t = nowMs3();
+      const t = nowMs4();
       const elapsed = t - hudPerf.t0;
       if (elapsed >= 500) {
         hudPerf.fps = hudPerf.frames * 1e3 / Math.max(1, elapsed);
@@ -15697,6 +15701,439 @@ Schema instances may only have up to 64 fields.`);
     };
   }
 
+  // src/net/createMpVfx.js
+  function shipTierByKey3(key) {
+    return SHIP_TIERS[key] || SHIP_TIERS.small;
+  }
+  function nowMs3() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function")
+      return performance.now();
+    return Date.now();
+  }
+  function xorshift322(seed) {
+    let s = seed >>> 0 || 305419896;
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >> 17;
+    s >>>= 0;
+    s ^= s << 5;
+    s >>>= 0;
+    return s >>> 0;
+  }
+  function hashStringToU322(str) {
+    const s = String(str ?? "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function makeRng(seedU32) {
+    let s = seedU32 >>> 0 || 305419896;
+    return () => {
+      s = xorshift322(s);
+      return s / 4294967295;
+    };
+  }
+  function exhaustShipScaleAndMirror(tier, ship) {
+    const renderer = tier?.renderer || {};
+    const shipRadius = Math.max(1, Number(ship?.radius) || Number(tier?.radius) || 1);
+    if (renderer.type === "svg") {
+      const baseScale = Number.isFinite(Number(renderer.svgScale)) ? Number(renderer.svgScale) : 1;
+      const explicitHullRadius = Number(renderer.hullRadius);
+      const autoScale = Number.isFinite(explicitHullRadius) && explicitHullRadius > 0 ? shipRadius / explicitHullRadius : 1;
+      return { scale: baseScale * autoScale, mirrorX: renderer.mirrorX === true };
+    }
+    const points = Array.isArray(renderer.points) ? renderer.points : null;
+    const hullRadius = points ? polygonHullRadius(points) : 0;
+    const drawScale = hullRadius > 1e-6 ? shipRadius / hullRadius : 1;
+    return { scale: drawScale, mirrorX: false };
+  }
+  function techPingMaxRadiusFromState(state) {
+    const halfW = Number(state?.world?.w) ? state.world.w / 2 : 0;
+    const halfH = Number(state?.world?.h) ? state.world.h / 2 : 0;
+    return Math.sqrt(halfW * halfW + halfH * halfH) * 1.3;
+  }
+  function ensureEffectArrays(state) {
+    if (!Array.isArray(state.effects))
+      state.effects = [];
+    if (!Array.isArray(state.exhaust))
+      state.exhaust = [];
+  }
+  function stepEffects(state, dt) {
+    if (!Array.isArray(state.effects) || state.effects.length === 0)
+      return;
+    let w = 0;
+    for (let i = 0; i < state.effects.length; i++) {
+      const e = state.effects[i];
+      if (!e)
+        continue;
+      e.t = (Number(e.t) || 0) + dt;
+      const ttl = Math.max(1e-6, Number(e.ttl) || 1e-3);
+      if (e.t < ttl)
+        state.effects[w++] = e;
+    }
+    state.effects.length = w;
+  }
+  function stepExhaust(state, dt) {
+    if (!Array.isArray(state.exhaust) || state.exhaust.length === 0)
+      return;
+    let w = 0;
+    for (let i = 0; i < state.exhaust.length; i++) {
+      const p = state.exhaust[i];
+      if (!p)
+        continue;
+      p.age = (Number(p.age) || 0) + dt;
+      const ttl = Math.max(1e-6, Number(p.ttl) || 1e-3);
+      if (p.age >= ttl)
+        continue;
+      const drag = p.kind === "spark" ? 3.8 : 2.4;
+      const damp = Math.exp(-drag * dt);
+      if (!p.vel)
+        p.vel = vec(0, 0);
+      if (!p.pos)
+        p.pos = vec(0, 0);
+      p.vel.x *= damp;
+      p.vel.y *= damp;
+      p.pos.x += p.vel.x * dt;
+      p.pos.y += p.vel.y * dt;
+      state.exhaust[w++] = p;
+    }
+    state.exhaust.length = w;
+  }
+  function spawnExplosion(state, rng, pos, { rgb = [255, 255, 255], kind = "pop", r0 = 6, r1 = 26, ttl = 0.22 } = {}) {
+    state.effects.push({
+      kind,
+      x: pos.x,
+      y: pos.y,
+      t: 0,
+      ttl,
+      r0,
+      r1,
+      rgb,
+      seed: Math.floor(rng() * 1e9)
+    });
+  }
+  function spawnBurstWavelets(state, rng, { pos, angle, speed, ttl = 0.55 * 1.1, rgb = [255, 221, 88] }) {
+    state.effects.push({
+      kind: "wavelets",
+      x: pos.x,
+      y: pos.y,
+      angle,
+      speed,
+      t: 0,
+      ttl,
+      rgb,
+      seed: Math.floor(rng() * 1e9)
+    });
+  }
+  function spawnExhaustParticle(state, kind, x, y, vx, vy, { ttl, r, seed }) {
+    state.exhaust.push({
+      kind,
+      pos: vec(x, y),
+      vel: vec(vx, vy),
+      age: 0,
+      ttl,
+      r,
+      seed
+    });
+  }
+  function createMpVfx({ engine } = {}) {
+    if (!engine || !engine.state)
+      throw new Error("createMpVfx requires { engine }");
+    const state = engine.state;
+    const motionById = /* @__PURE__ */ new Map();
+    const rngById = /* @__PURE__ */ new Map();
+    const pingAsteroids = /* @__PURE__ */ new Set();
+    const pingParts = /* @__PURE__ */ new Set();
+    const fxRng = makeRng(1369960461);
+    let lastUpdateAtMs = 0;
+    let lastBurst = false;
+    let lastPing = false;
+    function reset() {
+      motionById.clear();
+      rngById.clear();
+      pingAsteroids.clear();
+      pingParts.clear();
+      lastUpdateAtMs = 0;
+      lastBurst = false;
+      lastPing = false;
+    }
+    function ensurePlayerMotion(id) {
+      const pid = String(id ?? "");
+      let m = motionById.get(pid);
+      if (!m) {
+        m = { vx: 0, vy: 0, thrusting: false };
+        motionById.set(pid, m);
+      }
+      return m;
+    }
+    function ensurePlayerRng(id) {
+      const pid = String(id ?? "");
+      let r = rngById.get(pid);
+      if (!r) {
+        r = makeRng(hashStringToU322(`mpvfx:${pid}`) ^ 2654435769);
+        rngById.set(pid, r);
+      }
+      return r;
+    }
+    function updateTechPing({ dt, pingPressed }) {
+      for (const a of pingAsteroids) {
+        if (!a) {
+          pingAsteroids.delete(a);
+          continue;
+        }
+        const next = Math.max(0, (Number(a.techPingFxT) || 0) - dt);
+        if (next <= 1e-4) {
+          a.techPingFxT = 0;
+          pingAsteroids.delete(a);
+        } else {
+          a.techPingFxT = next;
+        }
+      }
+      for (const p of pingParts) {
+        if (!p) {
+          pingParts.delete(p);
+          continue;
+        }
+        const next = Math.max(0, (Number(p.techPingFxT) || 0) - dt);
+        if (next <= 1e-4) {
+          p.techPingFxT = 0;
+          pingParts.delete(p);
+        } else {
+          p.techPingFxT = next;
+        }
+      }
+      if (state.mode !== "playing") {
+        if (state.round && typeof state.round === "object") {
+          state.round.techPing = null;
+          state.round.techPingCooldownSec = 0;
+        }
+        return;
+      }
+      if (!state.round || typeof state.round !== "object")
+        return;
+      state.round.techPingCooldownSec = Math.max(0, (Number(state.round.techPingCooldownSec) || 0) - dt);
+      const localId = String(state.localPlayerId ?? "");
+      const ship = state.playersById?.[localId]?.ship || null;
+      if (pingPressed && ship && (Number(state.round.techPingCooldownSec) || 0) <= 1e-3) {
+        const speed = clamp(Number(state.params?.techPingSpeedPxPerSec ?? 2400), 200, 2e4);
+        state.round.techPing = {
+          origin: vec(Number(ship.pos?.x) || 0, Number(ship.pos?.y) || 0),
+          radius: 0,
+          prevRadius: 0,
+          speed,
+          maxRadius: techPingMaxRadiusFromState(state)
+        };
+        state.round.techPingCooldownSec = clamp(Number(state.params?.techPingCooldownSec ?? 3), 0, 60);
+      }
+      const ping = state.round.techPing;
+      if (!ping)
+        return;
+      const origin = ping.origin || vec(0, 0);
+      const prevR = Math.max(0, Number(ping.radius) || 0);
+      const nextR = prevR + Math.max(0, Number(ping.speed) || 0) * dt;
+      ping.prevRadius = prevR;
+      ping.radius = nextR;
+      const thickness = clamp(Number(state.params?.techPingThicknessPx ?? 22), 4, 240);
+      const glowSec = clamp(Number(state.params?.techPingGlowSec ?? 8), 0.25, 30);
+      const parts = Array.isArray(state.round.techParts) ? state.round.techParts : [];
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part)
+          continue;
+        const px = Number(part.pos?.x);
+        const py = Number(part.pos?.y);
+        if (Number.isFinite(px) && Number.isFinite(py) && (part.state === "dropped" || part.state === "carried")) {
+          const dx = px - origin.x;
+          const dy = py - origin.y;
+          const dist = Math.hypot(dx, dy);
+          const pad = (Number(part.radius) || 0) + thickness;
+          if (dist >= prevR - pad && dist <= nextR + pad) {
+            part.techPingFxT = glowSec;
+            pingParts.add(part);
+          }
+        }
+        if (part.state !== "in_asteroid")
+          continue;
+        const aid = String(part.containerAsteroidId ?? "");
+        if (!aid)
+          continue;
+        for (let j = 0; j < (state.asteroids?.length || 0); j++) {
+          const a = state.asteroids[j];
+          if (!a || String(a.id ?? "") !== aid)
+            continue;
+          const dx = (Number(a.pos?.x) || 0) - origin.x;
+          const dy = (Number(a.pos?.y) || 0) - origin.y;
+          const dist = Math.hypot(dx, dy);
+          const pad = (Number(a.radius) || 0) + thickness;
+          if (dist >= prevR - pad && dist <= nextR + pad) {
+            a.techPingFxT = glowSec;
+            pingAsteroids.add(a);
+          }
+          break;
+        }
+      }
+      if (nextR >= (Number(ping.maxRadius) || techPingMaxRadiusFromState(state)))
+        state.round.techPing = null;
+    }
+    function updateExhaustAndThrusters({ dt }) {
+      const ids = Object.keys(state.playersById || {}).sort();
+      const shipThrust = Math.max(1e-6, Number(state.params?.shipThrust) || 1);
+      const localId = String(state.localPlayerId ?? "");
+      const localInput = state.input && typeof state.input === "object" ? state.input : null;
+      const localThrustAmt = localInput && localId ? Math.max(localInput.up ? 1 : 0, clamp(Number(localInput.thrustAnalog ?? 0), 0, 1)) : 0;
+      const intensityBase = clamp(Number(state.params?.exhaustIntensity ?? 1), 0, 2.5);
+      const sparkBase = clamp(Number(state.params?.exhaustSparkScale ?? 1), 0, 3);
+      const dtScale = clamp(dt * 60, 0.1, 4);
+      const maxParticles = 520;
+      const particles = state.exhaust;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const player = state.playersById?.[id];
+        const ship = player?.ship;
+        if (!ship || !ship.pos || !ship.vel)
+          continue;
+        const mv = ensurePlayerMotion(id);
+        const vx = Number(ship.vel.x) || 0;
+        const vy = Number(ship.vel.y) || 0;
+        const ax = (vx - mv.vx) / Math.max(1e-6, dt);
+        const ay = (vy - mv.vy) / Math.max(1e-6, dt);
+        mv.vx = vx;
+        mv.vy = vy;
+        const ang = Number(ship.angle) || 0;
+        const fwdX = Math.cos(ang);
+        const fwdY = Math.sin(ang);
+        const forwardAccel = ax * fwdX + ay * fwdY;
+        const remoteThrustAmt = clamp(forwardAccel / shipThrust, 0, 1);
+        const thrustAmt = id === localId ? localThrustAmt : remoteThrustAmt;
+        if (player) {
+          if (!player._mpVfx || typeof player._mpVfx !== "object")
+            player._mpVfx = {};
+          const isThrusting = thrustAmt > 0.08;
+          player._mpVfx.thrusting = isThrusting;
+          mv.thrusting = isThrusting;
+        }
+        if (thrustAmt <= 1e-6)
+          continue;
+        const intensity = intensityBase * thrustAmt;
+        const sparkScale = sparkBase * thrustAmt;
+        if (intensity <= 1e-6 && sparkScale <= 1e-6)
+          continue;
+        const tier = shipTierByKey3(ship.tier);
+        const renderer = tier?.renderer || {};
+        const engines = Array.isArray(renderer.engines) ? renderer.engines : [];
+        if (engines.length === 0)
+          continue;
+        const tierScale = tier.key === "large" ? 1.2 : tier.key === "medium" ? 1.05 : 1;
+        const flamesPerEngineBase = tier.key === "large" ? 2 : 1;
+        const sparkChanceBase = tier.key === "large" ? 0.12 : tier.key === "medium" ? 0.1 : 0.09;
+        const r = ensurePlayerRng(id);
+        const { scale, mirrorX } = exhaustShipScaleAndMirror(tier, ship);
+        const c = Math.cos(ang);
+        const s = Math.sin(ang);
+        const backX = -c;
+        const backY = -s;
+        const sideX = -s;
+        const sideY = c;
+        const baseVelX = vx;
+        const baseVelY = vy;
+        const shipX = Number(ship.pos.x) || 0;
+        const shipY = Number(ship.pos.y) || 0;
+        for (let ei = 0; ei < engines.length; ei++) {
+          const e = engines[ei];
+          let lx = (Number(e?.x) || 0) * scale;
+          const ly = (Number(e?.y) || 0) * scale;
+          if (mirrorX)
+            lx = -lx;
+          const nozzleOffset = 1.6 * scale;
+          const localX = lx - nozzleOffset;
+          const localY = ly;
+          const nozzleX = shipX + localX * c - localY * s;
+          const nozzleY = shipY + localX * s + localY * c;
+          const flameCountF = flamesPerEngineBase * intensity * dtScale;
+          const flameWhole = Math.floor(flameCountF);
+          const flameFrac = flameCountF - flameWhole;
+          const flameCount = flameWhole + (r() < flameFrac ? 1 : 0);
+          for (let j = 0; j < flameCount; j++) {
+            const seed = Math.floor(r() * 4294967295) >>> 0;
+            const sideJitter = (r() * 2 - 1) * 50 * tierScale;
+            const backJitter = (r() * 2 - 1) * 20 * tierScale;
+            const speed = (170 + r() * 140) * tierScale;
+            const pvx = baseVelX + backX * (speed + backJitter) + sideX * sideJitter;
+            const pvy = baseVelY + backY * (speed + backJitter) + sideY * sideJitter;
+            const ttl = 0.26 + r() * 0.24;
+            const pr = (1.8 + r() * 1.9) * tierScale * (0.9 + 0.25 * intensity);
+            const posX = nozzleX + sideX * ((r() * 2 - 1) * 2 * tierScale) + backX * (r() * 2.4);
+            const posY = nozzleY + sideY * ((r() * 2 - 1) * 2 * tierScale) + backY * (r() * 2.4);
+            spawnExhaustParticle(state, "flame", posX, posY, pvx, pvy, { ttl, r: pr, seed });
+          }
+          const sparkChance = clamp(sparkChanceBase * sparkScale * dtScale, 0, 1);
+          if (sparkChance > 1e-6 && r() < sparkChance) {
+            const seed = Math.floor(r() * 4294967295) >>> 0;
+            const sideJitter = (r() * 2 - 1) * 110 * tierScale;
+            const speed = (280 + r() * 210) * tierScale;
+            const pvx = baseVelX + backX * speed + sideX * sideJitter;
+            const pvy = baseVelY + backY * speed + sideY * sideJitter;
+            const ttl = 0.11 + r() * 0.18;
+            const pr = (0.9 + r() * 1.2) * tierScale;
+            spawnExhaustParticle(state, "spark", nozzleX, nozzleY, pvx, pvy, { ttl, r: pr, seed });
+          }
+        }
+      }
+      if (particles.length > maxParticles) {
+        particles.splice(0, particles.length - maxParticles);
+      }
+    }
+    function updateBurstFx({ burstPressed }) {
+      if (!burstPressed)
+        return;
+      if (state.mode !== "playing")
+        return;
+      const localId = String(state.localPlayerId ?? "");
+      const ship = state.playersById?.[localId]?.ship || null;
+      if (!ship?.pos)
+        return;
+      const pos = vec(Number(ship.pos.x) || 0, Number(ship.pos.y) || 0);
+      spawnExplosion(state, fxRng, pos, { kind: "ring", rgb: [255, 221, 88], r0: 18, r1: 120, ttl: 0.18 });
+      const seedBase = hashStringToU322(`burst:${localId}:${Math.floor((Number(state.time) || 0) * 10)}`);
+      const r = makeRng(seedBase ^ 2246822507);
+      const n = 10;
+      for (let i = 0; i < n; i++) {
+        const ang = i / n * Math.PI * 2 + r() * 0.25;
+        const speed = lerp(240, 420, r());
+        spawnBurstWavelets(state, fxRng, { pos, angle: ang, speed, ttl: 0.48, rgb: [255, 221, 88] });
+      }
+    }
+    function update({ dtSec = 0, atMs = nowMs3() } = {}) {
+      const dt = clamp(Number(dtSec) || 0, 0, 0.05);
+      if (!(dt > 0))
+        return;
+      ensureEffectArrays(state);
+      if (lastUpdateAtMs) {
+        const wallDt = (Number(atMs) - Number(lastUpdateAtMs)) / 1e3;
+        if (Number.isFinite(wallDt) && wallDt > 0.25) {
+          lastUpdateAtMs = Number(atMs);
+        }
+      }
+      lastUpdateAtMs = Number(atMs) || lastUpdateAtMs || nowMs3();
+      stepEffects(state, dt);
+      stepExhaust(state, dt);
+      const input = state.input && typeof state.input === "object" ? state.input : {};
+      const burstNow = !!input.burst;
+      const pingNow = !!input.ping;
+      const burstPressed = burstNow && !lastBurst;
+      const pingPressed = pingNow && !lastPing;
+      lastBurst = burstNow;
+      lastPing = pingNow;
+      updateBurstFx({ burstPressed });
+      updateTechPing({ dt, pingPressed });
+      updateExhaustAndThrusters({ dt });
+    }
+    return { update, reset };
+  }
+
   // src/main.js
   (() => {
     const canvas = document.getElementById("game");
@@ -15844,16 +16281,21 @@ Schema instances may only have up to 64 fields.`);
     let accumulator = 0;
     const fixedDt = 1 / 60;
     let mpDelayMs = 120;
+    let wasMpConnected = false;
     function stepRealTime(ts) {
       const dtMs = Math.min(50, ts - last);
       last = ts;
       accumulator += dtMs / 1e3;
       ui.applyTouchControls?.();
       const mpConnected = mp.isConnected();
+      if (!mpConnected && wasMpConnected)
+        mpVfx.reset();
+      wasMpConnected = mpConnected;
       const pausedByMenu = !mpConnected && ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (mpConnected) {
         game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
         mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
+        mpVfx.update({ dtSec: dtMs / 1e3, atMs: ts });
         const mpHud = game.state?._mp;
         const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
         const targetDelay = dtMax != null ? Math.max(60, Math.min(220, dtMax + 20)) : 120;
@@ -15928,6 +16370,7 @@ Schema instances may only have up to 64 fields.`);
       snapshotBufferSize: 32
     });
     const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
+    const mpVfx = createMpVfx({ engine: game });
     const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
     window.Blasteroids = {
       ...existingApi,
@@ -15950,6 +16393,7 @@ Schema instances may only have up to 64 fields.`);
       mpDisconnect: async () => {
         mpWorld.detach();
         await mp.disconnect();
+        mpVfx.reset();
         game.resetWorld();
         game.state.mode = "menu";
         ui.setMenuVisible(true);

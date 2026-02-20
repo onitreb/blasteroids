@@ -935,6 +935,9 @@ export function createRenderer(engine) {
     const phase = (seed % 1000) * 0.001 * Math.PI * 2;
     const spin = phase + state.time * (carried ? 2.2 : 1.6);
     const coreRgb = carried ? [231, 240, 255] : [215, 150, 255];
+    const pingFxT = Math.max(0, Number(part.techPingFxT) || 0);
+    const glowSec = clamp(Number(state.params.techPingGlowSec ?? 8), 0.25, 30);
+    const pingIntensity = pingFxT > 1e-3 ? clamp(pingFxT / Math.max(0.15, Math.min(2, glowSec)), 0, 1) : 0;
     const index = Number(String(part.id).split("-").pop() || 0) || 0;
     const segCount = 4;
     const segSpan = (Math.PI * 2) / segCount;
@@ -948,7 +951,7 @@ export function createRenderer(engine) {
     ctx.rotate(spin + index * segSpan);
 
     ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = rgbToRgba(coreRgb, carried ? 0.16 : 0.42);
+    ctx.fillStyle = rgbToRgba(coreRgb, (carried ? 0.16 : 0.42) + pingIntensity * 0.14);
     ctx.beginPath();
     ctx.arc(0, 0, r, a0, a1);
     ctx.arc(0, 0, innerR, a1, a0, true);
@@ -956,9 +959,9 @@ export function createRenderer(engine) {
     ctx.fill();
 
     ctx.shadowColor = rgbToRgba(coreRgb, 0.95);
-    ctx.shadowBlur = carried ? clamp(r * 0.32, 10, 30) : clamp(r * 0.28, 10, 26);
-    ctx.strokeStyle = rgbToRgba(coreRgb, carried ? 0.98 : 0.92);
-    ctx.lineWidth = clamp(r * 0.06, 2, 6);
+    ctx.shadowBlur = (carried ? clamp(r * 0.32, 10, 30) : clamp(r * 0.28, 10, 26)) + pingIntensity * clamp(r * 0.18, 6, 18);
+    ctx.strokeStyle = rgbToRgba(coreRgb, (carried ? 0.98 : 0.92) + pingIntensity * 0.06);
+    ctx.lineWidth = clamp(r * 0.06, 2, 6) + pingIntensity * 1.2;
     ctx.beginPath();
     ctx.arc(0, 0, r, a0, a1);
     ctx.arc(0, 0, innerR, a1, a0, true);
@@ -1544,7 +1547,8 @@ export function createRenderer(engine) {
     for (let i = 0; i < playerInfos.length; i++) {
       const p = playerInfos[i];
       if (p.id === localId) continue;
-      drawShipModel(ctx, p.ship, false, p.tier, p.palette);
+      const remoteThrusting = mpConnected && !!p.player?._mpVfx?.thrusting;
+      drawShipModel(ctx, p.ship, remoteThrusting, p.tier, p.palette);
     }
     if (localInfo?.ship) drawShipModel(ctx, localInfo.ship, localThrusting, localInfo.tier, localInfo.palette);
 
