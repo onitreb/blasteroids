@@ -88,3 +88,12 @@ Smoke scripts (Node / headless browser):
 - Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
 - Browser connect + snapshots: `node scripts/mp-browser-smoke.mjs`
 - Browser saucer + lasers sync: `node scripts/mp-browser-saucer-smoke.mjs`
+
+### LAN access from another device
+1) On the host machine, run: `npm run lan:server -- --port 2567`
+2) On the other device, open the printed URL: `http://<host-lan-ip>:2567/`
+3) In the in-game Multiplayer panel, set Endpoint to: `ws://<host-lan-ip>:2567` (not `localhost`)
+
+If the other device can’t load the page at all, it’s almost always a network/firewall issue:
+- macOS firewall: allow incoming connections for `node` when prompted, or temporarily disable the firewall for testing.
+- Wi-Fi “client isolation” / guest networks can block device-to-device connections even on the same SSID.

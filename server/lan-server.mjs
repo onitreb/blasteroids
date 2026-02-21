@@ -39,6 +39,8 @@ const port = Number(args.port ?? process.env.PORT ?? 2567);
 if (!Number.isFinite(port) || port < 0) {
   throw new Error(`Invalid port: ${args.port ?? process.env.PORT}`);
 }
+const hostRaw = args.host ?? process.env.HOST ?? "0.0.0.0";
+const host = hostRaw === "true" || hostRaw === "" ? "0.0.0.0" : String(hostRaw);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,7 +64,7 @@ const gameServer = defineServer({
   },
 });
 
-await gameServer.listen(port);
+await gameServer.listen(port, host);
 
 let actualPort = port;
 const addr = gameServer.transport?.server?.address?.();
@@ -77,7 +79,14 @@ const urls = [
 ];
 
 console.log(`[LAN] Blasteroids server listening on port ${actualPort}`);
+console.log(`[LAN] Bind host: ${host}`);
 console.log(`[LAN] Open in browser:`);
 for (const url of urls) {
   console.log(`  ${url}`);
+}
+
+console.log(`[LAN] WebSocket endpoint:`);
+for (const url of urls) {
+  const ws = url.replace(/^http:/, "ws:").replace(/\/$/, "");
+  console.log(`  ${ws}`);
 }

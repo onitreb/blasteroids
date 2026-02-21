@@ -605,3 +605,13 @@ Updates
     - `npm run build`: success (`dist/blasteroids.js` regenerated)
     - `node scripts/mp-browser-smoke.mjs`: pass
     - `node scripts/mp-browser-2p-smoke.mjs`: pass
+
+- 2026-02-20 MP-28 (MP-connected ambient animation + pickup/impact FX):
+  - Gem visuals now animate while MP-connected (spin + throb pulseAlpha) even though local sim is paused.
+  - Star heat glows for ships + asteroids are derived from the authoritative red-giant boundary so the pressure reads in MP.
+  - Added view-gated pickup/impact FX derived from authoritative state changes: gem pickup sparkle, tech-part carry/install glint, ship-launched projectile impact pops, and saucer kill pop/ring (gold-gem heuristic).
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass

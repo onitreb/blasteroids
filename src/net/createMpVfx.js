@@ -151,8 +151,12 @@ export function createMpVfx({ engine } = {}) {
   const rngById = new Map(); // id -> () => [0,1)
   const pingAsteroids = new Set();
   const pingParts = new Set();
-  const prevAsteroidById = new Map(); // id -> { attachedTo, shipLaunched }
+  const prevAsteroidById = new Map(); // id -> { attachedTo, shipLaunched, x, y, size }
   const lastBurstFxAtMsByPlayerId = new Map(); // id -> ms
+  const prevGemById = new Map(); // id -> { x, y, kind }
+  const prevTechPartById = new Map(); // id -> { state, x, y }
+  const prevSaucer = { present: false, x: 0, y: 0 };
+  let ignoreEventsUntilMs = 0;
 
   const fxRng = makeRng(0x51a7f00d);
   let lastUpdateAtMs = 0;
@@ -166,6 +170,12 @@ export function createMpVfx({ engine } = {}) {
     pingParts.clear();
     prevAsteroidById.clear();
     lastBurstFxAtMsByPlayerId.clear();
+    prevGemById.clear();
+    prevTechPartById.clear();
+    prevSaucer.present = false;
+    prevSaucer.x = 0;
+    prevSaucer.y = 0;
+    ignoreEventsUntilMs = 0;
     lastUpdateAtMs = 0;
     lastBurst = false;
     lastPing = false;
@@ -294,6 +304,192 @@ export function createMpVfx({ engine } = {}) {
     }
 
     if (nextR >= (Number(ping.maxRadius) || techPingMaxRadiusFromState(state))) state.round.techPing = null;
+  }
+
+  function gemRgb(kind) {
+    if (kind === "gold") return [255, 221, 88];
+    if (kind === "diamond") return [86, 183, 255];
+    if (kind === "ruby") return [255, 89, 100];
+    return [84, 240, 165]; // emerald
+  }
+
+  function isPosInView(pos, margin = 220) {
+    if (!pos) return false;
+    const cam = state.camera || {};
+    const view = state.view || {};
+    const zoom = Math.max(0.1, Number(cam.zoom) || 1);
+    const halfW = (Number(view.w) || 0) * 0.5 / zoom;
+    const halfH = (Number(view.h) || 0) * 0.5 / zoom;
+    const cx = Number(cam.x) || 0;
+    const cy = Number(cam.y) || 0;
+    const m = Math.max(0, Number(margin) || 0);
+    return Math.abs(pos.x - cx) <= halfW + m && Math.abs(pos.y - cy) <= halfH + m;
+  }
+
+  function updateStarHeatVisuals() {
+    const star = state.round?.star;
+    if (!star) return;
+    const axis = String(star.axis ?? "");
+    const dir = Number(star.dir) === 1 ? 1 : -1;
+    const boundary = Number(star.boundary) || 0;
+    const heatBand = clamp(Number(state.params?.starSafeBufferPx ?? 320), 80, Math.min(state.world?.w || 1e9, state.world?.h || 1e9));
+
+    // Ships
+    const ids = Object.keys(state.playersById || {}).sort();
+    for (let i = 0; i < ids.length; i++) {
+      const ship = state.playersById?.[ids[i]]?.ship;
+      if (!ship?.pos) continue;
+      const axisPos = axis === "y" ? Number(ship.pos.y) || 0 : Number(ship.pos.x) || 0;
+      const r = Math.max(0, Number(ship.radius) || 0);
+      const signedDist = (axisPos - boundary) * dir - r;
+      const heat = clamp(1 - signedDist / Math.max(1e-6, heatBand), 0, 1);
+      ship.starHeat = heat;
+    }
+
+    // Asteroids
+    for (let i = 0; i < (state.asteroids?.length || 0); i++) {
+      const a = state.asteroids[i];
+      if (!a?.pos) continue;
+      const axisPos = axis === "y" ? Number(a.pos.y) || 0 : Number(a.pos.x) || 0;
+      const r = Math.max(0, Number(a.radius) || 0);
+      const signedDist = (axisPos - boundary) * dir - r;
+      const heat = clamp(1 - signedDist / Math.max(1e-6, heatBand), 0, 1);
+      a.starHeat = heat;
+    }
+  }
+
+  function updateGemAmbient(dt) {
+    const gems = state.gems;
+    if (!Array.isArray(gems) || gems.length === 0) return;
+    const ttlDefault = Math.max(0.1, Number(state.params?.gemTtlSec ?? 6) || 6);
+    const maxHz = clamp(Number(state.params?.gemBlinkMaxHz ?? 5) || 5, 0.25, 12);
+    for (let i = 0; i < gems.length; i++) {
+      const g = gems[i];
+      if (!g) continue;
+
+      // Keep authoritative pos/vel as-is; only animate visuals.
+      g.ageSec = (Number(g.ageSec) || 0) + dt;
+      const ttl = g.kind === "gold" ? 18 : ttlDefault;
+      g.ttlSec = Number.isFinite(Number(g.ttlSec)) ? Number(g.ttlSec) : ttl;
+
+      const lifeT = clamp((Number(g.ageSec) || 0) / Math.max(0.001, Number(g.ttlSec) || ttlDefault), 0, 1);
+      const throbHz = lerp(0.75, maxHz, lifeT * lifeT);
+
+      if (!Number.isFinite(Number(g.pulsePhase))) g.pulsePhase = (hashStringToU32(`gem:${g.id}`) % 997) / 997;
+      g.pulsePhase = (Number(g.pulsePhase) + dt * throbHz) % 1;
+      const wave = 0.5 + 0.5 * Math.sin(Number(g.pulsePhase) * Math.PI * 2);
+      const minAlpha = lerp(0.6, 0.3, lifeT);
+      g.pulseAlpha = lerp(minAlpha, 1, wave);
+
+      if (!Number.isFinite(Number(g.spinVel))) {
+        const r = ensurePlayerRng(`gem:${g.id}`);
+        g.spinVel = (r() * 2 - 1) * 2.8;
+      }
+      if (!Number.isFinite(Number(g.spin))) g.spin = (hashStringToU32(`gemspin:${g.id}`) % 1000) * 0.001 * Math.PI * 2;
+      g.spin += Number(g.spinVel) * dt;
+    }
+  }
+
+  function diffGems({ atMs }) {
+    const added = [];
+    const removed = [];
+    const seen = new Set();
+    const gems = state.gems;
+    if (Array.isArray(gems)) {
+      for (let i = 0; i < gems.length; i++) {
+        const g = gems[i];
+        const id = String(g?.id ?? "");
+        if (!id) continue;
+        seen.add(id);
+        if (!prevGemById.has(id)) {
+          added.push(g);
+        }
+        prevGemById.set(id, { x: Number(g.pos?.x) || 0, y: Number(g.pos?.y) || 0, kind: String(g.kind ?? "") });
+      }
+    }
+    for (const [id, prev] of prevGemById.entries()) {
+      if (seen.has(id)) continue;
+      removed.push({ id, prev });
+      prevGemById.delete(id);
+    }
+
+    if (!ignoreEventsUntilMs) ignoreEventsUntilMs = (Number(atMs) || nowMs()) + 600;
+
+    const canEmit = (Number(atMs) || 0) >= ignoreEventsUntilMs;
+    if (canEmit) {
+      for (let i = 0; i < removed.length; i++) {
+        const prev = removed[i].prev;
+        const pos = vec(Number(prev.x) || 0, Number(prev.y) || 0);
+        if (!isPosInView(pos, 240)) continue;
+        spawnExplosion(state, fxRng, pos, { kind: "tiny", rgb: gemRgb(prev.kind), r0: 4, r1: 16, ttl: 0.14 });
+      }
+    }
+
+    return { added, removed };
+  }
+
+  function diffTechParts({ atMs }) {
+    const parts = state.round?.techParts;
+    if (!Array.isArray(parts)) return;
+    const seen = new Set();
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      const id = String(p?.id ?? "");
+      if (!id) continue;
+      seen.add(id);
+      const curState = String(p.state ?? "");
+      const x = Number(p.pos?.x) || 0;
+      const y = Number(p.pos?.y) || 0;
+      const prev = prevTechPartById.get(id);
+      prevTechPartById.set(id, { state: curState, x, y });
+      if (!prev) continue;
+      if (!ignoreEventsUntilMs) ignoreEventsUntilMs = (Number(atMs) || nowMs()) + 600;
+      if ((Number(atMs) || 0) < ignoreEventsUntilMs) continue;
+      if (prev.state !== curState && (curState === "carried" || curState === "installed")) {
+        const pos = vec(x, y);
+        if (!isPosInView(pos, 240)) continue;
+        spawnExplosion(state, fxRng, pos, { kind: "ring", rgb: [215, 150, 255], r0: 10, r1: 52, ttl: 0.16 });
+      }
+    }
+    for (const id of prevTechPartById.keys()) {
+      if (!seen.has(id)) prevTechPartById.delete(id);
+    }
+  }
+
+  function maybeSaucerDeathFx({ gemAdded, atMs }) {
+    const s = state.saucer;
+    const present = !!s;
+    if (present) {
+      prevSaucer.present = true;
+      prevSaucer.x = Number(s.pos?.x) || 0;
+      prevSaucer.y = Number(s.pos?.y) || 0;
+      return;
+    }
+    if (!prevSaucer.present) return;
+    prevSaucer.present = false;
+
+    if (!ignoreEventsUntilMs) ignoreEventsUntilMs = (Number(atMs) || nowMs()) + 600;
+    if ((Number(atMs) || 0) < ignoreEventsUntilMs) return;
+
+    const pos = vec(prevSaucer.x, prevSaucer.y);
+    if (!isPosInView(pos, 240)) return;
+
+    // Heuristic: only play kill FX if a new gold gem spawned near where the saucer vanished.
+    let killed = false;
+    for (let i = 0; i < gemAdded.length; i++) {
+      const g = gemAdded[i];
+      if (!g || String(g.kind ?? "") !== "gold") continue;
+      const dx = (Number(g.pos?.x) || 0) - pos.x;
+      const dy = (Number(g.pos?.y) || 0) - pos.y;
+      if (dx * dx + dy * dy <= 160 * 160) {
+        killed = true;
+        break;
+      }
+    }
+    if (!killed) return;
+
+    spawnExplosion(state, fxRng, pos, { kind: "pop", rgb: [255, 221, 88], r0: 14, r1: 56, ttl: 0.24 });
+    spawnExplosion(state, fxRng, pos, { kind: "ring", rgb: [255, 221, 88], r0: 20, r1: 88, ttl: 0.2 });
   }
 
   function updateExhaustAndThrusters({ dt }) {
@@ -495,7 +691,7 @@ export function createMpVfx({ engine } = {}) {
     });
   }
 
-  function updateBurstFxFromAuthoritative({ atMs }) {
+  function updateBurstFxFromAuthoritative({ gemAdded, atMs }) {
     const seen = new Set();
     for (let i = 0; i < (state.asteroids?.length || 0); i++) {
       const a = state.asteroids[i];
@@ -514,10 +710,46 @@ export function createMpVfx({ engine } = {}) {
         const vel = a?.vel ? vec(Number(a.vel.x) || 0, Number(a.vel.y) || 0) : vec(0, 0);
         triggerBurstFx({ playerId: pid, pos, vel, atMs });
       }
-      prevAsteroidById.set(id, { attachedTo, shipLaunched });
+      prevAsteroidById.set(id, {
+        attachedTo,
+        shipLaunched,
+        x: Number(a.pos?.x) || 0,
+        y: Number(a.pos?.y) || 0,
+        size: String(a.size ?? ""),
+      });
     }
-    for (const id of prevAsteroidById.keys()) {
-      if (!seen.has(id)) prevAsteroidById.delete(id);
+    for (const [id, prev] of prevAsteroidById.entries()) {
+      if (seen.has(id)) continue;
+      prevAsteroidById.delete(id);
+
+      if (!ignoreEventsUntilMs) ignoreEventsUntilMs = (Number(atMs) || nowMs()) + 600;
+      if ((Number(atMs) || 0) < ignoreEventsUntilMs) continue;
+
+      const pos = vec(Number(prev.x) || 0, Number(prev.y) || 0);
+      if (!isPosInView(pos, 240)) continue;
+
+      // Ship-launched projectile impact: small pop on disappearance (view-gated).
+      if (prev.shipLaunched) {
+        spawnExplosion(state, fxRng, pos, { kind: "tiny", rgb: [255, 255, 255], r0: 4, r1: 18, ttl: 0.16 });
+      }
+
+      // Medium fracture: if we saw new gems appear near where a medium asteroid vanished, show a larger pop.
+      if (String(prev.size) === "med" && Array.isArray(gemAdded) && gemAdded.length) {
+        let near = false;
+        for (let i = 0; i < gemAdded.length; i++) {
+          const g = gemAdded[i];
+          if (!g) continue;
+          const dx = (Number(g.pos?.x) || 0) - pos.x;
+          const dy = (Number(g.pos?.y) || 0) - pos.y;
+          if (dx * dx + dy * dy <= 90 * 90) {
+            near = true;
+            break;
+          }
+        }
+        if (near) {
+          spawnExplosion(state, fxRng, pos, { kind: "pop", rgb: [255, 255, 255], r0: 10, r1: 42, ttl: 0.22 });
+        }
+      }
     }
   }
 
@@ -538,6 +770,15 @@ export function createMpVfx({ engine } = {}) {
     stepEffects(state, dt);
     stepExhaust(state, dt);
 
+    // Ambient visuals derived from authoritative state.
+    updateStarHeatVisuals();
+    updateGemAmbient(dt);
+
+    // Event-ish visuals derived from authoritative state changes.
+    const gemEvents = diffGems({ atMs });
+    diffTechParts({ atMs });
+    maybeSaucerDeathFx({ gemAdded: gemEvents.added, atMs });
+
     // Edge-trigger impulses from local input.
     const input = state.input && typeof state.input === "object" ? state.input : {};
     const burstNow = !!input.burst;
@@ -549,7 +790,7 @@ export function createMpVfx({ engine } = {}) {
 
     decayBlastPulse(dt);
     updateBurstFxFromInput({ burstPressed, atMs });
-    updateBurstFxFromAuthoritative({ atMs });
+    updateBurstFxFromAuthoritative({ gemAdded: gemEvents.added, atMs });
     updateTechPing({ dt, pingPressed });
     updateExhaustAndThrusters({ dt });
   }
