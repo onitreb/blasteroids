@@ -444,14 +444,17 @@ export class BlasteroidsRoom extends Room {
     const radius = asteroidRadiusForSize(this._engine.state.params, size);
     const mass = asteroidMassForRadius(radius);
 
+    const baseOrbitR = 95;
     const startIndex = this._engine.state.asteroids?.length ? this._engine.state.asteroids.length : 0;
     for (let i = 0; i < count; i++) {
       const id = `debug-attached-${pid}-${startIndex + i}-${Math.floor(rr() * 1e9)}`;
       const orbitA = (i / count) * Math.PI * 2;
+      const wAng = (Number(ship.angle) || 0) + orbitA;
+      const orbitR = baseOrbitR + Math.max(0, radius);
       this._engine.state.asteroids.push({
         id,
         size,
-        pos: { x: Number(ship.pos.x) || 0, y: Number(ship.pos.y) || 0 },
+        pos: { x: (Number(ship.pos.x) || 0) + Math.cos(wAng) * orbitR, y: (Number(ship.pos.y) || 0) + Math.sin(wAng) * orbitR },
         vel: { x: 0, y: 0 },
         radius,
         mass,

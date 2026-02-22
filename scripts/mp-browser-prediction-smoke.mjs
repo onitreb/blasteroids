@@ -9,6 +9,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function wrapAngle(a) {
+  const x = Number(a) || 0;
+  const tau = Math.PI * 2;
+  return ((x + Math.PI) % tau + tau) % tau - Math.PI;
+}
+
 async function waitFor(predicate, { timeoutMs = 15000, intervalMs = 50 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -143,10 +149,32 @@ try {
   });
   if (!attachedReady) throw new Error("Expected debug attached asteroids to be present");
 
+  // Allow the authoritative sim a moment to settle any initial attachment placement.
+  await page.waitForTimeout(300);
+
+  const orbit0 = await page.evaluate(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    const ship = g.state.playersById?.[pid]?.ship;
+    const sx = ship?.pos?.x ?? 0;
+    const sy = ship?.pos?.y ?? 0;
+    const sa = ship?.angle ?? 0;
+    const out = {};
+    for (const a of g.state.asteroids || []) {
+      if (!a || !a.attached || a.attachedTo !== pid) continue;
+      const dx = (a.pos?.x ?? 0) - sx;
+      const dy = (a.pos?.y ?? 0) - sy;
+      out[a.id] = { r: Math.hypot(dx, dy), aLocal: Math.atan2(dy, dx) - sa };
+    }
+    return out;
+  });
+
   // Move for long enough that, without visual compensation, attached asteroids would appear left behind.
   await page.keyboard.down("w");
+  await page.keyboard.down("d");
   await page.waitForTimeout(900);
   await page.keyboard.up("w");
+  await page.keyboard.up("d");
   await page.waitForTimeout(50);
 
   const attachCheck = await page.evaluate(() => {
@@ -165,6 +193,44 @@ try {
     throw new Error(`Attached asteroids drifted too far from predicted ship. attachCheck=${JSON.stringify(attachCheck)}`);
   }
 
+  const orbit1 = await page.evaluate(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    const ship = g.state.playersById?.[pid]?.ship;
+    const sx = ship?.pos?.x ?? 0;
+    const sy = ship?.pos?.y ?? 0;
+    const sa = ship?.angle ?? 0;
+    const out = {};
+    for (const a of g.state.asteroids || []) {
+      if (!a || !a.attached || a.attachedTo !== pid) continue;
+      const dx = (a.pos?.x ?? 0) - sx;
+      const dy = (a.pos?.y ?? 0) - sy;
+      out[a.id] = { r: Math.hypot(dx, dy), aLocal: Math.atan2(dy, dx) - sa };
+    }
+    return out;
+  });
+
+  const orbitDrift = Object.keys(orbit0).reduce(
+    (acc, id) => {
+      const a0 = orbit0[id];
+      const a1 = orbit1[id];
+      if (!a0 || !a1) return acc;
+      const dr = Math.abs((a1.r ?? 0) - (a0.r ?? 0));
+      const da = wrapAngle((a1.aLocal ?? 0) - (a0.aLocal ?? 0));
+      acc.count++;
+      acc.drMax = Math.max(acc.drMax, dr);
+      acc.daMax = Math.max(acc.daMax, Math.abs(da));
+      return acc;
+    },
+    { count: 0, drMax: 0, daMax: 0 },
+  );
+  // If attachments are visually coherent with prediction, their ship-local polar coords should remain stable.
+  if (orbitDrift.count > 0) {
+    if (orbitDrift.drMax > 30 || orbitDrift.daMax > 0.9) {
+      throw new Error(`Attached asteroid orbit drift too large: ${JSON.stringify(orbitDrift)}`);
+    }
+  }
+
   const shot = path.join(tmpDir, `mp-22-${stamp}.png`);
   await page.screenshot({ path: shot, fullPage: true });
 
@@ -176,7 +242,7 @@ try {
       payload: JSON.parse(window.Blasteroids.renderGameToText()),
     };
   });
-  fs.writeFileSync(dumpPath, JSON.stringify({ httpUrl, wsUrl, pre, post, moved, attachCheck, dump }, null, 2));
+  fs.writeFileSync(dumpPath, JSON.stringify({ httpUrl, wsUrl, pre, post, moved, attachCheck, orbitDrift, dump }, null, 2));
 
   console.log("[mp-browser-prediction-smoke] ok", { httpUrl, wsUrl, moved: moved.toFixed(2), screenshot: shot, stateDump: dumpPath });
 } finally {

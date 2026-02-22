@@ -15028,6 +15028,11 @@ Schema instances may only have up to 64 fields.`);
     const d = wrapAngle(bb - aa);
     return wrapAngle(aa + d * clamp(t, 0, 1));
   }
+  function rotate2(x, y, ang) {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    return { x: x * c - y * s, y: x * s + y * c };
+  }
   function makeHistory() {
     return { a: null, b: null, c: null };
   }
@@ -15501,6 +15506,7 @@ Schema instances may only have up to 64 fields.`);
       const recvStats = computeRecvStats(atMs, 2e3);
       const remoteSimTimeMs = estimateRemoteSimTimeMs({ atMs, recvStats });
       const targetSimTime = remoteSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
+      let localAuthPose = null;
       for (const [id, track] of playerTracks) {
         const player = state.playersById[id];
         if (!player?.ship)
@@ -15509,14 +15515,21 @@ Schema instances may only have up to 64 fields.`);
         if (!span)
           continue;
         const { p0, p1, t } = span;
+        const authX = lerp(p0.x, p1.x, t);
+        const authY = lerp(p0.y, p1.y, t);
+        const authVx = lerp(p0.vx, p1.vx, t);
+        const authVy = lerp(p0.vy, p1.vy, t);
+        const authAngle = lerpAngle(p0.angle, p1.angle, t);
         const ship = player.ship;
         const isLocal = skipLocalPlayerPose && id === state.localPlayerId;
         if (!isLocal) {
-          ship.pos.x = lerp(p0.x, p1.x, t);
-          ship.pos.y = lerp(p0.y, p1.y, t);
-          ship.vel.x = lerp(p0.vx, p1.vx, t);
-          ship.vel.y = lerp(p0.vy, p1.vy, t);
-          ship.angle = lerpAngle(p0.angle, p1.angle, t);
+          ship.pos.x = authX;
+          ship.pos.y = authY;
+          ship.vel.x = authVx;
+          ship.vel.y = authVy;
+          ship.angle = authAngle;
+        } else {
+          localAuthPose = { x: authX, y: authY, vx: authVx, vy: authVy, angle: authAngle };
         }
         const tierKey = shipTierKey(track.tier);
         const tier = SHIP_TIERS[tierKey] || SHIP_TIERS.small;
@@ -15586,6 +15599,52 @@ Schema instances may only have up to 64 fields.`);
         obj.pullOwnerId = track.static.pullOwnerId ? track.static.pullOwnerId : null;
         obj.shipLaunched = !!track.static.shipLaunched;
         state.asteroids.push(obj);
+      }
+      if (skipLocalPlayerPose && localAuthPose) {
+        const localId = state.localPlayerId;
+        const localPlayer2 = localId ? state.playersById?.[localId] : null;
+        const ship = localPlayer2?.ship;
+        if (ship) {
+          const dx = (Number(ship.pos?.x) || 0) - localAuthPose.x;
+          const dy = (Number(ship.pos?.y) || 0) - localAuthPose.y;
+          const dPos = Math.hypot(dx, dy);
+          const dAng = wrapAngle((Number(ship.angle) || 0) - localAuthPose.angle);
+          if (dPos < 5e4 && Math.abs(dAng) < Math.PI * 4) {
+            const dvx = (Number(ship.vel?.x) || 0) - localAuthPose.vx;
+            const dvy = (Number(ship.vel?.y) || 0) - localAuthPose.vy;
+            for (let i = 0; i < state.asteroids.length; i++) {
+              const a = state.asteroids[i];
+              if (!a?.attached || a.attachedTo !== localId)
+                continue;
+              const rx = (Number(a.pos?.x) || 0) - localAuthPose.x;
+              const ry = (Number(a.pos?.y) || 0) - localAuthPose.y;
+              const r = rotate2(rx, ry, dAng);
+              a.pos.x = (Number(ship.pos?.x) || 0) + r.x;
+              a.pos.y = (Number(ship.pos?.y) || 0) + r.y;
+              a.vel.x = (Number(a.vel?.x) || 0) + dvx;
+              a.vel.y = (Number(a.vel?.y) || 0) + dvy;
+            }
+            const parts = state.round?.techParts;
+            if (Array.isArray(parts)) {
+              for (let i = 0; i < parts.length; i++) {
+                const p = parts[i];
+                if (!p)
+                  continue;
+                if (p.state !== "carried")
+                  continue;
+                if (p.carrierPlayerId !== localId)
+                  continue;
+                const rx = (Number(p.pos?.x) || 0) - localAuthPose.x;
+                const ry = (Number(p.pos?.y) || 0) - localAuthPose.y;
+                const r = rotate2(rx, ry, dAng);
+                p.pos.x = (Number(ship.pos?.x) || 0) + r.x;
+                p.pos.y = (Number(ship.pos?.y) || 0) + r.y;
+                p.vel.x = (Number(p.vel?.x) || 0) + dvx;
+                p.vel.y = (Number(p.vel?.y) || 0) + dvy;
+              }
+            }
+          }
+        }
       }
       if (!Array.isArray(state.gems))
         state.gems = [];

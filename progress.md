@@ -636,3 +636,12 @@ Updates
     - `node scripts/mp-browser-saucer-smoke.mjs`: pass
     - `node scripts/mp-browser-prediction-smoke.mjs`: pass
     - `BLASTEROIDS_PLAYERS=4 BLASTEROIDS_SOAK_MS=30000 node scripts/mp-browser-2p-soak-smoke.mjs`: pass
+
+- 2026-02-22 MP-22 follow-up (prediction UX fix):
+  - When prediction is enabled, locally attached asteroids + carried tech parts are now visually re-anchored to the predicted ship pose so they don’t appear “stuck” around the forcefield ring.
+  - Strengthened `mp-browser-prediction-smoke` to include turning + attached-orbit drift checks.
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-prediction-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass

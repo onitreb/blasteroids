@@ -15,6 +15,12 @@ function lerpAngle(a, b, t) {
   return wrapAngle(aa + d * clamp(t, 0, 1));
 }
 
+function rotate2(x, y, ang) {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
 function makeHistory() {
   return { a: null, b: null, c: null };
 }
@@ -527,6 +533,8 @@ export function createMpWorldView({
     const remoteSimTimeMs = estimateRemoteSimTimeMs({ atMs, recvStats });
     const targetSimTime = remoteSimTimeMs - clamp(Number(delayMs) || 0, 0, 500);
 
+    let localAuthPose = null;
+
     // Players
     for (const [id, track] of playerTracks) {
       const player = state.playersById[id];
@@ -536,14 +544,22 @@ export function createMpWorldView({
       if (!span) continue;
       const { p0, p1, t } = span;
 
+      const authX = lerp(p0.x, p1.x, t);
+      const authY = lerp(p0.y, p1.y, t);
+      const authVx = lerp(p0.vx, p1.vx, t);
+      const authVy = lerp(p0.vy, p1.vy, t);
+      const authAngle = lerpAngle(p0.angle, p1.angle, t);
+
       const ship = player.ship;
       const isLocal = skipLocalPlayerPose && id === state.localPlayerId;
       if (!isLocal) {
-        ship.pos.x = lerp(p0.x, p1.x, t);
-        ship.pos.y = lerp(p0.y, p1.y, t);
-        ship.vel.x = lerp(p0.vx, p1.vx, t);
-        ship.vel.y = lerp(p0.vy, p1.vy, t);
-        ship.angle = lerpAngle(p0.angle, p1.angle, t);
+        ship.pos.x = authX;
+        ship.pos.y = authY;
+        ship.vel.x = authVx;
+        ship.vel.y = authVy;
+        ship.angle = authAngle;
+      } else {
+        localAuthPose = { x: authX, y: authY, vx: authVx, vy: authVy, angle: authAngle };
       }
 
       const tierKey = shipTierKey(track.tier);
@@ -618,6 +634,57 @@ export function createMpWorldView({
       obj.shipLaunched = !!track.static.shipLaunched;
 
       state.asteroids.push(obj);
+    }
+
+    // If we are predicting the local ship pose, visually re-anchor any *locally attached* entities
+    // so they don't appear "stuck in world-space" relative to the predicted ship.
+    if (skipLocalPlayerPose && localAuthPose) {
+      const localId = state.localPlayerId;
+      const localPlayer = localId ? state.playersById?.[localId] : null;
+      const ship = localPlayer?.ship;
+      if (ship) {
+        const dx = (Number(ship.pos?.x) || 0) - localAuthPose.x;
+        const dy = (Number(ship.pos?.y) || 0) - localAuthPose.y;
+        const dPos = Math.hypot(dx, dy);
+        const dAng = wrapAngle((Number(ship.angle) || 0) - localAuthPose.angle);
+
+        // Always visually re-anchor local attachments while prediction is active. If prediction diverges badly,
+        // showing the attachments "stuck in world-space" is worse UX than keeping them locked to the ship.
+        if (dPos < 50_000 && Math.abs(dAng) < Math.PI * 4) {
+          const dvx = (Number(ship.vel?.x) || 0) - localAuthPose.vx;
+          const dvy = (Number(ship.vel?.y) || 0) - localAuthPose.vy;
+
+          for (let i = 0; i < state.asteroids.length; i++) {
+            const a = state.asteroids[i];
+            if (!a?.attached || a.attachedTo !== localId) continue;
+            const rx = (Number(a.pos?.x) || 0) - localAuthPose.x;
+            const ry = (Number(a.pos?.y) || 0) - localAuthPose.y;
+            const r = rotate2(rx, ry, dAng);
+            a.pos.x = (Number(ship.pos?.x) || 0) + r.x;
+            a.pos.y = (Number(ship.pos?.y) || 0) + r.y;
+            a.vel.x = (Number(a.vel?.x) || 0) + dvx;
+            a.vel.y = (Number(a.vel?.y) || 0) + dvy;
+          }
+
+          // Carried tech part(s): keep them visually attached to the predicted ship too.
+          const parts = state.round?.techParts;
+          if (Array.isArray(parts)) {
+            for (let i = 0; i < parts.length; i++) {
+              const p = parts[i];
+              if (!p) continue;
+              if (p.state !== "carried") continue;
+              if (p.carrierPlayerId !== localId) continue;
+              const rx = (Number(p.pos?.x) || 0) - localAuthPose.x;
+              const ry = (Number(p.pos?.y) || 0) - localAuthPose.y;
+              const r = rotate2(rx, ry, dAng);
+              p.pos.x = (Number(ship.pos?.x) || 0) + r.x;
+              p.pos.y = (Number(ship.pos?.y) || 0) + r.y;
+              p.vel.x = (Number(p.vel?.x) || 0) + dvx;
+              p.vel.y = (Number(p.vel?.y) || 0) + dvy;
+            }
+          }
+        }
+      }
     }
 
     // Gems
