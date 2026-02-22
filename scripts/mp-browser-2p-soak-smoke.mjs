@@ -9,6 +9,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function clampInt(v, lo, hi, fallback) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(lo, Math.min(hi, Math.floor(n)));
+}
+
 async function waitFor(predicate, { timeoutMs = 10000, intervalMs = 50 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -110,65 +116,72 @@ async function thrustTurn(page, { ms = 160, dir = 1 } = {}) {
 const tmpDir = ensureTmpDir();
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const soakMs = Number(process.env.BLASTEROIDS_SOAK_MS) || 45_000;
+const playerCount = clampInt(process.env.BLASTEROIDS_PLAYERS, 2, 4, 2);
 
 const server = startLanServer();
 const { httpUrl, wsUrl } = await server.getUrl();
 
 const browser = await chromium.launch();
 try {
-  const pageA = await browser.newPage();
-  const pageB = await browser.newPage();
+  const labels = ["A", "B", "C", "D"];
+  const pages = [];
+  for (let i = 0; i < playerCount; i++) pages.push(await browser.newPage());
 
   const consoleLines = [];
-  for (const [label, page] of [
-    ["A", pageA],
-    ["B", pageB],
-  ]) {
+  for (let i = 0; i < pages.length; i++) {
+    const label = labels[i] || String(i);
+    const page = pages[i];
     page.on("console", (msg) => consoleLines.push(`[${label}] ${msg.type()}: ${msg.text()}`));
     page.on("pageerror", (err) => consoleLines.push(`[${label}] pageerror: ${String(err?.stack || err?.message || err)}`));
   }
 
-  await Promise.all([
-    pageA.goto(httpUrl, { waitUntil: "domcontentloaded" }),
-    pageB.goto(httpUrl, { waitUntil: "domcontentloaded" }),
-  ]);
+  await Promise.all(pages.map((p) => p.goto(httpUrl, { waitUntil: "domcontentloaded" })));
 
-  await Promise.all([connectViaUi(pageA, wsUrl), connectViaUi(pageB, wsUrl)]);
-  await Promise.all([waitForConnected(pageA, 2), waitForConnected(pageB, 2)]);
+  await Promise.all(pages.map((p) => connectViaUi(p, wsUrl)));
+  await Promise.all(pages.map((p) => waitForConnected(p, playerCount)));
 
   const startAt = Date.now();
   let step = 0;
   while (Date.now() - startAt < soakMs) {
     step++;
     // Alternate some inputs to exercise VFX + state diffs.
-    await Promise.all([
-      thrustTurn(pageA, { ms: 140, dir: step % 2 === 0 ? 1 : -1 }),
-      thrustTurn(pageB, { ms: 140, dir: step % 3 === 0 ? -1 : 1 }),
-    ]);
-    if (step % 3 === 0) await Promise.all([pressPing(pageA), pressPing(pageB)]);
-    if (step % 2 === 0) await Promise.all([pressBurst(pageA), pressBurst(pageB)]);
-    await pageA.waitForTimeout(120);
+    await Promise.all(
+      pages.map((p, idx) =>
+        thrustTurn(p, {
+          ms: 130 + (idx % 2) * 30,
+          dir: (step + idx) % 3 === 0 ? -1 : 1,
+        }),
+      ),
+    );
+    if (step % 3 === 0) await Promise.all(pages.map((p) => pressPing(p)));
+    if (step % 2 === 0) await Promise.all(pages.map((p) => pressBurst(p)));
+    await pages[0].waitForTimeout(120);
 
     // Assert still connected.
-    const ok = await pageA.evaluate(() => window.Blasteroids.mpStatus().connected);
-    if (!ok) throw new Error("Page A disconnected during soak");
+    const connected = await Promise.all(pages.map((p) => p.evaluate(() => window.Blasteroids.mpStatus().connected)));
+    if (!connected.every(Boolean)) throw new Error(`Disconnected during soak: ${connected.map((v, i) => `${labels[i]}=${v}`).join(" ")}`);
   }
 
-  const shotA = path.join(tmpDir, `mp-soak-${stamp}-A.png`);
-  const shotB = path.join(tmpDir, `mp-soak-${stamp}-B.png`);
-  await Promise.all([pageA.screenshot({ path: shotA, fullPage: true }), pageB.screenshot({ path: shotB, fullPage: true })]);
+  const shots = [];
+  await Promise.all(
+    pages.map(async (p, i) => {
+      const shot = path.join(tmpDir, `mp-soak-${stamp}-${labels[i]}.png`);
+      shots.push(shot);
+      await p.screenshot({ path: shot, fullPage: true });
+    }),
+  );
 
-  const dumpA = await dumpState(pageA);
-  const dumpB = await dumpState(pageB);
+  const dumps = await Promise.all(pages.map((p) => dumpState(p)));
   const dumpPath = path.join(tmpDir, `mp-soak-${stamp}-state.json`);
-  fs.writeFileSync(dumpPath, JSON.stringify({ httpUrl, wsUrl, soakMs, a: dumpA, b: dumpB, console: consoleLines }, null, 2));
+  const out = { httpUrl, wsUrl, soakMs, playerCount, console: consoleLines };
+  for (let i = 0; i < dumps.length; i++) out[labels[i]] = dumps[i];
+  fs.writeFileSync(dumpPath, JSON.stringify(out, null, 2));
 
   const pageErrors = consoleLines.filter((l) => l.includes("pageerror"));
   if (pageErrors.length) throw new Error(`Soak saw page errors (${pageErrors.length}). See ${dumpPath}`);
 
-  console.log("[mp-browser-2p-soak-smoke] ok", { httpUrl, wsUrl, soakMs, screenshots: [shotA, shotB], stateDump: dumpPath });
+  console.log("[mp-browser-2p-soak-smoke] ok", { httpUrl, wsUrl, soakMs, playerCount, screenshots: shots, stateDump: dumpPath });
 } finally {
   await browser.close();
   await server.stop();
 }
-
