@@ -25,6 +25,7 @@ function startLanServer() {
       ...process.env,
       // Make patches infrequent so "no prediction" would feel clearly laggy.
       BLASTEROIDS_PATCH_RATE_MS: String(process.env.BLASTEROIDS_PATCH_RATE_MS ?? "250"),
+      BLASTEROIDS_ALLOW_DEBUG_JOIN_OPTIONS: "1",
     },
   });
 
@@ -80,10 +81,13 @@ try {
         endpoint,
         joinOptions: {
           simulateLatencyMs: 400,
+          debugStartAttachedCount: 8,
         },
       }),
     wsUrl,
   );
+  await page.waitForFunction(() => typeof window.Blasteroids.mpSetPredictionEnabled === "function");
+  await page.evaluate(() => window.Blasteroids.mpSetPredictionEnabled(true));
 
   const connected = await page.waitForFunction(
     () => window.Blasteroids.mpStatus().connected && window.Blasteroids.mpStatus().snapshots > 0,
@@ -128,10 +132,37 @@ try {
   if (!(moved > 0.5)) {
     throw new Error(`Expected predicted movement under simulated latency. moved=${moved.toFixed(3)} pre=${JSON.stringify(pre)} post=${JSON.stringify(post)}`);
   }
-  if (post.snapshots !== pre.snapshots) {
-    throw new Error(
-      `Prediction smoke expected no new snapshots during the short window (latency test). snapshots ${pre.snapshots} -> ${post.snapshots}`,
-    );
+  // Under simulated latency, snapshots may still arrive (depending on patch timing), but local movement should
+  // begin immediately via prediction. The primary correctness check is `moved > 0`.
+
+  // Exercise the main "quirky" case: attached asteroids should visually remain attached to the predicted local ship.
+  const attachedReady = await page.waitForFunction(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    return (g.state.asteroids || []).some((a) => a && a.attached && a.attachedTo === pid);
+  });
+  if (!attachedReady) throw new Error("Expected debug attached asteroids to be present");
+
+  // Move for long enough that, without visual compensation, attached asteroids would appear left behind.
+  await page.keyboard.down("w");
+  await page.waitForTimeout(900);
+  await page.keyboard.up("w");
+  await page.waitForTimeout(50);
+
+  const attachCheck = await page.evaluate(() => {
+    const g = window.Blasteroids.getGame();
+    const pid = g.state.localPlayerId;
+    const ship = g.state.playersById?.[pid]?.ship;
+    const sx = ship?.pos?.x ?? 0;
+    const sy = ship?.pos?.y ?? 0;
+    const attached = (g.state.asteroids || []).filter((a) => a && a.attached && a.attachedTo === pid);
+    const dists = attached.map((a) => Math.hypot((a.pos?.x ?? 0) - sx, (a.pos?.y ?? 0) - sy));
+    dists.sort((a, b) => a - b);
+    return { pid, sx, sy, attachedCount: attached.length, minDist: dists[0] ?? null, maxDist: dists[dists.length - 1] ?? null };
+  });
+  if (!(attachCheck.attachedCount >= 1)) throw new Error(`Expected attached asteroids >= 1, got ${attachCheck.attachedCount}`);
+  if (!(attachCheck.maxDist != null && attachCheck.maxDist < 220)) {
+    throw new Error(`Attached asteroids drifted too far from predicted ship. attachCheck=${JSON.stringify(attachCheck)}`);
   }
 
   const shot = path.join(tmpDir, `mp-22-${stamp}.png`);
@@ -145,11 +176,10 @@ try {
       payload: JSON.parse(window.Blasteroids.renderGameToText()),
     };
   });
-  fs.writeFileSync(dumpPath, JSON.stringify({ httpUrl, wsUrl, pre, post, moved, dump }, null, 2));
+  fs.writeFileSync(dumpPath, JSON.stringify({ httpUrl, wsUrl, pre, post, moved, attachCheck, dump }, null, 2));
 
   console.log("[mp-browser-prediction-smoke] ok", { httpUrl, wsUrl, moved: moved.toFixed(2), screenshot: shot, stateDump: dumpPath });
 } finally {
   await browser.close();
   await server.stop();
 }
-

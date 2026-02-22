@@ -1307,7 +1307,8 @@ export function createUiBindings({ game, canvas, documentRef = document, windowR
     const tx = fmtBps(mp.txBps);
 
     const lasers = Array.isArray(game.state.saucerLasers) ? game.state.saucerLasers.length : 0;
-    hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g ${lasers}l | net ${rx}↓ ${tx}↑`;
+    const pred = mp.predictionEnabled ? ` | pred on ${Number.isFinite(mp.predErrPx) ? `${Math.round(mp.predErrPx)}px` : "?"}` : "";
+    hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g ${lasers}l | net ${rx}↓ ${tx}↑${pred}`;
   }
 
   function isMenuVisible() {

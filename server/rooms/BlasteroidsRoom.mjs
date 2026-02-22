@@ -3,6 +3,7 @@ import { Encoder, StateView } from "@colyseus/schema";
 
 import { createEngine } from "../../src/engine/createEngine.js";
 import { seededRng } from "../../src/util/rng.js";
+import { asteroidMassForRadius, asteroidRadiusForSize } from "../../src/util/asteroid.js";
 import {
   BlasteroidsState,
   AsteroidState,
@@ -258,7 +259,7 @@ export class BlasteroidsRoom extends Room {
     }, this._tickMs);
   }
 
-  onJoin(client) {
+  onJoin(client, options = {}) {
     const pid = client.sessionId;
     client.view = new StateView();
 
@@ -299,6 +300,8 @@ export class BlasteroidsRoom extends Room {
       this._engine.spawnShipAtForPlayer(pid, pick);
       this._recomputeLocalPlayerId();
     }
+
+    this._spawnDebugAttachedAsteroidsForPlayer(pid, options);
 
     this._syncSchemaFromEngine();
     this._ensureDefaultViewRect(pid);
@@ -421,6 +424,53 @@ export class BlasteroidsRoom extends Room {
   _recomputeLocalPlayerId() {
     const ids = sortedKeys(this._engine.state.playersById);
     this._engine.state.localPlayerId = ids[0] ?? "";
+  }
+
+  _spawnDebugAttachedAsteroidsForPlayer(pid, options = {}) {
+    if (String(process.env.BLASTEROIDS_ALLOW_DEBUG_JOIN_OPTIONS ?? "") !== "1") return false;
+    const countRaw = options && typeof options === "object" ? Number(options.debugStartAttachedCount) : Number.NaN;
+    const count = Number.isFinite(countRaw) ? Math.max(0, Math.min(24, Math.floor(countRaw))) : 0;
+    if (count <= 0) return false;
+
+    const player = this._engine.state.playersById?.[pid];
+    const ship = player?.ship;
+    if (!ship || !ship.pos) return false;
+
+    const seedBase = (Number(this._engine.state.round?.seed) >>> 0) || 0xdecafbad;
+    const seed = (seedBase ^ hashStringToU32(pid) ^ 0x51ed270b) >>> 0 || 0x12345678;
+    const rr = seededRng(seed);
+
+    const size = "small";
+    const radius = asteroidRadiusForSize(this._engine.state.params, size);
+    const mass = asteroidMassForRadius(radius);
+
+    const startIndex = this._engine.state.asteroids?.length ? this._engine.state.asteroids.length : 0;
+    for (let i = 0; i < count; i++) {
+      const id = `debug-attached-${pid}-${startIndex + i}-${Math.floor(rr() * 1e9)}`;
+      const orbitA = (i / count) * Math.PI * 2;
+      this._engine.state.asteroids.push({
+        id,
+        size,
+        pos: { x: Number(ship.pos.x) || 0, y: Number(ship.pos.y) || 0 },
+        vel: { x: 0, y: 0 },
+        radius,
+        mass,
+        rot: rr() * Math.PI * 2,
+        rotVel: (rr() * 2 - 1) * 1.2,
+        shape: null,
+        attached: true,
+        attachedTo: pid,
+        shipLaunched: false,
+        orbitA,
+        fractureCooldownT: 0,
+        fractureDamage: 0,
+        hitFxT: 0,
+        starBurnSec: 0,
+        techPartId: null,
+        pullOwnerId: null,
+      });
+    }
+    return true;
   }
 
   _applyQueuedInputs() {

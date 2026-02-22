@@ -7038,7 +7038,8 @@ Server: ${endpoint}`;
       const rx = fmtBps(mp.rxBps);
       const tx = fmtBps(mp.txBps);
       const lasers = Array.isArray(game.state.saucerLasers) ? game.state.saucerLasers.length : 0;
-      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g ${lasers}l | net ${rx}\u2193 ${tx}\u2191`;
+      const pred = mp.predictionEnabled ? ` | pred on ${Number.isFinite(mp.predErrPx) ? `${Math.round(mp.predErrPx)}px` : "?"}` : "";
+      hudMp.textContent = `fps ${hudPerf.fps.toFixed(0)} | snap ${hz}Hz ~${dtAvg} | age ${age} | sim ${sim} (${tickHz}) | ent ${mp.playerCount}p ${mp.asteroidCount}a ${mp.gemCount}g ${lasers}l | net ${rx}\u2193 ${tx}\u2191${pred}`;
     }
     function isMenuVisible() {
       if (!menu)
@@ -16884,6 +16885,13 @@ Schema instances may only have up to 64 fields.`);
         const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
         const targetDelay = dtMax != null ? Math.max(60, Math.min(220, dtMax + 20)) : 120;
         mpDelayMs += (targetDelay - mpDelayMs) * 0.08;
+        if (mpHud) {
+          const auth = mpWorld.getLatestPlayerSample?.(game.state.localPlayerId);
+          const ship = game.state.ship;
+          const predErrPx = auth && ship ? Math.hypot((Number(ship.pos?.x) || 0) - (Number(auth.x) || 0), (Number(ship.pos?.y) || 0) - (Number(auth.y) || 0)) : null;
+          mpHud.predictionEnabled = mpPredict.isActive();
+          mpHud.predErrPx = predErrPx;
+        }
         accumulator = 0;
       } else if (!externalStepping) {
         while (!pausedByMenu && accumulator >= fixedDt) {
@@ -16956,7 +16964,7 @@ Schema instances may only have up to 64 fields.`);
     });
     const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
     const mpVfx = createMpVfx({ engine: game });
-    const mpPredict = createMpPrediction({ engine: game, mpClient: mp, mpWorldView: mpWorld, enabled: true, fixedDtSec: 1 / 60 });
+    const mpPredict = createMpPrediction({ engine: game, mpClient: mp, mpWorldView: mpWorld, enabled: false, fixedDtSec: 1 / 60 });
     mp.setInputSentHandler?.(mpPredict.onInputSent);
     const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
     window.Blasteroids = {
@@ -16997,6 +17005,7 @@ Schema instances may only have up to 64 fields.`);
       mpStatus: () => mp.getStatus(),
       mpSnapshots: () => mp.getSnapshots(),
       mpRoom: () => mp.getRoom(),
+      mpSetPredictionEnabled: (enabled) => mpPredict.setEnabled(enabled),
       // Debug helpers for visual iteration (intentionally undocumented).
       getGame: () => game,
       debugSpawnBurstWavelets: ({ count = 6, speed = 520, ttl = 0.55 * 1.1 } = {}) => {
