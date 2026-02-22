@@ -120,6 +120,10 @@ export function createMpClient({
   let inputTimer = null;
   let viewTimer = null;
   let lastInputSample = null;
+  let inputSeq = 0;
+  let onInputSent = null; // ({ seq, msg, dtSec, atMs }) => void
+  const unackedInputs = [];
+  const unackedCap = 512;
 
   let traffic = null; // { ws, rxBytes, txBytes, samples, detach }
 
@@ -157,6 +161,26 @@ export function createMpClient({
     };
   }
 
+  function pushUnackedInput(entry) {
+    unackedInputs.push(entry);
+    if (unackedInputs.length > unackedCap) unackedInputs.splice(0, unackedInputs.length - unackedCap);
+  }
+
+  function ackInputSeq(seq) {
+    const s = Number(seq) | 0;
+    if (!(s > 0)) return 0;
+    let dropped = 0;
+    while (unackedInputs.length && (Number(unackedInputs[0]?.seq) | 0) <= s) {
+      unackedInputs.shift();
+      dropped++;
+    }
+    return dropped;
+  }
+
+  function setInputSentHandler(fn) {
+    onInputSent = typeof fn === "function" ? fn : null;
+  }
+
   function stopInputLoop() {
     if (inputTimer) clearInterval(inputTimer);
     inputTimer = null;
@@ -172,13 +196,25 @@ export function createMpClient({
     stopInputLoop();
     const hz = clampNumber(sendHz, 1, 120, 30);
     const intervalMs = Math.round(1000 / hz);
+    const dtSec = 1 / hz;
     inputTimer = setInterval(() => {
       if (!room) return;
       const sample = sampleInput();
       const msg = buildInputMessage(sample, lastInputSample);
       lastInputSample = sample;
+      inputSeq = ((inputSeq | 0) + 1) | 0;
+      if (!(inputSeq > 0)) inputSeq = 1;
+      msg.seq = inputSeq;
       try {
         room.send("input", msg);
+        pushUnackedInput({ seq: inputSeq, msg: { ...msg } });
+        if (onInputSent) {
+          try {
+            onInputSent({ seq: inputSeq, msg, dtSec, atMs: nowMs() });
+          } catch {
+            // ignore
+          }
+        }
         if (typeof consumeInput === "function") consumeInput(sample.inputRef, msg);
         else if (sample.inputRef && typeof sample.inputRef === "object") {
           // When running in multiplayer mode, the local engine simulation is paused,
@@ -338,6 +374,8 @@ export function createMpClient({
     roomName = String(nextRoomName || "blasteroids");
     client = new Client(endpoint);
     buffer.clear();
+    unackedInputs.length = 0;
+    inputSeq = 0;
 
     room = await client.joinOrCreate(roomName, joinOptions);
     attachStateBuffer();
@@ -364,6 +402,8 @@ export function createMpClient({
     stopViewLoop();
     stopTrafficMonitor();
     buffer.clear();
+    unackedInputs.length = 0;
+    inputSeq = 0;
 
     const r = room;
     room = null;
@@ -406,5 +446,9 @@ export function createMpClient({
     getSnapshots,
     getRoom,
     getNetStats,
+    ackInputSeq,
+    getUnackedInputs: () => unackedInputs.slice(),
+    getLastSentInputSeq: () => inputSeq | 0,
+    setInputSentHandler,
   };
 }

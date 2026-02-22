@@ -36,6 +36,17 @@ function normalizeInput(message) {
   };
 }
 
+function normalizeInputSeq(message) {
+  const m = message && typeof message === "object" ? message : {};
+  const raw = Number(m.seq);
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, raw | 0);
+}
+
+function normalizeInputMessage(message) {
+  return { seq: normalizeInputSeq(message), input: normalizeInput(message) };
+}
+
 function sortedKeys(obj) {
   return Object.keys(obj || {}).sort();
 }
@@ -104,6 +115,17 @@ export class BlasteroidsRoom extends Room {
     // NOTE: higher patch rates increase CPU/bandwidth sharply with many entities.
     this.patchRate = clampNumber(process.env.BLASTEROIDS_PATCH_RATE_MS, 16, 500, this.patchRate);
 
+    // Optional latency simulation for local prediction testing.
+    const simLatencyMs = clampNumber(
+      options.simulateLatencyMs ?? process.env.BLASTEROIDS_SIMULATE_LATENCY_MS,
+      0,
+      800,
+      0,
+    );
+    if (simLatencyMs > 0 && typeof this.simulateLatency === "function") {
+      this.simulateLatency(simLatencyMs);
+    }
+
     this.setState(new BlasteroidsState());
 
     const width = clampNumber(options.width, 200, 8192, 1280);
@@ -163,6 +185,10 @@ export class BlasteroidsRoom extends Room {
     this._interestBySessionId = new Map();
     this._interestAccumMs = 0;
 
+    // Client prediction: per-client input queues + authoritative ack.
+    this._inputQueueBySessionId = new Map(); // sessionId -> [{ seq, input }]
+    this._lastProcessedInputSeqBySessionId = new Map(); // sessionId -> seq
+
     // MP cosmetic: server assigns per-player palette indices (unique among active players).
     this._paletteBySessionId = new Map(); // sessionId -> idx
     this._lastAssignedPaletteIdx = null;
@@ -174,17 +200,9 @@ export class BlasteroidsRoom extends Room {
 
     this.onMessage("input", (client, message) => {
       const pid = client.sessionId;
-      const player = this._engine.state.playersById?.[pid];
-      if (!player?.input) return;
-      const next = normalizeInput(message);
-      player.input.left = next.left;
-      player.input.right = next.right;
-      player.input.up = next.up;
-      player.input.down = next.down;
-      if (next.burst) player.input.burst = true;
-      if (next.ping) player.input.ping = true;
-      player.input.turnAnalog = next.turnAnalog;
-      player.input.thrustAnalog = next.thrustAnalog;
+      const info = normalizeInputMessage(message);
+      if (!this._inputQueueBySessionId.has(pid)) this._inputQueueBySessionId.set(pid, []);
+      this._inputQueueBySessionId.get(pid).push(info);
     });
 
     this.onMessage("view", (client, message) => {
@@ -198,6 +216,10 @@ export class BlasteroidsRoom extends Room {
 
     this.setSimulationInterval(() => {
       if (!this._hasStarted) return;
+
+      // Apply queued input commands at the start of the tick (command pattern).
+      // Keep this outside the mode check so inputs remain fresh during round-end reset windows.
+      this._applyQueuedInputs();
 
       if (this._engine.state.mode === "playing") {
         this._roundResetAccumMs = 0;
@@ -246,6 +268,9 @@ export class BlasteroidsRoom extends Room {
       gemRefs: new Map(),
     });
 
+    this._inputQueueBySessionId.set(pid, []);
+    this._lastProcessedInputSeqBySessionId.set(pid, 0);
+
     const player = this._engine.addPlayer(pid, { tierKey: "small", makeLocalIfFirst: false });
 
     // Assign a per-player palette index in a way that avoids duplicates among active players.
@@ -284,6 +309,8 @@ export class BlasteroidsRoom extends Room {
     const pid = client.sessionId;
 
     this._paletteBySessionId.delete(pid);
+    this._inputQueueBySessionId.delete(pid);
+    this._lastProcessedInputSeqBySessionId.delete(pid);
 
     const info = this._interestBySessionId.get(pid);
     if (info?.asteroidRefs) {
@@ -396,6 +423,53 @@ export class BlasteroidsRoom extends Room {
     this._engine.state.localPlayerId = ids[0] ?? "";
   }
 
+  _applyQueuedInputs() {
+    for (const client of this.clients) {
+      const pid = client?.sessionId;
+      if (!pid) continue;
+      const player = this._engine.state.playersById?.[pid];
+      if (!player?.input) continue;
+
+      const queue = this._inputQueueBySessionId.get(pid);
+      if (!queue || queue.length === 0) continue;
+
+      const items = queue.splice(0, queue.length);
+      let lastSeq = Number(this._lastProcessedInputSeqBySessionId.get(pid)) || 0;
+
+      const withSeq = [];
+      const noSeq = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (!item) continue;
+        if ((Number(item.seq) | 0) > 0) withSeq.push(item);
+        else noSeq.push(item);
+      }
+      withSeq.sort((a, b) => (a.seq | 0) - (b.seq | 0));
+
+      const ordered = withSeq.length ? withSeq.concat(noSeq) : items;
+      for (let i = 0; i < ordered.length; i++) {
+        const item = ordered[i];
+        if (!item || !item.input) continue;
+        const seq = (Number(item.seq) | 0) || 0;
+        if (seq > 0 && seq <= lastSeq) continue;
+
+        const next = item.input;
+        player.input.left = next.left;
+        player.input.right = next.right;
+        player.input.up = next.up;
+        player.input.down = next.down;
+        if (next.burst) player.input.burst = true;
+        if (next.ping) player.input.ping = true;
+        player.input.turnAnalog = next.turnAnalog;
+        player.input.thrustAnalog = next.thrustAnalog;
+
+        if (seq > 0) lastSeq = seq;
+      }
+
+      this._lastProcessedInputSeqBySessionId.set(pid, lastSeq);
+    }
+  }
+
   _pickSpawnNearExistingPlayer({ joiningPlayerId, maxDist = 320, minDist = 180, minSeparation = 240 } = {}) {
     const pid = String(joiningPlayerId ?? "");
     const ids = sortedKeys(this._engine.state.playersById).filter((id) => id !== pid);
@@ -476,6 +550,7 @@ export class BlasteroidsRoom extends Room {
           : -1;
       ps.score = Number(p.score) || 0;
       ps.gemScore = Number(p.progression?.gemScore) || 0;
+      ps.lastProcessedInputSeq = Number(this._lastProcessedInputSeqBySessionId.get(id)) || 0;
     }
     for (const [id] of state.players) {
       if (!engineState.playersById[id]) state.players.delete(id);

@@ -623,3 +623,16 @@ Updates
     - `node scripts/mp-browser-2p-smoke.mjs`: pass
     - `node scripts/mp-browser-saucer-smoke.mjs`: pass
     - `BLASTEROIDS_PLAYERS=4 BLASTEROIDS_SOAK_MS=30000 node scripts/mp-browser-2p-soak-smoke.mjs`: pass
+
+- 2026-02-22 MP-22 (local ship prediction + reconcile):
+  - Server now queues per-client input commands (`seq`) and syncs `lastProcessedInputSeq` so the client can reconcile.
+  - Client predicts the local ship at fixed tick and reconciles by rollback-to-server + replay unacked inputs; remote entities remain interpolated from authoritative snapshots.
+  - Added a Playwright smoke for prediction under simulated latency: `node scripts/mp-browser-prediction-smoke.mjs`.
+  - Validation:
+    - `npm test`: pass
+    - `npm run build`: success (`dist/blasteroids.js` regenerated)
+    - `node scripts/mp-browser-smoke.mjs`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass
+    - `node scripts/mp-browser-saucer-smoke.mjs`: pass
+    - `node scripts/mp-browser-prediction-smoke.mjs`: pass
+    - `BLASTEROIDS_PLAYERS=4 BLASTEROIDS_SOAK_MS=30000 node scripts/mp-browser-2p-soak-smoke.mjs`: pass

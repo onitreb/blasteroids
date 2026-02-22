@@ -4,6 +4,7 @@ import { createUiBindings } from "./ui/createUiBindings.js";
 import { createMpClient } from "./net/createMpClient.js";
 import { createMpWorldView } from "./net/createMpWorldView.js";
 import { createMpVfx } from "./net/createMpVfx.js";
+import { createMpPrediction } from "./net/createMpPrediction.js";
 
 (() => {
   const canvas = document.getElementById("game");
@@ -167,7 +168,9 @@ import { createMpVfx } from "./net/createMpVfx.js";
     if (mpConnected) {
       // Multiplayer: authoritative sim runs on server; client renders interpolated state.
       game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
-      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
+      mpPredict.reconcile();
+      const skipLocalPlayerPose = mpPredict.isActive() && mpPredict.hasAuthoritativePose();
+      mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs, skipLocalPlayerPose });
       mpVfx.update({ dtSec: dtMs / 1000, atMs: ts });
       const mpHud = game.state?._mp;
       const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
@@ -236,12 +239,15 @@ import { createMpVfx } from "./net/createMpVfx.js";
         margin: 240,
       };
     },
-    sendHz: 30,
+    // Prediction/reconcile expects a fixed-tick input stream (match server sim tick).
+    sendHz: 60,
     viewSendHz: 10,
     snapshotBufferSize: 32,
   });
   const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
   const mpVfx = createMpVfx({ engine: game });
+  const mpPredict = createMpPrediction({ engine: game, mpClient: mp, mpWorldView: mpWorld, enabled: true, fixedDtSec: 1 / 60 });
+  mp.setInputSentHandler?.(mpPredict.onInputSent);
 
   const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
   window.Blasteroids = {
@@ -260,13 +266,23 @@ import { createMpVfx } from "./net/createMpVfx.js";
       const info = await mp.connect(opts);
       const room = mp.getRoom();
       mpWorld.attach({ room, localSessionId: info.sessionId });
-      room?.onLeave?.(() => mpWorld.detach());
+      mpPredict.onConnect({ sessionId: info.sessionId });
+      if (!game.state.playersById?.[info.sessionId]) {
+        game.addPlayer(info.sessionId, { makeLocalIfFirst: false });
+      }
+      game.state.localPlayerId = info.sessionId;
+
+      room?.onLeave?.(() => {
+        mpWorld.detach();
+        mpPredict.onDisconnect();
+      });
       game.state.mode = "playing";
       ui.setMenuVisible(false);
       return info;
     },
     mpDisconnect: async () => {
       mpWorld.detach();
+      mpPredict.onDisconnect();
       await mp.disconnect();
       mpVfx.reset();
       // Return to a safe singleplayer state.

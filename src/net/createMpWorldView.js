@@ -84,7 +84,7 @@ export function createMpWorldView({
   const recvSamples = []; // recent onStateChange arrivals (for telemetry)
   const recvSampleCap = 64;
 
-  const playerTracks = new Map(); // id -> { hist, tier, score, gemScore, paletteIdx }
+  const playerTracks = new Map(); // id -> { hist, tier, score, gemScore, paletteIdx, lastProcessedInputSeq }
   const asteroidTracks = new Map(); // id -> { hist, static }
   const gemTracks = new Map(); // id -> { hist, static }
 
@@ -113,6 +113,13 @@ export function createMpWorldView({
 
     onStateChangeHandler = (schemaState) => ingest(schemaState);
     room.onStateChange(onStateChangeHandler);
+    // If the room already has a current state (e.g. first patch arrived before we attached),
+    // ingest it immediately so interpolation/prediction can seed without waiting for the next patch.
+    try {
+      if (room.state) ingest(room.state);
+    } catch {
+      // ignore
+    }
   }
 
   function detach() {
@@ -171,7 +178,7 @@ export function createMpWorldView({
         seenPlayers.add(pid);
         let track = playerTracks.get(pid);
         if (!track) {
-          track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null };
+          track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null, lastProcessedInputSeq: 0 };
           playerTracks.set(pid, track);
         }
         const tier = shipTierKey(p?.tier);
@@ -180,6 +187,7 @@ export function createMpWorldView({
         track.gemScore = Number(p?.gemScore) || 0;
         const paletteRaw = Number(p?.paletteIdx);
         track.paletteIdx = Number.isFinite(paletteRaw) && paletteRaw >= 0 ? (paletteRaw | 0) : null;
+        track.lastProcessedInputSeq = (Number(p?.lastProcessedInputSeq) | 0) || 0;
         pushHistory(track.hist, {
           t: latestSimTimeMs,
           x: Number(p?.x) || 0,
@@ -511,7 +519,7 @@ export function createMpWorldView({
     else state.camera.y = 0;
   }
 
-  function applyInterpolatedState({ atMs = nowMs(), delayMs = interpolationDelayMs } = {}) {
+  function applyInterpolatedState({ atMs = nowMs(), delayMs = interpolationDelayMs, skipLocalPlayerPose = false } = {}) {
     if (!latestSimTimeMs) return false;
     ensureEnginePlayers();
 
@@ -529,11 +537,14 @@ export function createMpWorldView({
       const { p0, p1, t } = span;
 
       const ship = player.ship;
-      ship.pos.x = lerp(p0.x, p1.x, t);
-      ship.pos.y = lerp(p0.y, p1.y, t);
-      ship.vel.x = lerp(p0.vx, p1.vx, t);
-      ship.vel.y = lerp(p0.vy, p1.vy, t);
-      ship.angle = lerpAngle(p0.angle, p1.angle, t);
+      const isLocal = skipLocalPlayerPose && id === state.localPlayerId;
+      if (!isLocal) {
+        ship.pos.x = lerp(p0.x, p1.x, t);
+        ship.pos.y = lerp(p0.y, p1.y, t);
+        ship.vel.x = lerp(p0.vx, p1.vx, t);
+        ship.vel.y = lerp(p0.vy, p1.vy, t);
+        ship.angle = lerpAngle(p0.angle, p1.angle, t);
+      }
 
       const tierKey = shipTierKey(track.tier);
       const tier = SHIP_TIERS[tierKey] || SHIP_TIERS.small;
@@ -848,6 +859,20 @@ export function createMpWorldView({
     setLocalSessionId,
     ingest,
     applyInterpolatedState,
+    getLatestPlayerSample: (id) => {
+      const pid = String(id ?? "");
+      const track = playerTracks.get(pid);
+      const c = track?.hist?.c;
+      if (!track || !c) return null;
+      return {
+        ...c,
+        tier: track.tier,
+        score: track.score,
+        gemScore: track.gemScore,
+        paletteIdx: track.paletteIdx,
+        lastProcessedInputSeq: (Number(track.lastProcessedInputSeq) | 0) || 0,
+      };
+    },
     getDebug: () => ({
       localSessionId,
       latestSimTimeMs,

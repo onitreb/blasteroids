@@ -215,6 +215,98 @@
     return Math.sqrt(max2);
   }
 
+  // src/engine/shipKinematics.js
+  function clampFinite(n, lo, hi, fallback = 0) {
+    const v = Number(n);
+    if (!Number.isFinite(v))
+      return fallback;
+    return Math.max(lo, Math.min(hi, v));
+  }
+  function stepShipKinematics({ ship, input, params, world, dt } = {}) {
+    if (!ship || !input || !params || !world)
+      return false;
+    const stepDt = Number(dt);
+    if (!Number.isFinite(stepDt) || stepDt <= 0)
+      return false;
+    if (!ship.pos || typeof ship.pos !== "object")
+      ship.pos = { x: 0, y: 0 };
+    if (!ship.vel || typeof ship.vel !== "object")
+      ship.vel = { x: 0, y: 0 };
+    const turnDigital = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const turnAnalog = clampFinite(input.turnAnalog ?? 0, -1, 1, 0);
+    const turn = clamp(turnDigital + turnAnalog, -1, 1);
+    if (Math.abs(turn) > 1e-6) {
+      const shipTurnRate = Number(params.shipTurnRate) || 0;
+      ship.angle = (Number(ship.angle) || 0) + turn * shipTurnRate * stepDt;
+    }
+    const ang = Number(ship.angle) || 0;
+    const fwdX = Math.cos(ang);
+    const fwdY = Math.sin(ang);
+    const thrustDigital = input.up ? 1 : 0;
+    const thrustAnalog = clampFinite(input.thrustAnalog ?? 0, 0, 1, 0);
+    const thrust = Math.max(thrustDigital, thrustAnalog);
+    if (thrust > 1e-6) {
+      const shipThrust = Number(params.shipThrust) || 0;
+      const dv = shipThrust * thrust * stepDt;
+      ship.vel.x = (Number(ship.vel?.x) || 0) + fwdX * dv;
+      ship.vel.y = (Number(ship.vel?.y) || 0) + fwdY * dv;
+    }
+    if (input.down) {
+      const vx = Number(ship.vel?.x) || 0;
+      const vy = Number(ship.vel?.y) || 0;
+      const vLen = Math.hypot(vx, vy);
+      if (vLen > 1e-6) {
+        const shipBrake = Number(params.shipBrake) || 0;
+        const brake = shipBrake * stepDt;
+        const newLen = Math.max(0, vLen - brake);
+        const s = newLen / vLen;
+        ship.vel.x = vx * s;
+        ship.vel.y = vy * s;
+      }
+    }
+    const shipLinearDamp = Number(params.shipLinearDamp) || 0;
+    const damp = Math.max(0, 1 - shipLinearDamp * stepDt);
+    ship.vel.x = (Number(ship.vel?.x) || 0) * damp;
+    ship.vel.y = (Number(ship.vel?.y) || 0) * damp;
+    const spd = Math.hypot(ship.vel.x, ship.vel.y);
+    const maxSpeed = Number(params.shipMaxSpeed) || 0;
+    if (maxSpeed > 1e-6 && spd > maxSpeed) {
+      const s = maxSpeed / Math.max(1e-6, spd);
+      ship.vel.x *= s;
+      ship.vel.y *= s;
+    }
+    ship.pos.x = (Number(ship.pos?.x) || 0) + ship.vel.x * stepDt;
+    ship.pos.y = (Number(ship.pos?.y) || 0) + ship.vel.y * stepDt;
+    const worldW = Number(world.w) || 0;
+    const worldH = Number(world.h) || 0;
+    const halfW = worldW / 2;
+    const halfH = worldH / 2;
+    const r = Math.max(0, Number(ship.radius) || 0);
+    const minX = -halfW + r;
+    const maxX = halfW - r;
+    const minY = -halfH + r;
+    const maxY = halfH - r;
+    if (ship.pos.x < minX) {
+      ship.pos.x = minX;
+      if (ship.vel.x < 0)
+        ship.vel.x = 0;
+    } else if (ship.pos.x > maxX) {
+      ship.pos.x = maxX;
+      if (ship.vel.x > 0)
+        ship.vel.x = 0;
+    }
+    if (ship.pos.y < minY) {
+      ship.pos.y = minY;
+      if (ship.vel.y < 0)
+        ship.vel.y = 0;
+    } else if (ship.pos.y > maxY) {
+      ship.pos.y = maxY;
+      if (ship.vel.y > 0)
+        ship.vel.y = 0;
+    }
+    return true;
+  }
+
   // src/engine/shipPresetDefaults.js
   var DEFAULT_SHIP_SVGS = {
     "small": {
@@ -3072,37 +3164,7 @@
       return true;
     }
     function updateShip(dt, player = localPlayer()) {
-      const ship = player?.ship;
-      const input = player?.input;
-      if (!ship || !input)
-        return;
-      const turnDigital = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-      const turnAnalog = clamp(Number(input.turnAnalog ?? 0), -1, 1);
-      const turn = clamp(turnDigital + turnAnalog, -1, 1);
-      if (Math.abs(turn) > 1e-6)
-        ship.angle += turn * state.params.shipTurnRate * dt;
-      const fwd = shipForward(ship);
-      const thrustDigital = input.up ? 1 : 0;
-      const thrustAnalog = clamp(Number(input.thrustAnalog ?? 0), 0, 1);
-      const thrust = Math.max(thrustDigital, thrustAnalog);
-      if (thrust > 1e-6)
-        ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * thrust * dt));
-      if (input.down) {
-        const v = ship.vel;
-        const vLen = len(v);
-        if (vLen > 1e-6) {
-          const brake = state.params.shipBrake * dt;
-          const newLen = Math.max(0, vLen - brake);
-          ship.vel = mul(v, newLen / vLen);
-        }
-      }
-      ship.vel = mul(ship.vel, Math.max(0, 1 - state.params.shipLinearDamp * dt));
-      const spd = len(ship.vel);
-      if (spd > state.params.shipMaxSpeed) {
-        ship.vel = mul(ship.vel, state.params.shipMaxSpeed / spd);
-      }
-      ship.pos = add(ship.pos, mul(ship.vel, dt));
-      confineBodyToWorld(ship);
+      stepShipKinematics({ ship: player?.ship, input: player?.input, params: state.params, world: state.world, dt });
     }
     function exhaustShipScaleAndMirror2(tier, ship) {
       const renderer = tier?.renderer || {};
@@ -14640,6 +14702,10 @@ Schema instances may only have up to 64 fields.`);
     let inputTimer = null;
     let viewTimer = null;
     let lastInputSample = null;
+    let inputSeq = 0;
+    let onInputSent = null;
+    const unackedInputs = [];
+    const unackedCap = 512;
     let traffic = null;
     function isConnected() {
       return !!(room && room.connection && room.connection.isOpen);
@@ -14672,6 +14738,25 @@ Schema instances may only have up to 64 fields.`);
         ping: sample.ping && !p.ping
       };
     }
+    function pushUnackedInput(entry) {
+      unackedInputs.push(entry);
+      if (unackedInputs.length > unackedCap)
+        unackedInputs.splice(0, unackedInputs.length - unackedCap);
+    }
+    function ackInputSeq(seq) {
+      const s = Number(seq) | 0;
+      if (!(s > 0))
+        return 0;
+      let dropped = 0;
+      while (unackedInputs.length && (Number(unackedInputs[0]?.seq) | 0) <= s) {
+        unackedInputs.shift();
+        dropped++;
+      }
+      return dropped;
+    }
+    function setInputSentHandler(fn) {
+      onInputSent = typeof fn === "function" ? fn : null;
+    }
     function stopInputLoop() {
       if (inputTimer)
         clearInterval(inputTimer);
@@ -14687,14 +14772,26 @@ Schema instances may only have up to 64 fields.`);
       stopInputLoop();
       const hz = clampNumber(sendHz, 1, 120, 30);
       const intervalMs = Math.round(1e3 / hz);
+      const dtSec = 1 / hz;
       inputTimer = setInterval(() => {
         if (!room)
           return;
         const sample = sampleInput();
         const msg = buildInputMessage(sample, lastInputSample);
         lastInputSample = sample;
+        inputSeq = (inputSeq | 0) + 1 | 0;
+        if (!(inputSeq > 0))
+          inputSeq = 1;
+        msg.seq = inputSeq;
         try {
           room.send("input", msg);
+          pushUnackedInput({ seq: inputSeq, msg: { ...msg } });
+          if (onInputSent) {
+            try {
+              onInputSent({ seq: inputSeq, msg, dtSec, atMs: nowMs() });
+            } catch {
+            }
+          }
           if (typeof consumeInput === "function")
             consumeInput(sample.inputRef, msg);
           else if (sample.inputRef && typeof sample.inputRef === "object") {
@@ -14850,6 +14947,8 @@ Schema instances may only have up to 64 fields.`);
       roomName = String(nextRoomName || "blasteroids");
       client = new Client(endpoint);
       buffer.clear();
+      unackedInputs.length = 0;
+      inputSeq = 0;
       room = await client.joinOrCreate(roomName, joinOptions);
       attachStateBuffer();
       startTrafficMonitor();
@@ -14872,6 +14971,8 @@ Schema instances may only have up to 64 fields.`);
       stopViewLoop();
       stopTrafficMonitor();
       buffer.clear();
+      unackedInputs.length = 0;
+      inputSeq = 0;
       const r = room;
       room = null;
       if (r) {
@@ -14906,7 +15007,11 @@ Schema instances may only have up to 64 fields.`);
       getStatus,
       getSnapshots,
       getRoom,
-      getNetStats
+      getNetStats,
+      ackInputSeq,
+      getUnackedInputs: () => unackedInputs.slice(),
+      getLastSentInputSeq: () => inputSeq | 0,
+      setInputSentHandler
     };
   }
 
@@ -15003,6 +15108,11 @@ Schema instances may only have up to 64 fields.`);
         throw new Error("attach requires { room }");
       onStateChangeHandler = (schemaState) => ingest(schemaState);
       room.onStateChange(onStateChangeHandler);
+      try {
+        if (room.state)
+          ingest(room.state);
+      } catch {
+      }
     }
     function detach() {
       if (room && onStateChangeHandler && typeof room.onStateChange?.remove === "function") {
@@ -15055,7 +15165,7 @@ Schema instances may only have up to 64 fields.`);
           seenPlayers.add(pid);
           let track = playerTracks.get(pid);
           if (!track) {
-            track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null };
+            track = { hist: makeHistory(), tier: "small", score: 0, gemScore: 0, paletteIdx: null, lastProcessedInputSeq: 0 };
             playerTracks.set(pid, track);
           }
           const tier = shipTierKey(p?.tier);
@@ -15064,6 +15174,7 @@ Schema instances may only have up to 64 fields.`);
           track.gemScore = Number(p?.gemScore) || 0;
           const paletteRaw = Number(p?.paletteIdx);
           track.paletteIdx = Number.isFinite(paletteRaw) && paletteRaw >= 0 ? paletteRaw | 0 : null;
+          track.lastProcessedInputSeq = Number(p?.lastProcessedInputSeq) | 0 || 0;
           pushHistory(track.hist, {
             t: latestSimTimeMs,
             x: Number(p?.x) || 0,
@@ -15382,7 +15493,7 @@ Schema instances may only have up to 64 fields.`);
       else
         state.camera.y = 0;
     }
-    function applyInterpolatedState({ atMs = nowMs2(), delayMs = interpolationDelayMs } = {}) {
+    function applyInterpolatedState({ atMs = nowMs2(), delayMs = interpolationDelayMs, skipLocalPlayerPose = false } = {}) {
       if (!latestSimTimeMs)
         return false;
       ensureEnginePlayers();
@@ -15398,11 +15509,14 @@ Schema instances may only have up to 64 fields.`);
           continue;
         const { p0, p1, t } = span;
         const ship = player.ship;
-        ship.pos.x = lerp(p0.x, p1.x, t);
-        ship.pos.y = lerp(p0.y, p1.y, t);
-        ship.vel.x = lerp(p0.vx, p1.vx, t);
-        ship.vel.y = lerp(p0.vy, p1.vy, t);
-        ship.angle = lerpAngle(p0.angle, p1.angle, t);
+        const isLocal = skipLocalPlayerPose && id === state.localPlayerId;
+        if (!isLocal) {
+          ship.pos.x = lerp(p0.x, p1.x, t);
+          ship.pos.y = lerp(p0.y, p1.y, t);
+          ship.vel.x = lerp(p0.vx, p1.vx, t);
+          ship.vel.y = lerp(p0.vy, p1.vy, t);
+          ship.angle = lerpAngle(p0.angle, p1.angle, t);
+        }
         const tierKey = shipTierKey(track.tier);
         const tier = SHIP_TIERS[tierKey] || SHIP_TIERS.small;
         ship.tier = tierKey;
@@ -15706,6 +15820,21 @@ Schema instances may only have up to 64 fields.`);
       setLocalSessionId,
       ingest,
       applyInterpolatedState,
+      getLatestPlayerSample: (id) => {
+        const pid = String(id ?? "");
+        const track = playerTracks.get(pid);
+        const c = track?.hist?.c;
+        if (!track || !c)
+          return null;
+        return {
+          ...c,
+          tier: track.tier,
+          score: track.score,
+          gemScore: track.gemScore,
+          paletteIdx: track.paletteIdx,
+          lastProcessedInputSeq: Number(track.lastProcessedInputSeq) | 0 || 0
+        };
+      },
       getDebug: () => ({
         localSessionId,
         latestSimTimeMs,
@@ -16482,6 +16611,111 @@ Schema instances may only have up to 64 fields.`);
     return { update, reset };
   }
 
+  // src/net/createMpPrediction.js
+  function safeStr(v) {
+    return String(v ?? "");
+  }
+  function createMpPrediction({ engine, mpClient, mpWorldView, enabled = true, fixedDtSec = 1 / 60 } = {}) {
+    if (!engine || !engine.state)
+      throw new Error("createMpPrediction requires { engine }");
+    if (!mpClient)
+      throw new Error("createMpPrediction requires { mpClient }");
+    if (!mpWorldView)
+      throw new Error("createMpPrediction requires { mpWorldView }");
+    const dt = Number(fixedDtSec);
+    if (!Number.isFinite(dt) || dt <= 0)
+      throw new Error("createMpPrediction requires a positive fixedDtSec");
+    let localSessionId = "";
+    let lastReconciledSeq = 0;
+    let hasAuthPose = false;
+    let isEnabled = enabled !== false;
+    function getLocalShip() {
+      const pid = localSessionId;
+      if (!pid)
+        return null;
+      const p = engine.state.playersById?.[pid];
+      return p?.ship ? p.ship : null;
+    }
+    function onConnect({ sessionId } = {}) {
+      localSessionId = safeStr(sessionId);
+      lastReconciledSeq = 0;
+      hasAuthPose = false;
+    }
+    function onDisconnect() {
+      localSessionId = "";
+      lastReconciledSeq = 0;
+      hasAuthPose = false;
+    }
+    function setEnabled(next) {
+      isEnabled = next !== false;
+    }
+    function isActive() {
+      return !!(isEnabled && localSessionId);
+    }
+    function hasAuthoritativePose() {
+      return hasAuthPose;
+    }
+    function onInputSent({ msg, dtSec } = {}) {
+      if (!isEnabled)
+        return;
+      if (!hasAuthPose)
+        return;
+      const ship = getLocalShip();
+      if (!ship)
+        return;
+      const input = msg && typeof msg === "object" ? msg : null;
+      if (!input)
+        return;
+      const stepDt = Number(dtSec);
+      const step = Number.isFinite(stepDt) && stepDt > 0 ? stepDt : dt;
+      stepShipKinematics({ ship, input, params: engine.state.params, world: engine.state.world, dt: step });
+    }
+    function reconcile() {
+      if (!isEnabled)
+        return false;
+      if (!localSessionId)
+        return false;
+      if (!mpClient.isConnected?.())
+        return false;
+      const auth = mpWorldView.getLatestPlayerSample?.(localSessionId);
+      if (!auth)
+        return false;
+      const hadAuthPose = hasAuthPose;
+      hasAuthPose = true;
+      const ship = getLocalShip();
+      if (!ship)
+        return false;
+      const ackSeq = Number(auth.lastProcessedInputSeq) | 0 || 0;
+      if (hadAuthPose && ackSeq <= lastReconciledSeq)
+        return false;
+      ship.pos.x = Number(auth.x) || 0;
+      ship.pos.y = Number(auth.y) || 0;
+      ship.vel.x = Number(auth.vx) || 0;
+      ship.vel.y = Number(auth.vy) || 0;
+      ship.angle = Number(auth.angle) || 0;
+      mpClient.ackInputSeq?.(ackSeq);
+      const unacked = mpClient.getUnackedInputs?.() || [];
+      for (let i = 0; i < unacked.length; i++) {
+        const entry = unacked[i];
+        const input = entry?.msg;
+        if (!input || typeof input !== "object")
+          continue;
+        stepShipKinematics({ ship, input, params: engine.state.params, world: engine.state.world, dt });
+      }
+      lastReconciledSeq = ackSeq;
+      return true;
+    }
+    return {
+      onConnect,
+      onDisconnect,
+      setEnabled,
+      isActive,
+      hasAuthoritativePose,
+      onInputSent,
+      reconcile
+    };
+  }
+
   // src/main.js
   (() => {
     const canvas = document.getElementById("game");
@@ -16642,7 +16876,9 @@ Schema instances may only have up to 64 fields.`);
       const pausedByMenu = !mpConnected && ui.isMenuVisible() && game.state.mode === "playing" && !!game.state.settings.pauseOnMenuOpen && !externalStepping;
       if (mpConnected) {
         game.state._mpNet = typeof mp.getNetStats === "function" ? mp.getNetStats(ts) : null;
-        mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs });
+        mpPredict.reconcile();
+        const skipLocalPlayerPose = mpPredict.isActive() && mpPredict.hasAuthoritativePose();
+        mpWorld.applyInterpolatedState({ atMs: ts, delayMs: mpDelayMs, skipLocalPlayerPose });
         mpVfx.update({ dtSec: dtMs / 1e3, atMs: ts });
         const mpHud = game.state?._mp;
         const dtMax = mpHud && Number.isFinite(mpHud.snapshotDtMaxMs) ? mpHud.snapshotDtMaxMs : null;
@@ -16713,12 +16949,15 @@ Schema instances may only have up to 64 fields.`);
           margin: 240
         };
       },
-      sendHz: 30,
+      // Prediction/reconcile expects a fixed-tick input stream (match server sim tick).
+      sendHz: 60,
       viewSendHz: 10,
       snapshotBufferSize: 32
     });
     const mpWorld = createMpWorldView({ engine: game, interpolationDelayMs: 120 });
     const mpVfx = createMpVfx({ engine: game });
+    const mpPredict = createMpPrediction({ engine: game, mpClient: mp, mpWorldView: mpWorld, enabled: true, fixedDtSec: 1 / 60 });
+    mp.setInputSentHandler?.(mpPredict.onInputSent);
     const existingApi = window.Blasteroids && typeof window.Blasteroids === "object" ? window.Blasteroids : {};
     window.Blasteroids = {
       ...existingApi,
@@ -16733,13 +16972,22 @@ Schema instances may only have up to 64 fields.`);
         const info = await mp.connect(opts);
         const room = mp.getRoom();
         mpWorld.attach({ room, localSessionId: info.sessionId });
-        room?.onLeave?.(() => mpWorld.detach());
+        mpPredict.onConnect({ sessionId: info.sessionId });
+        if (!game.state.playersById?.[info.sessionId]) {
+          game.addPlayer(info.sessionId, { makeLocalIfFirst: false });
+        }
+        game.state.localPlayerId = info.sessionId;
+        room?.onLeave?.(() => {
+          mpWorld.detach();
+          mpPredict.onDisconnect();
+        });
         game.state.mode = "playing";
         ui.setMenuVisible(false);
         return info;
       },
       mpDisconnect: async () => {
         mpWorld.detach();
+        mpPredict.onDisconnect();
         await mp.disconnect();
         mpVfx.reset();
         game.resetWorld();

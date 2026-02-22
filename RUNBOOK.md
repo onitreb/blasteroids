@@ -88,6 +88,7 @@ Smoke scripts (Node / headless browser):
 - Node join: `node scripts/mp-lan-smoke.mjs ws://localhost:2567`
 - Browser connect + snapshots: `node scripts/mp-browser-smoke.mjs`
 - Browser saucer + lasers sync: `node scripts/mp-browser-saucer-smoke.mjs`
+- Browser prediction under simulated latency: `node scripts/mp-browser-prediction-smoke.mjs`
 - Browser MP soak (2–4 players, longer): `BLASTEROIDS_PLAYERS=4 BLASTEROIDS_SOAK_MS=120000 node scripts/mp-browser-2p-soak-smoke.mjs`
 
 ### LAN access from another device

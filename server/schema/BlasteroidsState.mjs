@@ -11,6 +11,7 @@ type("string")(PlayerState.prototype, "tier");
 type("number")(PlayerState.prototype, "paletteIdx"); // 0..N (MP cosmetic)
 type("number")(PlayerState.prototype, "score");
 type("number")(PlayerState.prototype, "gemScore");
+type("number")(PlayerState.prototype, "lastProcessedInputSeq"); // authoritative ack for client prediction
 
 export class RoundStarState extends Schema {}
 type("number")(RoundStarState.prototype, "present"); // 0/1

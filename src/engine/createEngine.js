@@ -12,6 +12,7 @@ import {
 } from "../util/asteroid.js";
 import { polygonHullRadius } from "../util/ship.js";
 import { add, dot, len, len2, mul, norm, rot, sub, vec } from "../util/vec2.js";
+import { stepShipKinematics } from "./shipKinematics.js";
 import { DEFAULT_SHIP_SVGS } from "./shipPresetDefaults.js";
 
 function makeAsteroidShape(rng, radius, verts = 10) {
@@ -2970,38 +2971,7 @@ export function createEngine({ width, height, seed, role = "client", features = 
   }
 
   function updateShip(dt, player = localPlayer()) {
-    const ship = player?.ship;
-    const input = player?.input;
-    if (!ship || !input) return;
-    const turnDigital = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const turnAnalog = clamp(Number(input.turnAnalog ?? 0), -1, 1);
-    const turn = clamp(turnDigital + turnAnalog, -1, 1);
-    if (Math.abs(turn) > 1e-6) ship.angle += turn * state.params.shipTurnRate * dt;
-
-    const fwd = shipForward(ship);
-    const thrustDigital = input.up ? 1 : 0;
-    const thrustAnalog = clamp(Number(input.thrustAnalog ?? 0), 0, 1);
-    const thrust = Math.max(thrustDigital, thrustAnalog);
-    if (thrust > 1e-6) ship.vel = add(ship.vel, mul(fwd, state.params.shipThrust * thrust * dt));
-    if (input.down) {
-      const v = ship.vel;
-      const vLen = len(v);
-      if (vLen > 1e-6) {
-        const brake = state.params.shipBrake * dt;
-        const newLen = Math.max(0, vLen - brake);
-        ship.vel = mul(v, newLen / vLen);
-      }
-    }
-
-    ship.vel = mul(ship.vel, Math.max(0, 1 - state.params.shipLinearDamp * dt));
-
-    const spd = len(ship.vel);
-    if (spd > state.params.shipMaxSpeed) {
-      ship.vel = mul(ship.vel, state.params.shipMaxSpeed / spd);
-    }
-
-    ship.pos = add(ship.pos, mul(ship.vel, dt));
-    confineBodyToWorld(ship);
+    stepShipKinematics({ ship: player?.ship, input: player?.input, params: state.params, world: state.world, dt });
   }
 
   function exhaustShipScaleAndMirror(tier, ship) {
