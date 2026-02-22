@@ -615,3 +615,11 @@ Updates
     - `npm run build`: success (`dist/blasteroids.js` regenerated)
     - `node scripts/mp-browser-smoke.mjs`: pass
     - `node scripts/mp-browser-2p-smoke.mjs`: pass
+
+- 2026-02-22 MP stability/doc refresh:
+  - Updated `multiplayer-implementation-plan.md` “Current Multiplayer Simplifications” to reflect that MP-connected client-only VFX is now restored (MP-25..MP-28).
+  - Validations:
+    - `npm test`: pass
+    - `node scripts/mp-browser-2p-smoke.mjs`: pass
+    - `node scripts/mp-browser-saucer-smoke.mjs`: pass
+    - `BLASTEROIDS_PLAYERS=4 BLASTEROIDS_SOAK_MS=30000 node scripts/mp-browser-2p-soak-smoke.mjs`: pass

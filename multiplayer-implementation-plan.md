@@ -1,6 +1,6 @@
 # Multiplayer Implementation Plan — Blasteroids (Trackable)
 
-Last updated: 2026-02-20  
+Last updated: 2026-02-22  
 Status: ACTIVE  
 Owners: Engineering (Paul + Codex agents)  
 
@@ -102,7 +102,7 @@ The LAN MVP was built by first stabilizing correctness/perf, then layering UX an
 
 - Multiplayer rooms run with `features: { roundLoop: true, saucer: true }` (server-authoritative gameplay parity in progress).
 - The server-authoritative engine may run in a mode that skips camera/VFX work.
-- While MP is connected, the client renders interpolated authoritative state and **does not yet** reproduce all singleplayer visual-only effects (e.g. thrusters/exhaust, burst/pull explosion effects) because local sim is paused and these effects are not synced from the server.
+- While MP is connected, the client renders interpolated authoritative state and runs **client-only VFX** derived from authoritative state changes + local input (thrusters/exhaust, pull/burst FX, ping/sonar, pickup/impact pops). Some effects are heuristic/view-gated to avoid false positives with interest management; see MP-25..MP-28.
 
 This is expected, but should be tracked as follow-up work so multiplayer does not remain a “POC-only” experience. After the MVP foundations are stable, reintroduce singleplayer gameplay systems (round loop, saucer, etc.) and then restore visual parity, while keeping the server authoritative and effects client-side.
 
